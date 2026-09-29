@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "users": {
+      "path": "users/{userId}",
+      "description": "User profile with display name, email, and role",
+      "fields": {
+        "uid": "string",
+        "displayName": "string",
+        "email": "string",
+        "role": "string",
+        "createdAt": "timestamp"
+      }
+    },
+    "audiobooks": {
+      "path": "audiobooks/{bookId}",
+      "description": "Saved audiobooks converted by users",
+      "fields": {
+        "userId": "string",
+        "fileName": "string",
+        "voiceName": "string",
+        "dialectName": "string",
+        "styleName": "string",
+        "duration": "string",
+        "durationSec": "number",
+        "audioUrl": "string",
+        "createdAt": "timestamp"
+      }
+    },
+    "voices": {
+      "path": "voices/{voiceId}",
+      "description": "Custom cloned or uploaded voices",
+      "fields": {
+        "id": "string",
+        "name": "string",
+        "gender": "string",
+        "dialectId": "string",
+        "avatar": "string",
+        "description": "string",
+        "sampleText": "string",
+        "isCloned": "boolean",
+        "referenceAudioBase64": "string",
+        "createdAt": "timestamp"
+      }
+    }
+  }
+}

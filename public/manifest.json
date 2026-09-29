@@ -1,0 +1,28 @@
+{
+  "id": "/",
+  "name": "PDFtoAudio - حوّل كتب PDF إلى صوت بالذكاء الاصطناعي",
+  "short_name": "PDFtoAudio",
+  "description": "منصة رائدة لتحويل ملفات وكتب PDF إلى كتب صوتية مسموعة بـ 30 صوتاً و14 لهجة عربية.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0f19",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait-primary",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=192&h=192&fit=crop&q=80",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=512&h=512&fit=crop&q=80",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}

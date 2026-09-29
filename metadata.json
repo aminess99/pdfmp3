@@ -1,0 +1,6 @@
+{
+  "name": "PDFtoAudio - تحويل كتب PDF إلى صوت",
+  "description": "منصة تحويل كتب وملفات PDF إلى مقاطع صوتية بـ 30+ صوتاً و14 لهجة عربية",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
