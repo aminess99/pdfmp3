@@ -243,7 +243,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
             title="انقر لشحن رصيد دقائق إضافي"
           >
             <Zap className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-            <span>رصيدك: {localStorage.getItem('user_minutes_quota') || '666'} دقيقة</span>
+            <span>رصيدك: {localStorage.getItem('user_minutes_quota') || '30'} دقيقة</span>
             <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-[10px] text-emerald-300 font-extrabold">+شحن</span>
           </button>
 
@@ -425,7 +425,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                 <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
                   <div className="text-[11px] text-slate-300 font-bold flex items-center gap-1">
                     <Zap className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>الرصيد: {localStorage.getItem('user_minutes_quota') || '666'} دقيقة</span>
+                    <span>الرصيد: {localStorage.getItem('user_minutes_quota') || '30'} دقيقة</span>
                   </div>
                   <button
                     onClick={() => {

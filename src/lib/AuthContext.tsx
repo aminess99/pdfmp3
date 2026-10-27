@@ -54,7 +54,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const checkIsAdmin = (email?: string | null) => {
     if (!email) return false;
     const lower = email.toLowerCase();
-    return lower === 'aminefiverr1996@gmail.com' || lower.includes('amine');
+    return lower === 'aminefiverr1996@gmail.com';
   };
 
   useEffect(() => {

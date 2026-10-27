@@ -111,9 +111,9 @@ export async function extractTextFromPDFFile(
         data: arrayBuffer,
         stopAtErrors: false,
         useSystemFonts: true,
-        cMapUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/cmaps/',
+        cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
         cMapPacked: true,
-        standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/standard_fonts/',
+        standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/standard_fonts/`,
       } as any);
 
       const pdfDoc = await loadingTask.promise;
@@ -226,9 +226,9 @@ export async function startProgressivePdfExtraction(
       data: arrayBuffer,
       stopAtErrors: false,
       useSystemFonts: true,
-      cMapUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/cmaps/',
+      cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
       cMapPacked: true,
-      standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/standard_fonts/',
+      standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/standard_fonts/`,
     } as any);
 
     const pdfDoc = await loadingTask.promise;
