@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { X, CreditCard, ShieldCheck, Check, Clock, Zap, Sparkles, Lock, ArrowLeft } from 'lucide-react';
 
+// No real payment processor is connected yet: keep the card form hidden
+// until checkout goes through a provider (Stripe, Paddle, ...).
+const PAYMENTS_ENABLED = false;
+
 interface PaymentCheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -46,6 +50,35 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
       }, 1500);
     }, 1800);
   };
+
+  if (!PAYMENTS_ENABLED) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in font-['Cairo',sans-serif]" dir="rtl" onClick={onClose}>
+        <div className="relative w-full max-w-md bg-[#0c1220] border border-blue-500/40 rounded-3xl shadow-2xl p-8 text-center text-white space-y-4" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={onClose}
+            className="absolute top-4 left-4 p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-blue-600/20 border border-blue-500/40 text-cyan-400 flex items-center justify-center">
+            <Clock className="w-8 h-8" />
+          </div>
+          <h3 className="text-xl font-black font-['Tajawal']">الدفع الإلكتروني قريباً</h3>
+          <p className="text-sm text-slate-300 leading-relaxed">
+            نعمل على تفعيل الدفع الآمن لـ <span className="font-bold text-white">{plan.name}</span>.
+            يمكنك الاستمرار في استخدام الدقائق المجانية حالياً.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 font-bold transition-colors"
+          >
+            حسناً
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in font-['Cairo',sans-serif]" dir="rtl">

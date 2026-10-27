@@ -14,6 +14,39 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: "50mb" }));
 
+// Render sits behind a proxy: trust it so req.ip is the visitor's IP
+app.set("trust proxy", 1);
+
+// Simple in-memory per-IP rate limit on the paid AI / TTS endpoints, so a
+// single visitor or bot cannot drain the OpenRouter / Gemini credit.
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_PER_MINUTE = Number(process.env.RATE_LIMIT_PER_MINUTE) || 60;
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+app.use(["/api/ai", "/api/tts", "/api/pdf", "/api/book"], (req, res, next) => {
+  if (req.method !== "POST") return next();
+  const ip = req.ip || "unknown";
+  const now = Date.now();
+  let bucket = rateBuckets.get(ip);
+  if (!bucket || bucket.resetAt <= now) {
+    bucket = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+    rateBuckets.set(ip, bucket);
+  }
+  bucket.count++;
+  if (bucket.count > RATE_LIMIT_PER_MINUTE) {
+    res.set("Retry-After", String(Math.ceil((bucket.resetAt - now) / 1000)));
+    return res.status(429).json({ error: "عدد الطلبات كبير جداً، يرجى المحاولة بعد دقيقة." });
+  }
+  next();
+});
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, bucket] of rateBuckets) {
+    if (bucket.resetAt <= now) rateBuckets.delete(ip);
+  }
+}, 5 * 60_000).unref();
+
 // Persistent Disk-based Audio Cache Directory
 const AUDIO_CACHE_DIR = path.join(process.cwd(), ".cache", "audio");
 try {
@@ -75,7 +108,7 @@ async function callOpenRouter(
         headers: {
           "Authorization": `Bearer ${openRouterKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": process.env.APP_URL || "https://ais-applet.local",
+          "HTTP-Referer": process.env.APP_URL || "https://pdfmp3.onrender.com",
           "X-Title": "PDF to Audio Arabic Studio",
         },
         body: JSON.stringify({
@@ -433,7 +466,8 @@ function localExtractKeyPoints(text: string, bookTitle?: string): string {
 }
 
 // AI Book Listening Mode Transformer: Generates Executive Summaries (10m) or Key Points (50%)
-app.post("/api/book/transform-mode", async (req, res) => {
+// The client calls /api/ai/transform-book; keep the original path too
+app.post(["/api/book/transform-mode", "/api/ai/transform-book"], async (req, res) => {
   try {
     const { text, mode, bookTitle } = req.body;
     if (!text || typeof text !== "string" || !text.trim()) {
@@ -808,7 +842,7 @@ async function synthesizeWithOpenRouterGeminiTts(
         headers: {
           Authorization: `Bearer ${openRouterKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": process.env.APP_URL || "https://ais-applet.local",
+          "HTTP-Referer": process.env.APP_URL || "https://pdfmp3.onrender.com",
           "X-Title": "PDF to Audio Arabic Studio",
         },
         body: JSON.stringify({
@@ -1581,7 +1615,7 @@ app.post("/api/ai/generate-cover", async (req, res) => {
               headers: {
                 "Authorization": `Bearer ${openRouterKey}`,
                 "Content-Type": "application/json",
-                "HTTP-Referer": process.env.APP_URL || "https://ais-applet.local",
+                "HTTP-Referer": process.env.APP_URL || "https://pdfmp3.onrender.com",
                 "X-Title": "PDF to Audio Arabic Studio",
               },
               body: JSON.stringify({
