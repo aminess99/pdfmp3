@@ -806,6 +806,16 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitsPe
   return Buffer.concat([wavHeader, pcmBuffer]);
 }
 
+// Prefix the voice's dialect/style instruction (from the trusted VOICES list, not the
+// client) using Gemini TTS's natural-language style control: "<instruction>: <text>".
+// Set TTS_STYLE_PROMPT=off to send the bare text.
+function buildTtsInput(text: string, voice?: any): string {
+  if (process.env.TTS_STYLE_PROMPT === "off") return text;
+  const style = VOICES.find((v) => v.id === voice?.id)?.stylePrompt?.trim();
+  if (!style) return text;
+  return `${style.replace(/[.:،\s]+$/, "")}:\n${text}`;
+}
+
 // Synthesize audio using google/gemini-3.8-flash-lite-tts via OpenRouter with system instructions & dialect prompting
 async function synthesizeWithOpenRouterGeminiTts(
   text: string,
@@ -820,7 +830,7 @@ async function synthesizeWithOpenRouterGeminiTts(
   const isFemale = voice?.gender === "female";
   const voiceName = voice?.geminiVoiceName || (isFemale ? "Kore" : "Puck");
 
-  const inputForSpeech = `${text}`;
+  const inputForSpeech = buildTtsInput(text, voice);
 
   // List of active Gemini TTS models on OpenRouter (Notice: Gemini TTS strictly requires response_format: "pcm")
   const ttsModelsToTry = [
@@ -1002,7 +1012,7 @@ app.post("/api/tts/speak", async (req, res) => {
       if (fs.existsSync(diskPath)) {
         const diskBuffer = fs.readFileSync(diskPath);
         if (diskBuffer && diskBuffer.length > 500) {
-          const contentType = "audio/mpeg";
+          const contentType = diskBuffer.subarray(0, 4).toString() === "RIFF" ? "audio/wav" : "audio/mpeg";
           serverTtsCache.set(cacheKey, { buffer: diskBuffer, contentType, engine: "disk-cached-gemini-tts" });
           res.setHeader("Content-Type", contentType);
           res.setHeader("Content-Length", diskBuffer.length);
@@ -1049,7 +1059,7 @@ app.post("/api/tts/speak", async (req, res) => {
       try {
         const response = await gemini.models.generateContent({
           model: "gemini-3.8-flash-lite-tts",
-          contents: [{ parts: [{ text: trimmedText }] }],
+          contents: [{ parts: [{ text: buildTtsInput(trimmedText, voice) }] }],
           config: {
             responseModalities: ["AUDIO"],
             speechConfig: {
@@ -1266,7 +1276,7 @@ app.post("/api/tts/generate-audio", async (req, res) => {
           try {
             const response = await gemini.models.generateContent({
               model: "gemini-3.8-flash-lite-tts",
-              contents: [{ parts: [{ text: chunk }] }],
+              contents: [{ parts: [{ text: buildTtsInput(chunk, targetVoice) }] }],
               config: {
                 responseModalities: ["AUDIO"],
                 speechConfig: {

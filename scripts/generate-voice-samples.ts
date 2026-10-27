@@ -74,7 +74,10 @@ async function main() {
       continue;
     }
     try {
-      const pcm = await synthesize(voice.sampleText.trim(), voice.geminiVoiceName, apiKey);
+      // Same "<instruction>: <text>" input the server builds in buildTtsInput()
+      const style = process.env.TTS_STYLE_PROMPT === 'off' ? '' : voice.stylePrompt?.trim().replace(/[.:،\s]+$/, '');
+      const input = style ? `${style}:\n${voice.sampleText.trim()}` : voice.sampleText.trim();
+      const pcm = await synthesize(input, voice.geminiVoiceName, apiKey);
       const wavFile = outFile.replace(/\.mp3$/, '.wav');
       fs.writeFileSync(wavFile, pcmToWav(pcm));
       execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', wavFile, '-ac', '1', '-codec:a', 'libmp3lame', '-b:a', '64k', outFile]);
