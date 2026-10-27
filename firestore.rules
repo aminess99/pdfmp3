@@ -30,7 +30,7 @@ service cloud.firestore {
     // Custom Voices Collection
     match /voices/{voiceId} {
       allow read: if true;
-      allow create, update, delete: if true;
+      allow create, update, delete: if false;
     }
   }
 }
