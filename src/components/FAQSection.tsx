@@ -22,7 +22,7 @@ export const FAQSection: React.FC = () => {
             الأسئلة الشائعة
           </h2>
           <p className="text-slate-300 text-sm sm:text-base">
-            كل ما تحتاج لمعرفته حول كيفية تحويل كتب PDF إلى صوت.
+            كل ما تحتاج لمعرفته حول تحويل النص وكتب PDF إلى صوت وكتب صوتية.
           </p>
         </div>
 

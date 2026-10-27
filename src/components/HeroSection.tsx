@@ -17,7 +17,7 @@ export const HeroSection: React.FC = () => {
             {/* Top Pill Badge */}
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-300 text-xs sm:text-sm font-bold shadow-inner">
               <Zap className="w-4 h-4 text-cyan-400 fill-cyan-400" />
-              <span>تحويل سريع ودقيق</span>
+              <span>تحويل النص إلى صوت بالذكاء الاصطناعي</span>
             </div>
 
             {/* Main Headline */}
@@ -27,7 +27,7 @@ export const HeroSection: React.FC = () => {
 
             {/* Subtitle */}
             <p className="text-base sm:text-lg text-slate-300 leading-relaxed max-w-xl font-normal">
-              استمتع بقراءة كتابك المفضلة بصوت طبيعي وواقعي، مع دعم لأكثر من <span className="text-blue-400 font-bold">30 صوتاً</span> و<span className="text-purple-400 font-bold">14 لهجة عربية</span>.
+              حوّل النص والكتابة وملفات PDF إلى كتب صوتية مسموعة بصوت طبيعي وواقعي، مع دعم لأكثر من <span className="text-blue-400 font-bold">30 صوتاً</span> و<span className="text-purple-400 font-bold">14 لهجة عربية</span>.
             </p>
 
             {/* Badges in the exact order shown in screenshot:
