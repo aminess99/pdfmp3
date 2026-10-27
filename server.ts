@@ -37,10 +37,13 @@ function getGeminiClient() {
 }
 
 // OpenRouter API helper prioritizing Google Gemini and DeepSeek models
+// `prompt` may be a plain string or an OpenRouter multimodal content array (e.g. text + PDF file).
+// OPENROUTER_TEXT_MODEL (optional env) is tried first for every text request.
 async function callOpenRouter(
-  prompt: string, 
+  prompt: string | any[],
   preferredModel = "google/gemini-2.5-flash",
-  maxTokens: number = 4000
+  maxTokens: number = 4000,
+  timeoutMs: number = 35000
 ): Promise<string | null> {
   const openRouterKey = process.env.OPENROUTER_API_KEY;
   if (!openRouterKey || !openRouterKey.startsWith("sk-or-v1-")) {
@@ -52,6 +55,7 @@ async function callOpenRouter(
   // 2. deepseek/deepseek-chat (DeepSeek V3)
   // 3. meta-llama/llama-3.3-70b-instruct
   const modelsToTry = [
+    process.env.OPENROUTER_TEXT_MODEL,
     preferredModel,
     "google/gemini-2.5-flash",
     "google/gemini-2.5-flash-lite",
@@ -59,12 +63,12 @@ async function callOpenRouter(
     "meta-llama/llama-3.3-70b-instruct",
   ];
 
-  const uniqueModels = [...new Set(modelsToTry)];
+  const uniqueModels = [...new Set(modelsToTry.filter(Boolean) as string[])];
 
   for (const model of uniqueModels) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000);
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -103,7 +107,7 @@ async function callOpenRouter(
       }
     } catch (err: any) {
       if (err?.name === "AbortError" || err?.message?.includes("aborted")) {
-        console.info(`[OpenRouter] ${model} timed out after 35s, trying next model.`);
+        console.info(`[OpenRouter] ${model} timed out after ${timeoutMs / 1000}s, trying next model.`);
       } else {
         console.warn(`[OpenRouter] Failed calling ${model}:`, err?.message || err);
       }
@@ -293,6 +297,28 @@ app.post("/api/pdf/extract", async (req, res) => {
           lastError = err;
           console.warn(`Gemini OCR on ${modelName} failed (quota or error):`, err?.message || err);
         }
+      }
+    }
+
+    // 2b. OpenRouter Vision OCR (PDF file input) when Gemini is not configured or failed
+    if (!extractedText || extractedText.length <= 20) {
+      const openRouterOcr = await callOpenRouter(
+        [
+          { type: "text", text: prompt },
+          {
+            type: "file",
+            file: {
+              filename: fileName || "book.pdf",
+              file_data: `data:application/pdf;base64,${cleanBase64}`,
+            },
+          },
+        ],
+        "google/gemini-2.5-flash",
+        16000,
+        120000
+      );
+      if (openRouterOcr && openRouterOcr.length > 20) {
+        extractedText = openRouterOcr;
       }
     }
 
@@ -630,8 +656,7 @@ app.post("/api/ai/extract-chapters", async (req, res) => {
     const readerVoice = voiceName || "القارئ الصوتي";
 
     const ai = getGeminiClient();
-    if (ai) {
-      const prompt = `أنت كبير مخرجي ومنتجي الكتب الصوتية الاحترافية باللغة العربية (Audiobook Executive Producer).
+    const prompt = `أنت كبير مخرجي ومنتجي الكتب الصوتية الاحترافية باللغة العربية (Audiobook Executive Producer).
 قم بفحص النص التالي من الكتاب واستخراج البيانات بدقة متناهية:
 
 المطلوب بدقة:
@@ -659,6 +684,8 @@ app.post("/api/ai/extract-chapters", async (req, res) => {
 نص الكتاب المراد تحليله:
 ${trimmedInput.slice(0, 35000)}`;
 
+    let rawJson = "";
+    if (ai) {
       try {
         const response = await ai.models.generateContent({
           model: "gemini-3.8-flash",
@@ -667,32 +694,44 @@ ${trimmedInput.slice(0, 35000)}`;
             responseMimeType: "application/json",
           }
         });
-
-        const rawJson = response.text?.trim() || "";
-        if (rawJson) {
-          const parsed = JSON.parse(rawJson);
-          if (parsed && Array.isArray(parsed.chapters) && parsed.chapters.length > 0) {
-            // Prepend cinematic audio intro to the first chapter if provided
-            if (parsed.cinematicIntro && parsed.chapters[0]) {
-              const introPrefix = `🎙️ ${parsed.cinematicIntro.trim()}\n\n---\n\n`;
-              if (!parsed.chapters[0].text.startsWith('🎙️')) {
-                parsed.chapters[0].text = introPrefix + parsed.chapters[0].text;
-              }
-            }
-
-            return res.json({
-              success: true,
-              bookTitle: parsed.bookTitle || defaultTitle,
-              authorName: parsed.authorName || "",
-              isOriginalTOC: Boolean(parsed.isOriginalTOC),
-              cinematicIntro: parsed.cinematicIntro || "",
-              chapters: parsed.chapters
-            });
-          }
-        }
+        rawJson = response.text?.trim() || "";
       } catch (geminiErr: any) {
-        console.warn("AI chapter parsing note, using local engine:", geminiErr?.message || geminiErr);
+        console.warn("Gemini chapter parsing unavailable:", geminiErr?.message || geminiErr);
       }
+    }
+
+    // OpenRouter fallback (strip ```json fences some models add)
+    if (!rawJson) {
+      const openRouterJson = await callOpenRouter(prompt, "google/gemini-2.5-flash", 16000, 120000);
+      if (openRouterJson) {
+        rawJson = openRouterJson.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+      }
+    }
+
+    try {
+      if (rawJson) {
+        const parsed = JSON.parse(rawJson);
+        if (parsed && Array.isArray(parsed.chapters) && parsed.chapters.length > 0) {
+          // Prepend cinematic audio intro to the first chapter if provided
+          if (parsed.cinematicIntro && parsed.chapters[0]) {
+            const introPrefix = `🎙️ ${parsed.cinematicIntro.trim()}\n\n---\n\n`;
+            if (!parsed.chapters[0].text.startsWith('🎙️')) {
+              parsed.chapters[0].text = introPrefix + parsed.chapters[0].text;
+            }
+          }
+
+          return res.json({
+            success: true,
+            bookTitle: parsed.bookTitle || defaultTitle,
+            authorName: parsed.authorName || "",
+            isOriginalTOC: Boolean(parsed.isOriginalTOC),
+            cinematicIntro: parsed.cinematicIntro || "",
+            chapters: parsed.chapters
+          });
+        }
+      }
+    } catch (parseErr: any) {
+      console.warn("AI chapter parsing note, using local engine:", parseErr?.message || parseErr);
     }
 
     res.json({ success: false, message: "fallback to local regex" });
