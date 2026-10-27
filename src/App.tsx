@@ -129,13 +129,7 @@ export default function App() {
   }, []);
 
   const handlePreviewVoiceSample = (voice: Voice) => {
-    audioEngine.stop();
-    audioEngine.speak(
-      voice.sampleText,
-      voice,
-      { id: 'normal', name: 'عادي', description: '', icon: '' },
-      1.0
-    );
+    audioEngine.playVoicePreview(voice);
   };
 
   const handleNavigate = (sectionId: string) => {

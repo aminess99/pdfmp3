@@ -329,20 +329,38 @@ export class AudioEngine {
     });
   }
 
-  // Play audio sample preview for any voice
+  // Play audio sample preview for any voice.
+  // Plays the pre-generated file in /voice-samples/ (see scripts/generate-voice-samples.ts)
+  // and only synthesizes on the fly when that file is missing.
   public playVoicePreview(voice: Voice, onEnd?: () => void) {
     this.stop();
+    const sessionId = this.currentSessionId;
 
-    // Synthesize sample text with the voice
-    const sampleText = voice.sampleText || 'مرحباً بكم، هذا صوت عالي النقاء جاهز لقراءة كتبكم.';
-    this.speak(
-      sampleText,
-      voice,
-      { id: 'normal', name: 'عادي', description: '', icon: '' },
-      1.0,
-      undefined,
-      onEnd
-    );
+    const synthesizeFallback = () => {
+      if (this.currentSessionId !== sessionId) return;
+      const sampleText = voice.sampleText || 'مرحباً بكم، هذا صوت عالي النقاء جاهز لقراءة كتبكم.';
+      this.speak(
+        sampleText,
+        voice,
+        { id: 'normal', name: 'عادي', description: '', icon: '' },
+        1.0,
+        undefined,
+        onEnd
+      );
+    };
+
+    const audio = new Audio(`/voice-samples/${voice.id}.mp3`);
+    this.currentAudioElement = audio;
+    this.isPlaying = true;
+
+    audio.onended = () => {
+      if (this.currentSessionId !== sessionId) return;
+      this.isPlaying = false;
+      this.currentAudioElement = null;
+      if (onEnd) onEnd();
+    };
+    audio.onerror = synthesizeFallback;
+    audio.play().catch(synthesizeFallback);
   }
 
   // Primary speech synthesis method: Uses Fish Audio Cloned Voice / Gemini TTS with browser fallback

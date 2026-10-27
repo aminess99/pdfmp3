@@ -240,15 +240,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     }
 
     setIsPlayingPreview(true);
-    const samplePhrase = selectedVoice.sampleText || `مرحباً بك في استوديو الكتب الصوتية، أنا ${selectedVoice.name} وسأكون رفيقك في قراءة هذا الكتاب.`;
-    audioEngine.speak(
-      samplePhrase,
-      selectedVoice,
-      selectedStyle,
-      1.0,
-      () => setIsPlayingPreview(false),
-      () => setIsPlayingPreview(false)
-    );
+    audioEngine.playVoicePreview(selectedVoice, () => setIsPlayingPreview(false));
   };
 
   // Handle OCR Rescan

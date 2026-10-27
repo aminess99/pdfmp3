@@ -26,7 +26,7 @@ export const AUDIO_STYLES: AudioStyle[] = [
 ];
 
 export const VOICES: Voice[] = [
-  // 1. المغربية (الدارجة) - Puck & Kore
+  // 1. المغربية (الدارجة)
   {
     id: 'amine_ma',
     name: 'أمين (المغرب) - Puck',
@@ -58,7 +58,7 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 2. السعودية - Charon & Fenrir
+  // 2. السعودية
   {
     id: 'faisal_sa',
     name: 'فيصل (السعودية) - Charon',
@@ -76,13 +76,13 @@ export const VOICES: Voice[] = [
   },
   {
     id: 'noura_sa',
-    name: 'نورة (السعودية) - Fenrir',
+    name: 'نورة (السعودية) - Zephyr',
     gender: 'female',
     dialectId: 'sa',
-    geminiVoiceName: 'Fenrir',
+    geminiVoiceName: 'Zephyr',
     stylePrompt: 'تحدثي باللهجة السعودية الأنيقة بنبرة واضحة وحيوية وملهمة تناسب الروايات الحديثة والتعليم.',
     avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت سعودي حيوي وواضح بنبرة Fenrir الذكية، مثالي للملخصات والكتب العلمية',
+    description: 'صوت سعودي حيوي وواضح بنبرة Zephyr الذكية، مثالي للملخصات والكتب العلمية',
     recommendedFor: 'المقالات والكتب العلمية والتربوية',
     sampleText: 'حياكم الله جميعاً! يسرنا أن نقدم لكم كتبكم المعرفية بصوت واضح ومتزن يثري أوقاتكم.',
     pitch: 1.0,
@@ -90,7 +90,7 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 3. المصرية - Aoede & Zephyr
+  // 3. المصرية
   {
     id: 'maryam_eg',
     name: 'مريم (مصر) - Aoede',
@@ -108,13 +108,13 @@ export const VOICES: Voice[] = [
   },
   {
     id: 'kareem_eg',
-    name: 'كريم (مصر) - Zephyr',
+    name: 'كريم (مصر) - Fenrir',
     gender: 'male',
     dialectId: 'eg',
-    geminiVoiceName: 'Zephyr',
+    geminiVoiceName: 'Fenrir',
     stylePrompt: 'تحدث باللهجة المصرية الطبيعية الودودة بنبرة سلسة وإيقاع سلس ومريح جداً.',
     avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت مصري سلس وودود بنبرة Zephyr الانسيابية، ممتاز للكتب العامة والتثقيفية',
+    description: 'صوت مصري سلس وودود بنبرة Fenrir الانسيابية، ممتاز للكتب العامة والتثقيفية',
     recommendedFor: 'كتب التطوير الشخصي والثقافة العامة',
     sampleText: 'يا هلا بيكم! النهاردة حتقدروا تحولوا كل ملفاتكم لكتب مسموعة تسمعوها في الطريق أو الجيم.',
     pitch: 1.0,
@@ -122,7 +122,7 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 4. الإماراتية - Leda & Orus
+  // 4. الإماراتية
   {
     id: 'layla_ae',
     name: 'ليلى (الإمارات) - Leda',
@@ -154,16 +154,16 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 5. الفصحى المعاصرة - Pegasus & Astra
+  // 5. الفصحى المعاصرة
   {
     id: 'youssef_msa',
-    name: 'يوسف (الفصحى) - Pegasus',
+    name: 'يوسف (الفصحى) - Iapetus',
     gender: 'male',
     dialectId: 'msa',
-    geminiVoiceName: 'Pegasus',
+    geminiVoiceName: 'Iapetus',
     stylePrompt: 'اقرأ باللغة العربية الفصحى السليمة بنبرة روائية جهورية آسرة وتشكيل دقيق ومخارج حروف واضحة.',
     avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت فصيح جهوري وملهم بنبرة Pegasus السردية، الخيار الأول للكتب الأكاديمية والروايات الكبرى',
+    description: 'صوت فصيح جهوري وملهم بنبرة Iapetus السردية، الخيار الأول للكتب الأكاديمية والروايات الكبرى',
     recommendedFor: 'الروايات الكلاسيكية والكتب الدينية والتاريخية',
     sampleText: 'في رحاب المعرفة، تلتقي الكلمات لتصنع عوالم ساحرة. استمع إلى أمهات الكتب بدقة لغوية فائقة.',
     pitch: 1.0,
@@ -172,13 +172,13 @@ export const VOICES: Voice[] = [
   },
   {
     id: 'fatima_msa',
-    name: 'فاطمة (الفصحى) - Astra',
+    name: 'فاطمة (الفصحى) - Erinome',
     gender: 'female',
     dialectId: 'msa',
-    geminiVoiceName: 'Astra',
+    geminiVoiceName: 'Erinome',
     stylePrompt: 'اقرئي باللغة العربية الفصحى الأنيقة بنبرة إذاعية واضحة ومشرقة ونطق صحيح تام التشكيل.',
     avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت فصيح مشرق واحترافي بنبرة Astra النقية، مثالي للمقالات الصحفية والتعليمية',
+    description: 'صوت فصيح مشرق واحترافي بنبرة Erinome النقية، مثالي للمقالات الصحفية والتعليمية',
     recommendedFor: 'المقالات والأبحاث والتقارير الرسمية',
     sampleText: 'أهلاً بكم. نسعد بتقديم تجربة استماع معرفية غنية تجمع بين سلامة اللغة ونقاء الإلقاء.',
     pitch: 1.0,
@@ -186,16 +186,16 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 6. الشامية - Jupiter & Vega
+  // 6. الشامية
   {
     id: 'ziad_sy',
-    name: 'زياد (بلاد الشام) - Jupiter',
+    name: 'زياد (بلاد الشام) - Algieba',
     gender: 'male',
     dialectId: 'sy',
-    geminiVoiceName: 'Jupiter',
+    geminiVoiceName: 'Algieba',
     stylePrompt: 'تحدث باللهجة الشامية السورية/اللبنانية العذبة بنبرة وقورة وعميقة تجذب الانتباه.',
     avatar: 'https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت شامي عميق وجذاب بنبرة Jupiter الوقورة، رائع للكتب الفلسفية والقصص',
+    description: 'صوت شامي عميق وجذاب بنبرة Algieba الوقورة، رائع للكتب الفلسفية والقصص',
     recommendedFor: 'الروايات والقصص وكتب الفكر',
     sampleText: 'يسعد أوقاتكم جميعاً. استمعوا لكتبكم ورواياتكم المفضلة بنبرة شامية دافئة تلامس الروح.',
     pitch: 1.0,
@@ -204,13 +204,13 @@ export const VOICES: Voice[] = [
   },
   {
     id: 'dana_sy',
-    name: 'دانة (بلاد الشام) - Vega',
+    name: 'دانة (بلاد الشام) - Despina',
     gender: 'female',
     dialectId: 'sy',
-    geminiVoiceName: 'Vega',
+    geminiVoiceName: 'Despina',
     stylePrompt: 'تحدثي باللهجة الشامية اللطيفة بنبرة رقيقة ومليئة بالحياة والدفء.',
     avatar: 'https://images.unsplash.com/photo-1548142813-c348350df52b?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت شامي أنثوي راقٍ بنبرة Vega الدقيقة، مثالي لروايات الأدب والقصص الحوارية',
+    description: 'صوت شامي أنثوي راقٍ بنبرة Despina الدقيقة، مثالي لروايات الأدب والقصص الحوارية',
     recommendedFor: 'الروايات المعاصرة وكتب التنمية',
     sampleText: 'مية أهلاً وسهلاً فيكن. معنا رح تتحول كتبكن المكتوبة لقصص مسموعة بترافقكن بكل مكان.',
     pitch: 1.0,
@@ -218,16 +218,16 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 7. الجزائرية - Atlas & Lyra
+  // 7. الجزائرية
   {
     id: 'hamza_dz',
-    name: 'حمزة (الجزائر) - Atlas',
+    name: 'حمزة (الجزائر) - Alnilam',
     gender: 'male',
     dialectId: 'dz',
-    geminiVoiceName: 'Atlas',
+    geminiVoiceName: 'Alnilam',
     stylePrompt: 'تحدث باللهجة الجزائرية الأصيلة بنبرة رجولية قوية ومتزنة تناسب التاريخ والمغامرات.',
     avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت جزائري قوي وراسخ بنبرة Atlas المتينة، مناسب لكتب التاريخ والمغامرة',
+    description: 'صوت جزائري قوي وراسخ بنبرة Alnilam المتينة، مناسب لكتب التاريخ والمغامرة',
     recommendedFor: 'كتب التاريخ والبطولات والكتب العامة',
     sampleText: 'السلام عليكم وخاوتنا كاملين. حولوا كتبكم لصوت بجودة عالية واستمتعوا بالقراءة في أي وقت.',
     pitch: 1.0,
@@ -236,13 +236,13 @@ export const VOICES: Voice[] = [
   },
   {
     id: 'sarah_dz',
-    name: 'سارة (الجزائر) - Lyra',
+    name: 'سارة (الجزائر) - Autonoe',
     gender: 'female',
     dialectId: 'dz',
-    geminiVoiceName: 'Lyra',
+    geminiVoiceName: 'Autonoe',
     stylePrompt: 'تحدثي باللهجة الجزائرية العصرية بنبرة هادئة ورقيقة وسلسة الفهم.',
     avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت جزائري رقيق وواضح بنبرة Lyra الحنونة، مثالي للقصص والتوعية',
+    description: 'صوت جزائري رقيق وواضح بنبرة Autonoe الحنونة، مثالي للقصص والتوعية',
     recommendedFor: 'الروايات المعاصرة وكتب تطوير الذات',
     sampleText: 'مرحباً بيكم كامل! استمعوا لأحسن الكتب بالصوت الجزائري المريح واستمتعوا بتجربة فريدة.',
     pitch: 1.0,
@@ -250,16 +250,16 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 8. التونسية - Orion & Callisto
+  // 8. التونسية
   {
     id: 'iyas_tn',
-    name: 'إياس (تونس) - Orion',
+    name: 'إياس (تونس) - Achird',
     gender: 'male',
     dialectId: 'tn',
-    geminiVoiceName: 'Orion',
+    geminiVoiceName: 'Achird',
     stylePrompt: 'تحدث باللهجة التونسية السلسة والواضحة بنبرة مشوقة ومثقفة تناسب الروايات.',
     avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت تونسي سينمائي بنبرة Orion الساحرة، ممتاز للكتب الفكرية والروايات',
+    description: 'صوت تونسي سينمائي بنبرة Achird الساحرة، ممتاز للكتب الفكرية والروايات',
     recommendedFor: 'الروايات والكتب الثقافية',
     sampleText: 'عسلامة ومرحبا بيكم. تجربة صوتية استثنائية تحول كتبكم إلى رفقاء يوميين في رحلاتكم.',
     pitch: 1.0,
@@ -268,13 +268,13 @@ export const VOICES: Voice[] = [
   },
   {
     id: 'rim_tn',
-    name: 'ريم (تونس) - Callisto',
+    name: 'ريم (تونس) - Callirrhoe',
     gender: 'female',
     dialectId: 'tn',
-    geminiVoiceName: 'Callisto',
+    geminiVoiceName: 'Callirrhoe',
     stylePrompt: 'تحدثي باللهجة التونسية المهذبة والجميلة بنبرة ناعمة وواضحة تناسب كل المجالات.',
     avatar: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت تونسي أنثوي مهذب بنبرة Callisto الأنيقة، مثالي للقصص والكتب التربوية',
+    description: 'صوت تونسي أنثوي مهذب بنبرة Callirrhoe الأنيقة، مثالي للقصص والكتب التربوية',
     recommendedFor: 'الكتب التربوية والقصص الإنسانية',
     sampleText: 'أهلاً وسهلاً بالجميع، نحول نصوصكم إلى صوت بجودة استوديو رائعة وواضحة.',
     pitch: 1.0,
@@ -282,16 +282,16 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 9. العراقية - Titan & Echo
+  // 9. العراقية
   {
     id: 'rayan_iq',
-    name: 'ريان (العراق) - Titan',
+    name: 'ريان (العراق) - Algenib',
     gender: 'male',
     dialectId: 'iq',
-    geminiVoiceName: 'Titan',
+    geminiVoiceName: 'Algenib',
     stylePrompt: 'تحدث باللهجة العراقية البغدادية الأصيلة بنبرة شجية وعميقة مليئة بالإحساس.',
     avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت عراقي عميق ومؤثر بنبرة Titan الملحمية، رائع للكتب التاريخية والتراثية',
+    description: 'صوت عراقي عميق ومؤثر بنبرة Algenib الملحمية، رائع للكتب التاريخية والتراثية',
     recommendedFor: 'التاريخ والأدب والروايات الملحمية',
     sampleText: 'يا هلا وكل الهلا بيكم. استمعوا لأروع الكتب بصوت بغدادي دافئ يروي لكم حكايات المعرفة.',
     pitch: 1.0,
@@ -300,13 +300,13 @@ export const VOICES: Voice[] = [
   },
   {
     id: 'shahd_iq',
-    name: 'شهد (العراق) - Echo',
+    name: 'شهد (العراق) - Laomedeia',
     gender: 'female',
     dialectId: 'iq',
-    geminiVoiceName: 'Echo',
+    geminiVoiceName: 'Laomedeia',
     stylePrompt: 'تحدثي باللهجة العراقية الهادئة بنبرة رصينة وواضحة تناسب القراءة الصوتية المعاصرة.',
     avatar: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت عراقي معاصر وواضح بنبرة Echo المتنوعة، مثالي للمقالات والكتب العلمية',
+    description: 'صوت عراقي معاصر وواضح بنبرة Laomedeia المتنوعة، مثالي للمقالات والكتب العلمية',
     recommendedFor: 'المقالات والكتب الأكاديمية والقصص',
     sampleText: 'مرحباً بالجميع. نسعد بتقديم تجربة استماع حديثة ومميزة لكافة كتبكم ونصوصكم.',
     pitch: 1.0,
@@ -314,16 +314,16 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 10. الأردنية - Vale & Harper
+  // 10. الأردنية
   {
     id: 'mazen_jo',
-    name: 'مازن (الأردن) - Vale',
+    name: 'مازن (الأردن) - Umbriel',
     gender: 'male',
     dialectId: 'jo',
-    geminiVoiceName: 'Vale',
+    geminiVoiceName: 'Umbriel',
     stylePrompt: 'تحدث باللهجة الأردنية الواضحة بنبرة هادئة ورزينة وإلقاء مريح جداً.',
     avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت أردني رزين ومتزن بنبرة Vale الهادئة، مناسب للكتب التنموية والفكرية',
+    description: 'صوت أردني رزين ومتزن بنبرة Umbriel الهادئة، مناسب للكتب التنموية والفكرية',
     recommendedFor: 'كتب تطوير الذات والفكر العام',
     sampleText: 'أهلاً ومرحباً بكم. نضع بين أيديكم أفضل تجربة لتحويل النصوص إلى صوت فائق الوضوح.',
     pitch: 1.0,
@@ -332,13 +332,13 @@ export const VOICES: Voice[] = [
   },
   {
     id: 'nour_jo',
-    name: 'نور (الأردن) - Harper',
+    name: 'نور (الأردن) - Vindemiatrix',
     gender: 'female',
     dialectId: 'jo',
-    geminiVoiceName: 'Harper',
+    geminiVoiceName: 'Vindemiatrix',
     stylePrompt: 'تحدثي باللهجة الأردنية العذبة بنبرة مشرقة وودودة تناسب كل فئات القراء.',
     avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت أردني ودود ومشرق بنبرة Harper الحيوية، ممتاز للروايات والكتب الشبابية',
+    description: 'صوت أردني ودود ومشرق بنبرة Vindemiatrix الحيوية، ممتاز للروايات والكتب الشبابية',
     recommendedFor: 'الروايات والكتب التعليمية',
     sampleText: 'مرحباً بالجميع! استمعوا إلى كتبكم المفضلة بكل سهولة أينما كنتم.',
     pitch: 1.0,
@@ -346,16 +346,16 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 11. العمانية - Sol & Luna
+  // 11. العمانية
   {
     id: 'badr_om',
-    name: 'بدر (عُمان) - Sol',
+    name: 'بدر (عُمان) - Schedar',
     gender: 'male',
     dialectId: 'om',
-    geminiVoiceName: 'Sol',
+    geminiVoiceName: 'Schedar',
     stylePrompt: 'تحدث باللهجة العمانية الخليجية الهادئة بنبرة وقورة ومطمئنة.',
     avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت عماني دافئ ومطمئن بنبرة Sol الصافية، مثالي للكتب التراثية والتأملية',
+    description: 'صوت عماني دافئ ومطمئن بنبرة Schedar الصافية، مثالي للكتب التراثية والتأملية',
     recommendedFor: 'كتب التراث والتأمل والأدب',
     sampleText: 'مرحباً بكم في رحاب المعرفة الصوتية. استمعوا لكتبكم بنبرة مريحة وهادئة.',
     pitch: 1.0,
@@ -364,13 +364,13 @@ export const VOICES: Voice[] = [
   },
   {
     id: 'hala_om',
-    name: 'هلا (عُمان) - Luna',
+    name: 'هلا (عُمان) - Achernar',
     gender: 'female',
     dialectId: 'om',
-    geminiVoiceName: 'Luna',
+    geminiVoiceName: 'Achernar',
     stylePrompt: 'تحدثي باللهجة العمانية الأصيلة بنبرة حالمة وسرد قصصي رائع.',
     avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت عماني شجي بنبرة Luna الحالمة، الخيار الأمثل للحكايات والروايات التاريخية',
+    description: 'صوت عماني شجي بنبرة Achernar الحالمة، الخيار الأمثل للحكايات والروايات التاريخية',
     recommendedFor: 'القصص والروايات التاريخية',
     sampleText: 'أهلاً بكم معنا، ننقل لكم نصوص الكتب بصوت دافئ يروي كل تفصيل باهتمام.',
     pitch: 1.0,
@@ -378,16 +378,16 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 12. الكويتية - Hermes & Nova
+  // 12. الكويتية
   {
     id: 'samer_kw',
-    name: 'سامر (الكويت) - Hermes',
+    name: 'سامر (الكويت) - Zubenelgenubi',
     gender: 'male',
     dialectId: 'kw',
-    geminiVoiceName: 'Hermes',
+    geminiVoiceName: 'Zubenelgenubi',
     stylePrompt: 'تحدث باللهجة الكويتية الحيوية بنبرة سريعة البديهة وواضحة تناسب عالم الأعمال والأخبار.',
     avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت كويتي ديناميكي واحترافي بنبرة Hermes السريعة، مثالي للملخصات وكتب الأعمال',
+    description: 'صوت كويتي ديناميكي واحترافي بنبرة Zubenelgenubi السريعة، مثالي للملخصات وكتب الأعمال',
     recommendedFor: 'كتب ريادة الأعمال والإدارة والاقتصاد',
     sampleText: 'يا هلا وغلا! استمعوا لأحدث ملخصات الكتب بأسلوب سريع ومباشر يختصر عليكم الوقت.',
     pitch: 1.0,
@@ -396,13 +396,13 @@ export const VOICES: Voice[] = [
   },
   {
     id: 'asmaa_kw',
-    name: 'أسماء (الكويت) - Nova',
+    name: 'أسماء (الكويت) - Pulcherrima',
     gender: 'female',
     dialectId: 'kw',
-    geminiVoiceName: 'Nova',
+    geminiVoiceName: 'Pulcherrima',
     stylePrompt: 'تحدثي باللهجة الكويتية الأنيقة بنبرة محفزة وشغوفة بالمعرفة.',
     avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت كويتي أنيق ومحفز بنبرة Nova المتألقة، ممتاز للكتب العامة والتنمية البشرية',
+    description: 'صوت كويتي أنيق ومحفز بنبرة Pulcherrima المتألقة، ممتاز للكتب العامة والتنمية البشرية',
     recommendedFor: 'كتب التحفيز والتنمية الشخصية',
     sampleText: 'حياكم الله! حولوا كتبكم الصوتية الآن واستفيدوا من كل دقيقة في يومكم.',
     pitch: 1.0,
@@ -410,16 +410,16 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 13. القطرية - Apollo & Stella
+  // 13. القطرية
   {
     id: 'hadi_qa',
-    name: 'هادي (قطر) - Apollo',
+    name: 'هادي (قطر) - Sadachbia',
     gender: 'male',
     dialectId: 'qa',
-    geminiVoiceName: 'Apollo',
+    geminiVoiceName: 'Sadachbia',
     stylePrompt: 'تحدث باللهجة القطرية الهادئة بنبرة علمية ورصينة تليق بالكتب الأكاديمية.',
     avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت قطري رصين بنبرة Apollo العلمية والوقورة، ممتاز للأبحاث والدراسات',
+    description: 'صوت قطري رصين بنبرة Sadachbia العلمية والوقورة، ممتاز للأبحاث والدراسات',
     recommendedFor: 'الأبحاث والكتب الأكاديمية والدراسات',
     sampleText: 'مرحباً بالجميع. نقدم لكم قراءة صوتية دقيقة تراعي أصول اللغة وفصاحة النطق.',
     pitch: 1.0,
@@ -428,13 +428,13 @@ export const VOICES: Voice[] = [
   },
   {
     id: 'razan_qa',
-    name: 'رزان (قطر) - Stella',
+    name: 'رزان (قطر) - Gacrux',
     gender: 'female',
     dialectId: 'qa',
-    geminiVoiceName: 'Stella',
+    geminiVoiceName: 'Gacrux',
     stylePrompt: 'تحدثي باللهجة القطرية العصرية بنبرة جذابة وتأثير صوتي رفيع المستوى.',
     avatar: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت قطري جذاب ومتقن بنبرة Stella الموسيقية، رائع للإعلام والكتب المتخصصة',
+    description: 'صوت قطري جذاب ومتقن بنبرة Gacrux الموسيقية، رائع للإعلام والكتب المتخصصة',
     recommendedFor: 'الإعلام والروايات الحديثة',
     sampleText: 'أهلاً بكم في عالم الكتب الصوتية المتطورة بجودة تنافس أحدث استوديوهات الصوت.',
     pitch: 1.0,
@@ -442,16 +442,16 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 14. السودانية - Helios & Eclipse
+  // 14. السودانية
   {
     id: 'waleed_sd',
-    name: 'وليد (السودان) - Helios',
+    name: 'وليد (السودان) - Enceladus',
     gender: 'male',
     dialectId: 'sd',
-    geminiVoiceName: 'Helios',
+    geminiVoiceName: 'Enceladus',
     stylePrompt: 'تحدث باللهجة السودانية الحبيبة بنبرة دافئة وطيبة تفيض بالأصالة والمحبة.',
     avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت سوداني أصيل وودود بنبرة Helios المشعة، مناسب للقصص الإنسانية وكتب المجتمع',
+    description: 'صوت سوداني أصيل وودود بنبرة Enceladus المشعة، مناسب للقصص الإنسانية وكتب المجتمع',
     recommendedFor: 'القصص الاجتماعية والتراثية',
     sampleText: 'حبابكم عشرة بلا كشرة! استمعوا لكتبكم المفضلة بصوت سوداني طيب وقريب للوجدان.',
     pitch: 1.0,
@@ -460,13 +460,13 @@ export const VOICES: Voice[] = [
   },
   {
     id: 'mayar_sd',
-    name: 'ميار (السودان) - Eclipse',
+    name: 'ميار (السودان) - Sulafat',
     gender: 'female',
     dialectId: 'sd',
-    geminiVoiceName: 'Eclipse',
+    geminiVoiceName: 'Sulafat',
     stylePrompt: 'تحدثي باللهجة السودانية الرقيقة بنبرة سردية هادئة وجذابة للمستمع.',
     avatar: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت سوداني شجي بنبرة Eclipse الدرامية، ممتاز للروايات الأدبية والقصائد',
+    description: 'صوت سوداني شجي بنبرة Sulafat الدرامية، ممتاز للروايات الأدبية والقصائد',
     recommendedFor: 'الروايات والخواطر والشعر والأدب',
     sampleText: 'مرحباً بيكم في منصتنا الصوتية، نتمنى لكم تجربة استماع ممتعة ومفيدة.',
     pitch: 1.0,
@@ -474,16 +474,16 @@ export const VOICES: Voice[] = [
     isPremium: true,
   },
 
-  // 15. أصوات خاصة إضافية للفصحى الوثائقية والأدبية - Aura & Castor (إتمام الـ 30 صوتاً)
+  // 15. أصوات خاصة إضافية للفصحى الوثائقية والأدبية (إتمام الـ 30 صوتاً)
   {
     id: 'jood_lit',
-    name: 'جود (الأدب العربي) - Aura',
-    gender: 'female',
+    name: 'جود (الأدب العربي) - Rasalgethi',
+    gender: 'male',
     dialectId: 'msa',
-    geminiVoiceName: 'Aura',
-    stylePrompt: 'اقرئي باللغة العربية الفصحى الأدبية بنبرة تأملية شديدة النقاء والهدوء تناسب الروايات الفلسفية.',
-    avatar: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت نسائي تأملي وفصيح بنبرة Aura الهادئة، مثالي للروايات الفلسفية والشعر والخواطر',
+    geminiVoiceName: 'Rasalgethi',
+    stylePrompt: 'اقرأ باللغة العربية الفصحى الأدبية بنبرة تأملية شديدة النقاء والهدوء تناسب الروايات الفلسفية.',
+    avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80',
+    description: 'صوت رجالي تأملي وفصيح بنبرة Rasalgethi الهادئة، مثالي للروايات الفلسفية والشعر والخواطر',
     recommendedFor: 'الأدب والفلسفة والشعر والخواطر الوجدانية',
     sampleText: 'بين سطور الحكمة تنساب المعاني العميقة لتلامس الفكر والروح، استمتعوا بالإلقاء الهادئ.',
     pitch: 1.0,
@@ -492,13 +492,13 @@ export const VOICES: Voice[] = [
   },
   {
     id: 'suhaib_doc',
-    name: 'صهيب (الوثائقيات) - Castor',
+    name: 'صهيب (الوثائقيات) - Sadaltager',
     gender: 'male',
     dialectId: 'msa',
-    geminiVoiceName: 'Castor',
+    geminiVoiceName: 'Sadaltager',
     stylePrompt: 'اقرأ باللغة العربية الفصحى بنبرة وثائقية مشوقة ومعلوماتية دقيقة كالمعلقين المحترفين في ناشيونال جيوغرافيك.',
     avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    description: 'صوت وثائقي علمي رصين بنبرة Castor الاستكشافية، الأمثل للكتب العلمية والوثائقية والاستكشاف',
+    description: 'صوت وثائقي علمي رصين بنبرة Sadaltager الاستكشافية، الأمثل للكتب العلمية والوثائقية والاستكشاف',
     recommendedFor: 'الكتب العلمية والفيزياء والتاريخ الطبيعي والوثائقيات',
     sampleText: 'في أعماق الكون وتاريخ الحضارات، تبقى المعرفة هي الشعلة الخالدة. أهلاً بكم في هذا الاستكشاف الصوتي.',
     pitch: 1.0,

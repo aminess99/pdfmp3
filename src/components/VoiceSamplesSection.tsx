@@ -22,17 +22,8 @@ export const VoiceSamplesSection: React.FC<VoiceSamplesSectionProps> = ({ availa
       audioEngine.stop();
       setPlayingVoiceId(null);
     } else {
-      audioEngine.stop();
       setPlayingVoiceId(voice.id);
-
-      audioEngine.speak(
-        voice.sampleText,
-        voice,
-        { id: 'normal', name: 'عادي', description: '', icon: '' },
-        1.0,
-        undefined,
-        () => setPlayingVoiceId(null)
-      );
+      audioEngine.playVoicePreview(voice, () => setPlayingVoiceId(null));
     }
   };
 
