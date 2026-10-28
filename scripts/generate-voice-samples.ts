@@ -40,7 +40,7 @@ async function synthesize(text: string, voiceName: string, apiKey: string): Prom
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.APP_URL || 'https://pdfmp3.onrender.com',
+      'HTTP-Referer': process.env.APP_URL || 'https://hakawatiai.com',
       'X-Title': 'PDF to Audio Arabic Studio',
     },
     // Same request shape as the server (Gemini TTS on OpenRouter returns raw 24kHz PCM)

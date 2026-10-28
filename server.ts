@@ -18,6 +18,16 @@ app.use(express.json({ limit: "50mb" }));
 // Render sits behind a proxy: trust it so req.ip is the visitor's IP
 app.set("trust proxy", 1);
 
+// Once the custom domain works, send visitors and search engines from the old
+// *.onrender.com address to it (enable with REDIRECT_TO_DOMAIN=on). GET/HEAD only,
+// so in-flight API POSTs from an open tab are not broken.
+app.use((req, res, next) => {
+  if (process.env.REDIRECT_TO_DOMAIN !== "on" || !process.env.APP_URL) return next();
+  if (!req.hostname.endsWith(".onrender.com")) return next();
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  res.redirect(301, process.env.APP_URL.replace(/\/+$/, "") + req.originalUrl);
+});
+
 // Simple in-memory per-IP rate limit on the paid AI / TTS endpoints, so a
 // single visitor or bot cannot drain the OpenRouter / Gemini credit.
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -109,7 +119,7 @@ async function callOpenRouter(
         headers: {
           "Authorization": `Bearer ${openRouterKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": process.env.APP_URL || "https://pdfmp3.onrender.com",
+          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
           "X-Title": "Hakawati AI",
         },
         body: JSON.stringify({
@@ -853,7 +863,7 @@ async function synthesizeWithOpenRouterGeminiTts(
         headers: {
           Authorization: `Bearer ${openRouterKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": process.env.APP_URL || "https://pdfmp3.onrender.com",
+          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
           "X-Title": "Hakawati AI",
         },
         body: JSON.stringify({
@@ -1626,7 +1636,7 @@ app.post("/api/ai/generate-cover", async (req, res) => {
               headers: {
                 "Authorization": `Bearer ${openRouterKey}`,
                 "Content-Type": "application/json",
-                "HTTP-Referer": process.env.APP_URL || "https://pdfmp3.onrender.com",
+                "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
                 "X-Title": "Hakawati AI",
               },
               body: JSON.stringify({
@@ -1800,7 +1810,7 @@ ${JSON.stringify(history.slice(-4))}
 
 // ---- SEO landing pages: serve index.html with page-specific meta tags, JSON-LD
 // and pre-rendered content so crawlers see each page without running JavaScript.
-const SITE_URL = (process.env.APP_URL || "https://pdfmp3.onrender.com").replace(/\/+$/, "");
+const SITE_URL = (process.env.APP_URL || "https://hakawatiai.com").replace(/\/+$/, "");
 
 function escapeHtml(value: string): string {
   return value

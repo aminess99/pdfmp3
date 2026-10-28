@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /api/
 
-Sitemap: https://pdfmp3.onrender.com/sitemap.xml
+Sitemap: https://hakawatiai.com/sitemap.xml
