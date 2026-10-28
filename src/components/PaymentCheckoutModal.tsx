@@ -53,26 +53,23 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
 
   if (!PAYMENTS_ENABLED) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in font-['Cairo',sans-serif]" dir="rtl" onClick={onClose}>
-        <div className="relative w-full max-w-md bg-[#0c1220] border border-blue-500/40 rounded-3xl shadow-2xl p-8 text-center text-white space-y-4" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={onClose}
-            className="absolute top-4 left-4 p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-          >
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/85 font-body" dir="rtl" onClick={onClose}>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pay-title"
+          onClick={(e) => e.stopPropagation()}
+          className="relative w-full max-w-[440px] bg-card border border-line rounded-[20px] p-7 flex flex-col gap-4 text-slate-200"
+        >
+          <button type="button" onClick={onClose} aria-label="إغلاق" className="absolute top-4 left-4 w-11 h-11 rounded-full text-slate-400 hover:text-white hover:bg-raised flex items-center justify-center cursor-pointer">
             <X className="w-5 h-5" />
           </button>
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-blue-600/20 border border-blue-500/40 text-cyan-400 flex items-center justify-center">
-            <Clock className="w-8 h-8" />
-          </div>
-          <h3 className="text-xl font-black font-['Tajawal']">الدفع الإلكتروني قريباً</h3>
-          <p className="text-sm text-slate-300 leading-relaxed">
-            نعمل على تفعيل الدفع الآمن لـ <span className="font-bold text-white">{plan.name}</span>.
-            يمكنك الاستمرار في استخدام الدقائق المجانية حالياً.
+          <Clock className="w-8 h-8 text-accent" aria-hidden="true" />
+          <h2 id="pay-title" className="font-display font-extrabold text-2xl text-white">الدفع الإلكتروني قريباً</h2>
+          <p className="text-slate-400 leading-relaxed">
+            نعمل على تفعيل الدفع الآمن لـ <strong className="text-white">{plan.name}</strong> ({plan.minutes.toLocaleString('en-US')} دقيقة). حتى ذلك الحين استمتع بدقائقك المجانية.
           </p>
-          <button
-            onClick={onClose}
-            className="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 font-bold transition-colors"
-          >
+          <button type="button" onClick={onClose} className="min-h-12 rounded-xl bg-brand hover:bg-indigo-500 text-white font-bold cursor-pointer">
             حسناً
           </button>
         </div>

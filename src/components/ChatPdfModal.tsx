@@ -40,7 +40,7 @@ export const ChatPdfModal: React.FC<ChatPdfModalProps> = ({
     {
       id: 'welcome',
       sender: 'assistant',
-      text: `مرحباً بك! أنا مساعدك الذكي لكتاب "${job?.fileName || 'كتابك الصوتي'}". يمكنك سؤالي عن أي فكرة، طلب تلخيص فصل معين، أو استخراج الدروس والعبر الرئيسية وسأجيبك فوراً!`,
+      text: 'اسألني عن أي فكرة في هذا الكتاب، أو اطلب تلخيص فصل، أو استخراج أهم الدروس.',
       timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -152,160 +152,87 @@ export const ChatPdfModal: React.FC<ChatPdfModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in font-['Cairo',sans-serif]" dir="rtl">
-      <div className="relative w-full max-w-2xl bg-[#0c1220] border border-blue-500/40 rounded-3xl shadow-2xl overflow-hidden text-white flex flex-col h-[85vh] sm:h-[600px]">
-        
-        {/* Header */}
-        <div className="p-4 sm:p-5 bg-gradient-to-r from-blue-950 via-indigo-950 to-blue-950 border-b border-blue-900/40 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-600/30 shrink-0">
-              <MessageSquare className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base sm:text-lg font-black text-white font-['Tajawal']">
-                  تحدث واسأل كتابك (Chat With PDF)
-                </h3>
-                <span className="px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-500/40 text-cyan-300 text-[10px] font-bold">
-                  Gemini 3.8
-                </span>
-              </div>
-              <p className="text-xs text-slate-300 truncate max-w-[280px] sm:max-w-md">
-                الكتاب: {job.fileName}
-              </p>
-            </div>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 font-body" dir="rtl">
+      <div role="dialog" aria-modal="true" aria-labelledby="chat-title" className="w-full max-w-2xl h-[85dvh] sm:h-[620px] bg-card border border-line rounded-[20px] overflow-hidden flex flex-col text-slate-200">
+        <div className="px-5 py-4 border-b border-line flex items-center justify-between gap-3 shrink-0">
+          <div className="min-w-0">
+            <h2 id="chat-title" className="font-display font-extrabold text-xl text-white">اسأل الكتاب</h2>
+            <p className="text-sm text-slate-400 truncate">{job.fileName}</p>
           </div>
-
           <button
+            type="button"
             onClick={() => {
               audioEngine.stop();
               onClose();
             }}
-            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+            aria-label="إغلاق"
+            className="w-11 h-11 rounded-full text-slate-400 hover:text-white hover:bg-raised flex items-center justify-center cursor-pointer shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Messages List Area */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col gap-4" aria-live="polite">
           {messages.map((msg) => {
             const isUser = msg.sender === 'user';
             const isSpeaking = speakingMsgId === msg.id;
-
             return (
-              <div
-                key={msg.id}
-                className={`flex items-start gap-2.5 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
-              >
-                {/* Avatar Icon */}
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-xs font-bold ${
-                  isUser 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gradient-to-br from-indigo-600 to-purple-600 text-cyan-300'
-                }`}>
-                  {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+              <div key={msg.id} className={`max-w-[85%] flex flex-col gap-1.5 ${isUser ? 'self-start' : 'self-end'}`}>
+                <div className={`px-4 py-3 rounded-[14px] text-[15px] leading-relaxed whitespace-pre-wrap ${isUser ? 'bg-brand-deep text-white' : 'bg-ink border border-line text-slate-200'}`}>
+                  {msg.text}
                 </div>
-
-                {/* Bubble */}
-                <div className={`max-w-[82%] sm:max-w-[75%] p-3.5 sm:p-4 rounded-2xl text-xs sm:text-sm leading-relaxed space-y-2 ${
-                  isUser
-                    ? 'bg-blue-600 text-white rounded-tr-none shadow-md'
-                    : 'bg-[#121a2d] border border-blue-900/50 text-slate-200 rounded-tl-none shadow-md'
-                }`}>
-                  <div className="whitespace-pre-wrap">{msg.text}</div>
-                  
-                  <div className={`flex items-center justify-between pt-1 border-t ${
-                    isUser ? 'border-blue-500/40 text-blue-200' : 'border-slate-800 text-slate-400'
-                  } text-[10px]`}>
-                    <span>{msg.timestamp}</span>
-
-                    {!isUser && (
-                      <button
-                        onClick={() => handleSpeakMessage(msg)}
-                        className={`px-2 py-0.5 rounded-lg border text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer ${
-                          isSpeaking
-                            ? 'bg-rose-600/30 text-rose-300 border-rose-500/50 animate-pulse'
-                            : 'bg-slate-800/80 hover:bg-slate-700 text-cyan-300 border-slate-700'
-                        }`}
-                        title="استمع للإجابة بصوت القارئ"
-                      >
-                        {isSpeaking ? (
-                          <>
-                            <Square className="w-3 h-3 fill-current" />
-                            <span>إيقاف الصوت</span>
-                          </>
-                        ) : (
-                          <>
-                            <Volume2 className="w-3 h-3" />
-                            <span>نطق الإجابة 🔊</span>
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </div>
-                </div>
+                {!isUser && msg.id !== 'welcome' && (
+                  <button
+                    type="button"
+                    onClick={() => handleSpeakMessage(msg)}
+                    className="self-end flex items-center gap-1.5 min-h-9 px-2.5 rounded-lg text-[13px] text-brand-soft hover:bg-raised cursor-pointer"
+                  >
+                    {isSpeaking ? <Square className="w-3.5 h-3.5 fill-current" /> : <Volume2 className="w-3.5 h-3.5" />}
+                    {isSpeaking ? 'إيقاف' : 'استمع للإجابة'}
+                  </button>
+                )}
               </div>
             );
           })}
-
           {isLoading && (
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-cyan-300">
-                <Bot className="w-4 h-4" />
-              </div>
-              <div className="p-3.5 rounded-2xl bg-[#121a2d] border border-blue-900/50 text-xs text-slate-300 flex items-center gap-2">
-                <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
-                <span>المساعد يقرأ صفحات الكتاب ويصيغ الإجابة...</span>
-              </div>
+            <div className="self-end flex items-center gap-2 px-4 py-3 rounded-[14px] bg-ink border border-line text-sm text-slate-400">
+              <Loader2 className="w-4 h-4 animate-spin text-accent" /> يقرأ الكتاب ويصيغ الإجابة...
             </div>
           )}
-
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Quick Suggestion Pills (if few messages) */}
         {messages.length <= 2 && (
-          <div className="px-4 py-2 bg-[#090e1a] border-t border-slate-800/80 flex flex-wrap gap-2 shrink-0">
+          <div className="px-4 py-3 border-t border-line flex flex-wrap gap-2 shrink-0">
             {suggestions.map((s, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleSendMessage(s)}
-                className="px-3 py-1.5 rounded-xl bg-[#121c30] hover:bg-[#1a2742] border border-blue-900/40 text-[11px] text-cyan-300 transition-all text-right cursor-pointer"
-              >
-                💡 {s}
+              <button key={idx} type="button" onClick={() => handleSendMessage(s)} className="min-h-10 px-3.5 rounded-full border border-line text-[13px] text-slate-300 hover:text-white hover:border-line-strong text-right cursor-pointer">
+                {s}
               </button>
             ))}
           </div>
         )}
 
-        {/* Input Form Area */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
             handleSendMessage();
           }}
-          className="p-3 sm:p-4 bg-[#090e1a] border-t border-blue-900/40 flex items-center gap-2 shrink-0"
+          className="p-3 sm:p-4 border-t border-line flex items-center gap-2 shrink-0"
         >
+          <label htmlFor="chat-input" className="sr-only">سؤالك عن الكتاب</label>
           <input
+            id="chat-input"
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="اسأل أي سؤال حول محتوى وفصول هذا الكتاب..."
+            placeholder="اسأل أي شيء عن هذا الكتاب..."
             disabled={isLoading}
-            className="flex-1 bg-[#11192e] border border-slate-700/80 rounded-2xl py-3 px-4 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors disabled:opacity-50"
+            className="flex-1 min-h-12 bg-ink border border-line rounded-xl px-4 text-base text-white placeholder-slate-500 focus:outline-none focus:border-brand disabled:opacity-50"
           />
-
-          <button
-            type="submit"
-            disabled={!inputValue.trim() || isLoading}
-            className="px-4 sm:px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 disabled:opacity-40 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-          >
-            <span>إرسال</span>
-            <Send className="w-3.5 h-3.5 rotate-180" />
+          <button type="submit" disabled={!inputValue.trim() || isLoading} className="min-h-12 px-5 rounded-xl bg-brand hover:bg-indigo-500 text-white font-semibold disabled:opacity-40 cursor-pointer flex items-center gap-1.5 shrink-0">
+            إرسال <Send className="w-4 h-4 rotate-180" />
           </button>
         </form>
-
       </div>
     </div>
   );

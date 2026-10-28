@@ -29,7 +29,7 @@ import {
 import { ConversionJob, Voice, AudioStyle, Dialect } from '../types';
 import { audioEngine } from '../lib/audioEngine';
 import { DIALECTS, VOICES, AUDIO_STYLES } from '../data/voices';
-import { cleanBookTitle } from './AudioPlayerDrawer';
+import { cleanBookTitle } from '../lib/bookTitle';
 import { ChatPdfModal } from './ChatPdfModal';
 
 interface StudioViewProps {
@@ -54,7 +54,13 @@ export const StudioView: React.FC<StudioViewProps> = ({
   onRequestAuth,
 }) => {
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
-  const [playbackRate, setPlaybackRate] = useState<number>(1.0);
+  const [playbackRate, setPlaybackRate] = useState<number>(() => {
+    try {
+      return Number(localStorage.getItem('app_default_speed')) || 1.0;
+    } catch {
+      return 1.0;
+    }
+  });
   const [activeSentenceIndex, setActiveSentenceIndex] = useState<number>(0);
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [copied, setCopied] = useState<boolean>(false);
@@ -253,11 +259,20 @@ export const StudioView: React.FC<StudioViewProps> = ({
         } else {
           // Chapter finished -> Auto-advance to next chapter smoothly!
           if (chapters && activeChapterIndex < chapters.length - 1) {
-            if (sleepTimerMinutes === -1) {
+            const autoNext = (() => {
+              try {
+                return localStorage.getItem('app_auto_play_next') !== 'false';
+              } catch {
+                return true;
+              }
+            })();
+            if (sleepTimerMinutes === -1 || !autoNext) {
               audioEngine.pause();
               setIsPlaying(false);
-              setSleepTimerMinutes(null);
-              setSleepTimerRemainingSec(null);
+              if (sleepTimerMinutes === -1) {
+                setSleepTimerMinutes(null);
+                setSleepTimerRemainingSec(null);
+              }
             } else {
               // Seamless Auto Next Chapter
               setActiveChapterIndex((prev) => prev + 1);

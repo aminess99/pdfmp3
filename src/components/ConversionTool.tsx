@@ -68,13 +68,28 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedSampleBook, setSelectedSampleBook] = useState<SampleBook | null>(null);
   const [pendingSampleStart, setPendingSampleStart] = useState(false);
-  const [selectedDialect, setSelectedDialect] = useState<Dialect>(() => DIALECTS.find(d => d.id === initialDialectId) || DIALECTS[0]); // Moroccan Darija by default
+  const [selectedDialect, setSelectedDialect] = useState<Dialect>(() => {
+    let id = initialDialectId;
+    if (!id) {
+      try {
+        id = voicesPool.find((v) => v.id === localStorage.getItem('app_default_voice'))?.dialectId;
+      } catch {}
+    }
+    return DIALECTS.find(d => d.id === id) || DIALECTS[0]; // Moroccan Darija by default
+  });
   
   // Voice Preview State
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
 
   // Choose best initial voice
   const [selectedVoice, setSelectedVoice] = useState<Voice>(() => {
+    // A landing page's dialect wins; otherwise the user's saved default voice
+    if (!initialDialectId) {
+      try {
+        const saved = voicesPool.find((v) => v.id === localStorage.getItem('app_default_voice'));
+        if (saved) return saved;
+      } catch {}
+    }
     return voicesPool.find(v => v.dialectId === (initialDialectId || DIALECTS[0].id)) || 
            voicesPool[0];
   });

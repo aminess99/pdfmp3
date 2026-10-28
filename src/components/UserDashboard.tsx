@@ -32,7 +32,7 @@ import { ConversionJob, Voice } from '../types';
 import { useAuth } from '../lib/AuthContext';
 import { db, collection, query, where, getDocs, deleteDoc, doc } from '../lib/firebase';
 import { ConversionTool } from './ConversionTool';
-import { cleanBookTitle } from './AudioPlayerDrawer';
+import { cleanBookTitle } from '../lib/bookTitle';
 import { UserSettingsModal } from './UserSettingsModal';
 import { AIBookCreator } from './AIBookCreator';
 import { ChatPdfModal } from './ChatPdfModal';

@@ -7,8 +7,6 @@ import { HowItWorks, UseCasesSection } from './components/HowItWorks';
 import { PricingSection } from './components/PricingSection';
 import { FAQSection } from './components/FAQSection';
 import { AuthModals } from './components/AuthModals';
-import { AudioPlayerDrawer } from './components/AudioPlayerDrawer';
-import { AudioLibraryModal } from './components/AudioLibraryModal';
 import { StudioView } from './components/StudioView';
 import { UserDashboard } from './components/UserDashboard';
 import { Footer } from './components/Footer';
@@ -28,7 +26,6 @@ export default function App() {
     isOpen: false,
     mode: 'login',
   });
-  const [libraryOpen, setLibraryOpen] = useState<boolean>(false);
   const [activeJob, setActiveJob] = useState<ConversionJob | null>(null);
   const [activeSection, setActiveSection] = useState<string>('home');
 
@@ -222,14 +219,6 @@ export default function App() {
         />
       )}
 
-      {/* Saved Audio Library Modal */}
-      {libraryOpen && (
-        <AudioLibraryModal
-          isOpen={libraryOpen}
-          onClose={() => setLibraryOpen(false)}
-          onPlayJob={(job) => setActiveJob(job)}
-        />
-      )}
 
       {/* Authentication Dialog Modal */}
       {authModal.isOpen && (
