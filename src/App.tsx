@@ -145,7 +145,7 @@ export default function App() {
   // If User is Authenticated, render App Dashboard directly (no marketing distraction!)
   if (user) {
     return (
-      <div className={`min-h-screen ${darkMode ? 'bg-[#090d16] text-slate-100' : 'bg-slate-900 text-slate-100'} transition-colors duration-300 font-['Cairo',sans-serif]`}>
+      <div className="min-h-screen bg-ink text-slate-100 font-body">
         <UserDashboard
           user={{ name: user.name, email: user.email }}
           isAdmin={isAdmin}
