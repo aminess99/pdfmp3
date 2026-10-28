@@ -1,26 +1,5 @@
 import React, { useState } from 'react';
-import { 
-  Wand2, 
-  BookOpen, 
-  Sparkles, 
-  Layers, 
-  Palette, 
-  FileDown, 
-  Headphones, 
-  CheckCircle2, 
-  Clock, 
-  Users, 
-  Volume2, 
-  ArrowLeft, 
-  ArrowRight,
-  RefreshCw,
-  Eye,
-  AlertCircle,
-  Globe,
-  MessageSquare,
-  Baby,
-  Feather
-} from 'lucide-react';
+import { ArrowRight, BookOpen, Check, FileDown, Headphones, Loader2, RefreshCw, Sparkles, AlertCircle } from 'lucide-react';
 import { GeneratedBookStructure, createProfessionalArabicPdf } from '../lib/bookPdfGenerator';
 import { generateCrispBookCoverPng } from '../lib/bookCoverCanvas';
 import { ConversionJob, Voice } from '../types';
@@ -30,6 +9,46 @@ interface AIBookCreatorProps {
   availableVoices: Voice[];
   onBackToLibrary?: () => void;
 }
+
+const LANGUAGES = [
+  { value: 'ar', label: 'العربية' },
+  { value: 'en', label: 'English' },
+  { value: 'fr', label: 'Français' },
+  { value: 'es', label: 'Español' },
+  { value: 'de', label: 'Deutsch' },
+];
+
+const GENRES = [
+  'قصص أطفال صغار ومغامرات',
+  'تنمية ذاتية وإنتاجية',
+  'ريادة أعمال ومال واستثمار',
+  'أدب ورواية وقصص خيالية',
+  'فكر وتاريخ وفلسفة',
+  'صحة نفسية وتطوير شخصي',
+];
+
+const TONES = ['ملهم وعميق مع أمثلة عملية', 'مسلٍ، حنون، وبسيط للأطفال', 'أكاديمي وبحثي دقيق', 'روائي وسينمائي مشوق'];
+
+const COVER_STYLES = [
+  { value: 'cinematic', label: 'سينمائي' },
+  { value: 'fantasy', label: 'خيالي' },
+  { value: 'minimal', label: 'بسيط عصري' },
+  { value: 'vintage', label: 'كلاسيكي' },
+] as const;
+
+const PAGE_OPTIONS = [10, 15, 25];
+
+// Arabic plural: 3–10 take صفحات, 11+ take صفحة
+const pagesLabel = (n: number) => `${n} ${n >= 3 && n <= 10 ? 'صفحات' : 'صفحة'}`;
+
+const fieldClass =
+  'w-full min-h-12 bg-ink border border-line rounded-[10px] px-3.5 text-[15px] text-white placeholder-slate-500 focus:outline-none focus:border-brand';
+const labelClass = 'text-sm font-semibold text-slate-200';
+
+const chipClass = (active: boolean) =>
+  `min-h-11 px-4 rounded-[10px] text-sm border cursor-pointer ${
+    active ? 'border-brand bg-brand-deep text-white' : 'border-line text-slate-300 hover:text-white hover:border-line-strong'
+  }`;
 
 export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
   onStartAudioJob,
@@ -69,10 +88,10 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
   // Quick Preset Ideas (Including Kids Story, Self-Help, Sci-Fi, Business)
   const presets = [
     {
-      title: 'مغامرة الأرنوب سمسم في الغابة العجيبة 🦄',
+      title: 'مغامرة الأرنوب سمسم في الغابة العجيبة',
       genre: 'قصص أطفال صغار ومغامرات',
       pages: 10,
-      tone: 'مسلٍ، حنون، وبسيط ملائم للأطفال من 3-8 سنوات',
+      tone: 'مسلٍ، حنون، وبسيط للأطفال',
       targetAudience: 'الأطفال الصغار والأمهات والأباء',
       coverStyle: 'fantasy' as const,
       isKids: true,
@@ -82,7 +101,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
       title: 'عادات التركيز الفائق في عصر التشتت',
       genre: 'تنمية ذاتية وإنتاجية',
       pages: 15,
-      tone: 'علمي وعملي مدعوم بأمثلة حية',
+      tone: 'ملهم وعميق مع أمثلة عملية',
       targetAudience: 'الشباب والرواد',
       coverStyle: 'cinematic' as const,
       isKids: false,
@@ -90,9 +109,9 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
     },
     {
       title: 'أسرار بناء المشاريع الناشئة والذكاء المالي',
-      genre: 'ريادة أعمال واستثمار',
+      genre: 'ريادة أعمال ومال واستثمار',
       pages: 20,
-      tone: 'تحفيزي واستراتيجي لرواد الأعمال',
+      tone: 'ملهم وعميق مع أمثلة عملية',
       targetAudience: 'رواد الأعمال والمستثمرون',
       coverStyle: 'minimal' as const,
       isKids: false,
@@ -100,9 +119,9 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
     },
     {
       title: 'رحلة إلى ما وراء النجوم (رواية خيال علمي)',
-      genre: 'أدب وروايات وخيال',
+      genre: 'أدب ورواية وقصص خيالية',
       pages: 12,
-      tone: 'روائي مشوق ومليء بالإثارة والغموض',
+      tone: 'روائي وسينمائي مشوق',
       targetAudience: 'عشاق الروايات الخيالية',
       coverStyle: 'fantasy' as const,
       isKids: false,
@@ -126,7 +145,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
     const activeInput = creationMode === 'freeform_prompt' ? freeformPrompt : topic;
     
     if (!activeInput.trim()) {
-      setErrorMsg('يرجى كتابة فكرة أو برومبت الوصف الخاص بالكتاب للبدء.');
+      setErrorMsg('اكتب فكرة الكتاب أولاً.');
       return;
     }
 
@@ -136,7 +155,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
 
     try {
       // Phase 1: Generating Book Chapters & Deep Content with Selected Language & Mode
-      setGenerationPhase('جاري تحليل البرومبت وصياغة الفصول والمحتوى الذكي بذكاء Gemini 3.8 Flash...');
+      setGenerationPhase('نكتب الفصول والمحتوى...');
       
       const bookRes = await fetch('/api/ai/generate-book', {
         method: 'POST',
@@ -165,8 +184,8 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
       book.coverStyle = coverStyle;
       book.language = language;
 
-      // Phase 2: Generating 8K Realistic AI Book Cover
-      setGenerationPhase('جاري رسم وتصميم غلاف الكتاب الاحترافي بواسطة الذكاء الاصطناعي...');
+      // Phase 2: Generating the book cover
+      setGenerationPhase('نصمم الغلاف...');
       
       let coverImg = '';
       
@@ -211,7 +230,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
 
       setCoverImageUrl(coverImg);
       setGeneratedBook(book);
-      setGenerationPhase('تم تأليف الكتاب وتنسيقه بنجاح! 🎉');
+      setGenerationPhase('اكتمل الكتاب');
       setStep(3);
     } catch (err: any) {
       console.error('Book Generation Error:', err);
@@ -256,7 +275,6 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
   const handleDownloadPdf = async () => {
     if (!generatedBook) return;
     try {
-      setGenerationPhase('جاري تجهيز وتصدير ملف الـ PDF عالي الدقة...');
       const pdfBlob = await createProfessionalArabicPdf(generatedBook);
       const url = URL.createObjectURL(pdfBlob);
       const a = document.createElement('a');
@@ -268,7 +286,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error('Download PDF error:', e);
-      alert('تعذر تنزيل ملف الـ PDF حالياً.');
+      setErrorMsg('تعذر تجهيز ملف PDF، حاول مرة أخرى.');
     }
   };
 
@@ -297,7 +315,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
     const job: ConversionJob = {
       id: `ai-book-${Date.now()}`,
       fileName: `${generatedBook.title}.pdf`,
-      fileSize: '1.8 MB',
+      fileSize: '',
       totalPages: generatedBook.totalPagesTarget || 15,
       processedPages: generatedBook.totalPagesTarget || 15,
       selectedDialect: {
@@ -327,563 +345,307 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
     onStartAudioJob(job);
   };
 
-  return (
-    <div className="space-y-6 font-['Cairo',sans-serif]" dir="rtl">
-      
-      {/* Top Banner & Mode Indicator */}
-      <div className="p-6 rounded-3xl bg-gradient-to-r from-blue-950/90 via-indigo-950/90 to-purple-950/90 border border-blue-500/40 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/40 shrink-0">
-            <Wand2 className="w-6 h-6 animate-pulse" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl sm:text-2xl font-black text-white font-['Tajawal']">
-                مؤلف الكتب الذكي (AI Book Creator)
-              </h2>
-              <span className="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 text-[10px] font-black shadow-md">
-                دعم لغات متعددة + برومبت حر
-              </span>
-            </div>
-            <p className="text-xs sm:text-sm text-slate-300 mt-0.5">
-              حوّل أي برومبت أو فكرة لقصة أطفال، كتاب ريادة أعمال، أو رواية بأي لغة مع غلاف ومحتوى متناسق 100%.
-            </p>
-          </div>
-        </div>
+  const isQuestionnaire = creationMode === 'questionnaire';
+  const coverDone = generationPhase === 'نصمم الغلاف...';
 
+  return (
+    <div className="flex flex-col gap-6 font-body text-slate-200" dir="rtl">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-display font-extrabold text-[28px] text-white">اصنع كتاباً بالذكاء الاصطناعي</h2>
+          <p className="text-slate-400">اكتب فكرة، ونؤلف لك كتاباً كاملاً بغلاف، تحمّله PDF أو تستمع له مباشرة.</p>
+        </div>
         {onBackToLibrary && (
           <button
+            type="button"
             onClick={onBackToLibrary}
-            className="px-4 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all border border-slate-700/60 shrink-0 cursor-pointer"
+            className="min-h-11 px-4 rounded-[10px] border border-line text-slate-300 hover:text-white hover:border-line-strong flex items-center gap-2 cursor-pointer"
           >
-            الرجوع للمكتبة
+            <ArrowRight className="w-4 h-4" />
+            مكتبتي
           </button>
         )}
       </div>
 
-      {/* Step 1: Questionnaire or Freeform Prompt Mode */}
       {step === 1 && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* Main Form Questionnaire / Prompt Mode (8 cols) */}
-          <form onSubmit={handleStartGeneration} className="lg:col-span-8 p-6 sm:p-8 rounded-3xl bg-[#0c1220] border border-blue-900/40 space-y-6 shadow-xl">
-            
-            {/* Mode & Language Bar Header */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
-              
-              {/* Creation Mode Switcher Tabs */}
-              <div className="flex items-center bg-[#070b14] p-1 rounded-2xl border border-blue-900/50">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-5 items-start">
+          <form onSubmit={handleStartGeneration} className="bg-card border border-line rounded-[20px] p-5 sm:p-7 flex flex-col gap-5">
+            <div role="tablist" aria-label="طريقة الإنشاء" className="flex gap-1 p-1 rounded-xl bg-ink self-start">
+              {([
+                ['questionnaire', 'خطوة بخطوة'],
+                ['freeform_prompt', 'وصف حر'],
+              ] as const).map(([mode, label]) => (
                 <button
+                  key={mode}
                   type="button"
-                  onClick={() => setCreationMode('questionnaire')}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    creationMode === 'questionnaire'
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
-                      : 'text-slate-400 hover:text-white'
+                  role="tab"
+                  aria-selected={creationMode === mode}
+                  onClick={() => setCreationMode(mode)}
+                  className={`min-h-11 px-5 rounded-[9px] text-[15px] font-semibold cursor-pointer ${
+                    creationMode === mode ? 'bg-raised text-white' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>الاستبيان الموجه</span>
+                  {label}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setCreationMode('freeform_prompt')}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    creationMode === 'freeform_prompt'
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/30'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <Feather className="w-3.5 h-3.5 text-amber-300" />
-                  <span>كتابة برومبت حر (Prompt Mode)</span>
-                </button>
-              </div>
-
-              {/* Language Selector Dropdown */}
-              <div className="flex items-center gap-2">
-                <Globe className="w-4 h-4 text-cyan-400" />
-                <span className="text-xs font-bold text-slate-300">لغة الكتاب:</span>
-                <select
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
-                  className="bg-slate-900 border border-slate-700 text-xs text-white rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500 font-bold cursor-pointer"
-                >
-                  <option value="ar">🇸🇦 العربية (Arabic)</option>
-                  <option value="en">🇺🇸 الإنجليزية (English)</option>
-                  <option value="fr">🇫🇷 الفرنسية (Français)</option>
-                  <option value="es">🇪🇸 الإسبانية (Español)</option>
-                  <option value="de">🇩🇪 الألمانية (Deutsch)</option>
-                </select>
-              </div>
-
+              ))}
             </div>
 
-            {errorMsg && (
-              <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs font-bold flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
-
-            {/* Mode 1: Freeform Prompt Mode */}
-            {creationMode === 'freeform_prompt' ? (
-              <div className="space-y-4 animate-in fade-in">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-white flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <MessageSquare className="w-4 h-4 text-purple-400" />
-                      <span>اكتب البرومبت أو وصف الكتاب التفصيلي بأسلوبك الحر:</span>
-                    </span>
-                    <span className="text-[10px] text-amber-300 font-bold">ذكاء اصطناعي تكيفي</span>
-                  </label>
-                  <textarea
-                    rows={6}
-                    required
-                    value={freeformPrompt}
-                    onChange={(e) => setFreeformPrompt(e.target.value)}
-                    placeholder="مثال: اكتب لي قصة أطفال ممتعة ومصورة عن أرنوب صغير يكتشف غابة سحرية ويتعلم أهمية الصدق والمشاركة مع الأصدقاء، لغة بسيطة جداً للأطفال من عمر 4 سنوات مع رسوم ملونة وألوان حيوية..."
-                    className="w-full p-4 rounded-2xl bg-[#11192e] border border-purple-900/60 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-colors leading-relaxed"
-                  />
-                  <p className="text-[11px] text-slate-400">
-                    💡 **ملاحظة:** سيتعرف الذكاء الاصطناعي تلقائياً على ما إذا كان الكتاب قصة أطفال أو كتاب أعمال، ويصمم المحتوى والغلاف والغلاف المدمج بدقة متناهية.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-white">اسم المؤلف (اختياري)</label>
-                    <input
-                      type="text"
-                      value={authorName}
-                      onChange={(e) => setAuthorName(e.target.value)}
-                      placeholder="اسمك أو اسم مستعار"
-                      className="w-full p-3 rounded-xl bg-[#11192e] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-white">طراز غلاف الكتاب</label>
-                    <select
-                      value={coverStyle}
-                      onChange={(e) => setCoverStyle(e.target.value as any)}
-                      className="w-full p-3 rounded-xl bg-[#11192e] border border-slate-700 text-xs text-white focus:outline-none focus:border-blue-500"
-                    >
-                      <option value="cinematic">سينمائي/طفولي مبهج (Adaptively Styled)</option>
-                      <option value="fantasy">خيالي ورسومات سحرية (Magical Fantasy)</option>
-                      <option value="minimal">مينيمال عصري (Minimal Modern)</option>
-                      <option value="vintage">كلاسيكي عتيق (Vintage)</option>
-                    </select>
-                  </div>
-                </div>
+            {isQuestionnaire ? (
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="book-topic" className={labelClass}>عن ماذا يتحدث الكتاب؟</label>
+                <textarea
+                  id="book-topic"
+                  rows={3}
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  placeholder="مثال: كيف تبني عادة القراءة اليومية في 30 يوماً"
+                  className={`${fieldClass} py-3 resize-y leading-relaxed`}
+                />
               </div>
             ) : (
-              /* Mode 2: Structured Questionnaire */
-              <div className="space-y-5 animate-in fade-in">
-                
-                {/* Question 1: Topic */}
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-white flex items-center justify-between">
-                    <span>1. ما هو موضوع أو فكرة الكتاب التي تريد تأليفها؟ *</span>
-                    <span className="text-[10px] text-cyan-400 font-bold">مطلوب</span>
-                  </label>
-                  <textarea
-                    rows={3}
-                    required
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                    placeholder="مثال: قصة أطفال عن شجاعة الفرسان، أو كتاب عن استراتيجيات إدارة الوقت للمحترفين..."
-                    className="w-full p-3.5 rounded-2xl bg-[#11192e] border border-slate-700 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-                  />
-                </div>
-
-                {/* Question 2: Title & Author */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-white">2. عنوان الكتاب (اختياري)</label>
-                    <input
-                      type="text"
-                      value={customTitle}
-                      onChange={(e) => setCustomTitle(e.target.value)}
-                      placeholder="اتركه فارغاً ليبتكره AI بذكاء"
-                      className="w-full p-3 rounded-xl bg-[#11192e] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-white">اسم المؤلف</label>
-                    <input
-                      type="text"
-                      value={authorName}
-                      onChange={(e) => setAuthorName(e.target.value)}
-                      placeholder="اسمك أو اسم مستعار"
-                      className="w-full p-3 rounded-xl bg-[#11192e] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Question 3: Genre & Target Pages */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-white">3. تصنيف ونوع الكتاب</label>
-                    <select
-                      value={genre}
-                      onChange={(e) => setGenre(e.target.value)}
-                      className="w-full p-3 rounded-xl bg-[#11192e] border border-slate-700 text-xs text-white focus:outline-none focus:border-blue-500"
-                    >
-                      <option value="قصص أطفال صغار ومغامرات">👶 قصص أطفال صغار ومغامرات</option>
-                      <option value="تنمية ذاتية وإنتاجية">💡 تنمية ذاتية وإنتاجية</option>
-                      <option value="ريادة أعمال ومال واستثمار">🚀 ريادة أعمال ومال واستثمار</option>
-                      <option value="أدب ورواية وقصص خيالية">📖 أدب ورواية وقصص خيالية</option>
-                      <option value="فكر وتاريخ وفلسفة">🏛️ فكر وتاريخ وفلسفة</option>
-                      <option value="صحة نفسية وتطوير شخصي">🌿 صحة نفسية وتطوير شخصي</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-white flex items-center justify-between">
-                      <span>4. حجم الكتاب التقديري (بالصفحات)</span>
-                      <span className="text-cyan-400 font-bold">{targetPages} صفحة</span>
-                    </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[10, 15, 25].map((pages) => (
-                        <button
-                          key={pages}
-                          type="button"
-                          onClick={() => setTargetPages(pages)}
-                          className={`py-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                            targetPages === pages
-                              ? 'bg-blue-600 text-white border-blue-500 shadow-md'
-                              : 'bg-[#11192e] border-slate-800 text-slate-300 hover:text-white'
-                          }`}
-                        >
-                          {pages} صفحة
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Question 5: Tone & Cover Style */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-white">5. نبرة وأسلوب الكتابة</label>
-                    <select
-                      value={tone}
-                      onChange={(e) => setTone(e.target.value)}
-                      className="w-full p-3 rounded-xl bg-[#11192e] border border-slate-700 text-xs text-white focus:outline-none focus:border-blue-500"
-                    >
-                      <option value="مسلٍ، حنون، وبسيط للأطفال">مسلٍ، حنون، وبسيط للأطفال (Kids Mode)</option>
-                      <option value="ملهم وعميق مع أمثلة عملية">ملهم وعميق مع أمثلة عملية</option>
-                      <option value="أكاديمي وبحثي دقيق">أكاديمي وبحثي دقيق</option>
-                      <option value="روائي وسينمائي مشوق">روائي وسينمائي مشوق</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-white flex items-center gap-1.5">
-                      <Palette className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>طراز غلاف الكتاب الفني</span>
-                    </label>
-                    <select
-                      value={coverStyle}
-                      onChange={(e) => setCoverStyle(e.target.value as any)}
-                      className="w-full p-3 rounded-xl bg-[#11192e] border border-slate-700 text-xs text-white focus:outline-none focus:border-blue-500"
-                    >
-                      <option value="cinematic">سينمائي فخم (Cinematic Luxury)</option>
-                      <option value="fantasy">خيالي طفولي/سحري (Magical Fantasy/Kids)</option>
-                      <option value="minimal">مينيمال عصري (Minimal Modern)</option>
-                      <option value="vintage">كلاسيكي عتيق (Vintage Classic)</option>
-                    </select>
-                  </div>
-                </div>
-
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="book-prompt" className={labelClass}>صف الكتاب الذي تريده بأسلوبك</label>
+                <textarea
+                  id="book-prompt"
+                  rows={6}
+                  value={freeformPrompt}
+                  onChange={(e) => setFreeformPrompt(e.target.value)}
+                  placeholder="الموضوع، الجمهور، عدد الفصول، الأسلوب، وأي تفاصيل تهمك..."
+                  className={`${fieldClass} py-3 resize-y leading-relaxed`}
+                />
               </div>
             )}
 
-            {/* Submit Button */}
-            <div className="pt-4 border-t border-slate-800">
-              <button
-                type="submit"
-                className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-black text-sm shadow-xl shadow-indigo-600/40 hover:scale-[1.01] transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Sparkles className="w-5 h-5 text-amber-300 animate-spin" />
-                <span>
-                  {creationMode === 'freeform_prompt' 
-                    ? 'تحويل البرومبت إلى كتاب إلكتروني كامل وغلاف ✨' 
-                    : 'بدء تأليف وصياغة الكتاب الإلكتروني كاملاً ✨'}
-                </span>
-              </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {isQuestionnaire && (
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="book-title" className={labelClass}>العنوان <span className="text-slate-500 font-normal">(اختياري)</span></label>
+                  <input id="book-title" type="text" value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} className={fieldClass} />
+                </div>
+              )}
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="book-author" className={labelClass}>اسم المؤلف</label>
+                <input id="book-author" type="text" value={authorName} onChange={(e) => setAuthorName(e.target.value)} className={fieldClass} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="book-lang" className={labelClass}>لغة الكتاب</label>
+                <select id="book-lang" value={language} onChange={(e) => setLanguage(e.target.value)} className={`${fieldClass} cursor-pointer`}>
+                  {LANGUAGES.map((l) => (
+                    <option key={l.value} value={l.value}>{l.label}</option>
+                  ))}
+                </select>
+              </div>
+              {isQuestionnaire && (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="book-genre" className={labelClass}>التصنيف</label>
+                    <select id="book-genre" value={genre} onChange={(e) => setGenre(e.target.value)} className={`${fieldClass} cursor-pointer`}>
+                      {GENRES.map((g) => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="book-tone" className={labelClass}>الأسلوب</label>
+                    <select id="book-tone" value={tone} onChange={(e) => setTone(e.target.value)} className={`${fieldClass} cursor-pointer`}>
+                      {TONES.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
 
-          </form>
-
-          {/* Sidebar Presets & Adaptive Tips (4 cols) */}
-          <div className="lg:col-span-4 space-y-6">
-            
-            {/* Quick Presets Box */}
-            <div className="p-6 rounded-3xl bg-[#0c1220] border border-blue-900/40 space-y-4 shadow-xl">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-amber-400" />
-                <h4 className="text-sm font-black text-white font-['Tajawal']">نماذج وأمثلة جاهزة للبدء</h4>
+            {isQuestionnaire && (
+              <div className="flex flex-col gap-2">
+                <span id="pages-label" className={labelClass}>الحجم التقريبي</span>
+                <div role="radiogroup" aria-labelledby="pages-label" className="flex flex-wrap gap-2">
+                  {PAGE_OPTIONS.map((pages) => (
+                    <button key={pages} type="button" role="radio" aria-checked={targetPages === pages} onClick={() => setTargetPages(pages)} className={chipClass(targetPages === pages)}>
+                      {pagesLabel(pages)}
+                    </button>
+                  ))}
+                </div>
               </div>
-              
-              <div className="space-y-2.5">
-                {presets.map((preset, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleApplyPreset(preset)}
-                    className={`w-full p-3 rounded-2xl border text-right space-y-1 transition-all group cursor-pointer ${
-                      preset.isKids
-                        ? 'bg-purple-950/40 border-purple-500/40 hover:border-purple-400'
-                        : 'bg-[#11192e] border-slate-800/80 hover:border-blue-500'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors">
-                        {preset.title}
-                      </div>
-                      {preset.isKids && (
-                        <span className="text-[9px] bg-pink-500/20 text-pink-300 px-2 py-0.5 rounded-full font-bold border border-pink-500/40 flex items-center gap-1">
-                          <Baby className="w-3 h-3" /> أطفال
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between text-[10px] text-slate-400">
-                      <span>{preset.genre}</span>
-                      <span className="text-indigo-400 font-bold">{preset.pages} صفحة</span>
-                    </div>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <span id="cover-label" className={labelClass}>طراز الغلاف</span>
+              <div role="radiogroup" aria-labelledby="cover-label" className="flex flex-wrap gap-2">
+                {COVER_STYLES.map((c) => (
+                  <button key={c.value} type="button" role="radio" aria-checked={coverStyle === c.value} onClick={() => setCoverStyle(c.value)} className={chipClass(coverStyle === c.value)}>
+                    {c.label}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Adaptive System Guarantee Box */}
-            <div className="p-5 rounded-3xl bg-gradient-to-br from-indigo-950/60 to-blue-950/60 border border-indigo-500/30 space-y-3">
-              <h4 className="text-xs font-black text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Wand2 className="w-4 h-4 text-cyan-400" />
-                <span>الملاءمة الذكية الشاملة (Adaptive AI)</span>
-              </h4>
-              <ul className="space-y-2 text-xs text-slate-300">
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>**محتوى وغلاف أطفال:** إذا اختيرت قصة طفل، يتم استخدام لغة لطيفة وغلاف 3D Disney/Pixar مبهج.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>**دعم اللغات:** يكتب ويصيغ الكتاب باللغات العربية، الإنجليزية، الفرنسية، الإسبانية أو الألمانية.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>**قياس 6 × 9:** غلاف الكتاب مصمم بأبعاد 6x9 التجاري مع تنسيق PDF محترفي.</span>
-                </li>
-              </ul>
-            </div>
-
-          </div>
-
-        </div>
-      )}
-
-      {/* Step 2: Generation Loading In Progress */}
-      {step === 2 && isGenerating && (
-        <div className="p-12 sm:p-16 rounded-3xl bg-[#0c1220] border border-blue-500/40 text-center space-y-6 shadow-2xl animate-pulse">
-          <div className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-xl shadow-indigo-600/50 animate-bounce">
-            <Wand2 className="w-10 h-10" />
-          </div>
-
-          <div className="space-y-2 max-w-lg mx-auto">
-            <h3 className="text-2xl font-black text-white font-['Tajawal']">
-              جاري تأليف وصياغة كتابك الذكي...
-            </h3>
-            <p className="text-sm text-cyan-300 font-bold">
-              {generationPhase}
-            </p>
-            <p className="text-xs text-slate-400 pt-2">
-              يقوم نموذج Gemini 3.8 Flash مع OpenAI Sunburst ببناء الفصول، صياغة المحتوى الملائم للموضوع، وتوليد الغلاف الفني بمقاس 6x9.
-            </p>
-          </div>
-
-          <div className="w-48 h-2 bg-slate-800 rounded-full mx-auto overflow-hidden">
-            <div className="w-full h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400 animate-indeterminate" />
-          </div>
-        </div>
-      )}
-
-      {/* Step 3: Success Preview & Download/Listen */}
-      {step === 3 && generatedBook && (
-        <div className="space-y-6">
-          
-          {/* Top Congratulations Bar */}
-          <div className="p-6 rounded-3xl bg-gradient-to-r from-emerald-950/80 via-teal-950/80 to-emerald-950/80 border border-emerald-500/40 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                <CheckCircle2 className="w-6 h-6" />
+            {errorMsg && (
+              <div role="alert" className="p-3 rounded-xl bg-rose-950/60 border border-rose-900 text-rose-200 text-sm flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{errorMsg}</span>
               </div>
-              <div>
-                <h3 className="text-lg font-black text-white font-['Tajawal']">تم إنشاء كتابك بنجاح! 🎉</h3>
-                <p className="text-xs text-emerald-300 font-medium">كتابك جاهز الآن للتحميل كـ PDF فاخر أو الاستماع الفوري بصوت القارئ المفضل.</p>
-              </div>
-            </div>
+            )}
 
-            <div className="flex items-center gap-3 w-full sm:w-auto">
+            <button
+              type="submit"
+              disabled={isGenerating}
+              className="min-h-[52px] rounded-xl bg-gradient-to-l from-brand to-indigo-500 hover:to-indigo-400 text-white font-bold text-base flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            >
+              <Sparkles className="w-5 h-5" />
+              ألّف الكتاب
+            </button>
+            <p className="text-[13px] text-slate-500 text-center -mt-2">يستغرق عادةً بين دقيقة ودقيقتين.</p>
+          </form>
+
+          <aside className="bg-card border border-line rounded-[20px] p-5 flex flex-col gap-3">
+            <h3 className="font-display font-bold text-lg text-white">أفكار للبدء</h3>
+            {presets.map((preset) => (
               <button
-                onClick={handleDownloadPdf}
-                className="flex-1 sm:flex-none px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <FileDown className="w-4 h-4" />
-                <span>تحميل كتاب الـ PDF</span>
-              </button>
-
-              <button
-                onClick={handleListenAsAudiobook}
-                className="flex-1 sm:flex-none px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-blue-950/50 flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Headphones className="w-4 h-4" />
-                <span>استمع للكتاب الآن 🎧</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Book Details & Cover Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
-            {/* Left Cover Preview (4 cols) */}
-            <div className="lg:col-span-4 p-6 rounded-3xl bg-[#0c1220] border border-blue-900/40 space-y-4 shadow-xl text-center">
-              <div className="relative aspect-[2/3] max-w-[280px] mx-auto rounded-2xl overflow-hidden shadow-2xl border border-blue-500/30 bg-[#0a0f1d] group">
-                {coverImageUrl ? (
-                  <img src={coverImageUrl} alt={generatedBook.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                ) : (
-                  <div className="w-full h-full bg-[#11192e] flex items-center justify-center text-slate-500">
-                    <BookOpen className="w-16 h-16" />
-                  </div>
-                )}
-                {isRegeneratingCover && (
-                  <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center gap-2 text-cyan-300 text-xs font-bold animate-in fade-in">
-                    <Sparkles className="w-8 h-8 text-amber-300 animate-spin" />
-                    <span>جاري توليد غلاف ذكاء اصطناعي جديد...</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Regenerate AI Cover Button */}
-              <button
+                key={preset.title}
                 type="button"
-                onClick={handleRegenerateAICover}
-                disabled={isRegeneratingCover}
-                className="w-full py-2.5 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-500/50 text-purple-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                onClick={() => handleApplyPreset(preset)}
+                className="text-right p-3.5 rounded-xl border border-line hover:border-brand bg-ink flex flex-col gap-1 cursor-pointer"
               >
-                <Sparkles className="w-4 h-4 text-amber-300" />
-                <span>إعادة رسم وتوليد غلاف جديد 🎨</span>
+                <span className="text-[15px] font-semibold text-white leading-snug">{preset.title}</span>
+                <span className="text-[13px] text-slate-400">{preset.genre} · {pagesLabel(preset.pages)}</span>
               </button>
+            ))}
+          </aside>
+        </div>
+      )}
 
-              <div className="space-y-1">
-                <h4 className="text-base font-black text-white font-['Tajawal']">{generatedBook.title}</h4>
-                <p className="text-xs text-slate-400">تأليف: {generatedBook.author}</p>
-              </div>
+      {step === 2 && isGenerating && (
+        <div role="status" aria-live="polite" className="bg-card border border-line rounded-[20px] p-8 sm:p-12 flex flex-col items-center gap-6 text-center">
+          <Loader2 className="w-10 h-10 text-brand-soft animate-spin" aria-hidden="true" />
+          <div className="flex flex-col gap-1">
+            <h3 className="font-display font-extrabold text-2xl text-white">نؤلف كتابك الآن</h3>
+            <p className="text-slate-400">ابقَ في هذه الصفحة حتى ينتهي.</p>
+          </div>
+          <ol className="flex flex-col gap-3 text-right min-w-[240px]">
+            {[
+              ['كتابة الفصول والمحتوى', !coverDone],
+              ['تصميم الغلاف', coverDone],
+            ].map(([label, active], i) => {
+              const done = i === 0 && coverDone;
+              return (
+                <li key={label as string} className="flex items-center gap-3">
+                  <span
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-sm shrink-0 ${
+                      done ? 'bg-accent/15 text-accent' : active ? 'bg-brand-deep text-brand-soft' : 'bg-raised text-slate-500'
+                    }`}
+                  >
+                    {done ? <Check className="w-4 h-4" /> : active ? <Loader2 className="w-4 h-4 animate-spin" /> : i + 1}
+                  </span>
+                  <span className={done || active ? 'text-white' : 'text-slate-500'}>{label}</span>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
 
-              {/* Voice Selector for Listening */}
-              <div className="p-3.5 rounded-2xl bg-[#11192e] border border-slate-800 text-right space-y-2">
-                <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
-                  <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>صوت الراوي للاستماع المباشر:</span>
-                </label>
-                <select
-                  value={selectedVoice?.id || ''}
-                  onChange={(e) => {
-                    const v = availableVoices.find((x) => x.id === e.target.value);
-                    if (v) setSelectedVoice(v);
-                  }}
-                  className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
-                >
-                  {availableVoices.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name} ({v.gender === 'female' ? 'أنثى' : 'ذكر'})
-                    </option>
-                  ))}
-                </select>
-              </div>
+      {step === 3 && generatedBook && (
+        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-5 items-start">
+          <div className="bg-card border border-line rounded-[20px] p-5 flex flex-col gap-4 lg:sticky lg:top-4">
+            <div className="relative aspect-[2/3] w-full max-w-[240px] mx-auto rounded-xl overflow-hidden border border-line bg-ink">
+              {coverImageUrl ? (
+                <img src={coverImageUrl} alt={`غلاف ${generatedBook.title}`} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-slate-600">
+                  <BookOpen className="w-14 h-14" />
+                </div>
+              )}
+              {isRegeneratingCover && (
+                <div className="absolute inset-0 bg-ink/85 flex flex-col items-center justify-center gap-2 text-sm text-slate-200">
+                  <Loader2 className="w-7 h-7 animate-spin" />
+                  غلاف جديد...
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleRegenerateAICover}
+              disabled={isRegeneratingCover}
+              className="min-h-11 rounded-[10px] border border-line text-slate-300 hover:text-white hover:border-line-strong text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className="w-4 h-4" />
+              غلاف آخر
+            </button>
 
-              <button
-                onClick={() => setStep(1)}
-                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            <div className="flex flex-col gap-1.5 pt-2 border-t border-line">
+              <label htmlFor="narrator" className={labelClass}>صوت الراوي</label>
+              <select
+                id="narrator"
+                value={selectedVoice?.id || ''}
+                onChange={(e) => {
+                  const v = availableVoices.find((x) => x.id === e.target.value);
+                  if (v) setSelectedVoice(v);
+                }}
+                className={`${fieldClass} cursor-pointer`}
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>تأليف كتاب جديد آخر</span>
-              </button>
+                {availableVoices.map((v) => (
+                  <option key={v.id} value={v.id}>{v.name.split(' - ')[0]}</option>
+                ))}
+              </select>
             </div>
 
-            {/* Right Chapters & Content Preview (8 cols) */}
-            <div className="lg:col-span-8 p-6 sm:p-8 rounded-3xl bg-[#0c1220] border border-blue-900/40 space-y-6 shadow-xl max-h-[750px] overflow-y-auto custom-scrollbar">
-              
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-3 py-1 rounded-xl bg-blue-950 border border-blue-500/40 text-cyan-300 text-xs font-bold">
-                    {generatedBook.genre}
-                  </span>
-                  {generatedBook.language && (
-                    <span className="px-2.5 py-1 rounded-xl bg-purple-950 border border-purple-500/40 text-purple-300 text-xs font-bold uppercase">
-                      🌐 {generatedBook.language}
-                    </span>
-                  )}
-                </div>
-                <h3 className="text-2xl font-black text-white font-['Tajawal']">{generatedBook.title}</h3>
-                {generatedBook.subtitle && (
-                  <p className="text-sm text-slate-300 font-medium">{generatedBook.subtitle}</p>
-                )}
-              </div>
+            <button
+              type="button"
+              onClick={handleListenAsAudiobook}
+              className="min-h-[52px] rounded-xl bg-gradient-to-l from-brand to-indigo-500 hover:to-indigo-400 text-white font-bold flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Headphones className="w-5 h-5" />
+              استمع للكتاب
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              className="min-h-12 rounded-xl border border-line-strong text-white hover:bg-raised font-semibold flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <FileDown className="w-5 h-5" />
+              تحميل PDF
+            </button>
+            {errorMsg && <p role="alert" className="text-sm text-rose-300 text-center">{errorMsg}</p>}
+            <button type="button" onClick={() => setStep(1)} className="min-h-11 text-sm text-slate-400 hover:text-white cursor-pointer">
+              ألّف كتاباً آخر
+            </button>
+          </div>
 
-              {/* Synopsis Box */}
-              <div className="p-4 rounded-2xl bg-[#11192e] border border-indigo-900/40 space-y-1.5">
-                <div className="text-xs font-bold text-indigo-300">خلاصة الكتاب:</div>
-                <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">{generatedBook.synopsis}</p>
-              </div>
+          <article className="bg-card border border-line rounded-[20px] p-5 sm:p-8 flex flex-col gap-6 min-w-0">
+            <header className="flex flex-col gap-2">
+              <span className="text-sm text-brand-soft">{generatedBook.genre}</span>
+              <h3 className="font-display font-extrabold text-3xl text-white leading-tight">{generatedBook.title}</h3>
+              {generatedBook.subtitle && <p className="text-slate-300">{generatedBook.subtitle}</p>}
+              <p className="text-sm text-slate-500">تأليف {generatedBook.author} · {generatedBook.chapters.length === 1 ? 'فصل واحد' : `${generatedBook.chapters.length} فصول`}</p>
+            </header>
 
-              {/* Chapters List */}
-              <div className="space-y-5 pt-2">
-                <h4 className="text-sm font-black text-white font-['Tajawal'] flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-cyan-400" />
-                  <span>فصول ومحتوى الكتاب ({generatedBook.chapters.length} فصول)</span>
-                </h4>
+            {generatedBook.synopsis && (
+              <p className="p-4 rounded-[14px] bg-ink border border-line leading-[1.9] text-slate-300">{generatedBook.synopsis}</p>
+            )}
 
-                {generatedBook.chapters.map((ch) => (
-                  <div key={ch.chapterNumber} className="p-5 rounded-2xl bg-[#0d1424] border border-slate-800/80 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-extrabold text-blue-400">الفصل {ch.chapterNumber}</div>
-                      <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-bold">
-                        {ch.subsections.length} أجزاء
-                      </span>
-                    </div>
-
-                    <h5 className="text-base font-bold text-white">{ch.title}</h5>
-                    {ch.summary && <p className="text-xs text-slate-400">{ch.summary}</p>}
-
-                    <div className="space-y-3 pt-2 border-t border-slate-800/60">
-                      {ch.subsections.map((sub, sIdx) => (
-                        <div key={sIdx} className="space-y-1 text-xs sm:text-sm">
-                          {sub.subheading && (
-                            <div className="font-bold text-cyan-300">{sub.subheading}</div>
-                          )}
-                          <p className="text-slate-300 leading-relaxed font-normal">{sub.content}</p>
-                          {sub.keyTakeaway && (
-                            <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs font-bold mt-1.5">
-                              💡 {sub.keyTakeaway}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+            {generatedBook.chapters.map((ch) => (
+              <section key={ch.chapterNumber} className="flex flex-col gap-3 pt-5 border-t border-line">
+                <span className="text-sm text-slate-500">الفصل {ch.chapterNumber}</span>
+                <h4 className="font-display font-bold text-xl text-white -mt-2">{ch.title}</h4>
+                {ch.subsections.map((sub, sIdx) => (
+                  <div key={sIdx} className="flex flex-col gap-1.5">
+                    {sub.subheading && <h5 className="font-semibold text-slate-100">{sub.subheading}</h5>}
+                    <p className="text-slate-300 leading-[1.9]">{sub.content}</p>
+                    {sub.keyTakeaway && (
+                      <p className="px-4 py-3 rounded-xl bg-brand-deep/50 border border-brand/30 text-indigo-100 text-[15px]">
+                        <strong className="text-white">الخلاصة: </strong>
+                        {sub.keyTakeaway}
+                      </p>
+                    )}
                   </div>
                 ))}
-              </div>
-
-            </div>
-
-          </div>
-
+              </section>
+            ))}
+          </article>
         </div>
       )}
-
     </div>
   );
 };
