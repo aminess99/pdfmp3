@@ -1898,9 +1898,17 @@ async function startServer() {
       res.type("html").send(landingHtml.get(page.slug));
     });
 
+    // Unknown paths get a real 404 (not a soft 404) so search engines drop them
+    const notFoundHtml = indexTemplate
+      .replace(/<title>[^<]*<\/title>/, () => "<title>الصفحة غير موجودة – Hakawati AI</title>")
+      .replace(/<meta name="robots" content="[^"]*" \/>/, () => '<meta name="robots" content="noindex" />');
+
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      if (req.path === "/" || req.path === "/index.html") {
+        return res.sendFile(path.join(distPath, "index.html"));
+      }
+      res.status(404).type("html").send(notFoundHtml);
     });
   }
 

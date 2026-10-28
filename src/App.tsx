@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { SiteHeader } from './components/SiteHeader';
 import { HeroSection } from './components/HeroSection';
 import { ConversionTool } from './components/ConversionTool';
@@ -13,6 +13,7 @@ import { Footer } from './components/Footer';
 import { PaymentCheckoutModal } from './components/PaymentCheckoutModal';
 import { LegalModal } from './components/LegalModal';
 import { LandingContent } from './components/LandingContent';
+import { NotFound } from './components/NotFound';
 import { findLandingPage } from './data/landingPages';
 import { ConversionJob, Voice } from './types';
 import { audioEngine } from './lib/audioEngine';
@@ -22,6 +23,7 @@ import { useAuth } from './lib/AuthContext';
 export default function App() {
   const [darkMode, setDarkMode] = useState<boolean>(true);
   const [landingPage] = useState(() => findLandingPage(window.location.pathname));
+  const [isNotFound] = useState(() => !landingPage && !['/', '/index.html'].includes(window.location.pathname));
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({
     isOpen: false,
     mode: 'login',
@@ -135,9 +137,20 @@ export default function App() {
       const el = document.getElementById(sectionId);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth' });
+      } else {
+        // Section lives on the home page (e.g. navigating from the 404 page)
+        window.location.href = `/#${sectionId}`;
       }
     }
   };
+
+  // Content renders after load, so the browser can't jump to a #section on its own
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id) return;
+    const t = setTimeout(() => document.getElementById(id)?.scrollIntoView(), 300);
+    return () => clearTimeout(t);
+  }, []);
 
   // If User is Authenticated, render App Dashboard directly (no marketing distraction!)
   if (user) {
@@ -180,6 +193,11 @@ export default function App() {
     <div className="min-h-screen bg-ink text-slate-100 font-body">
       <SiteHeader onOpenAuth={handleOpenAuth} onNavigate={handleNavigate} />
 
+      {isNotFound ? (
+        <main>
+          <NotFound />
+        </main>
+      ) : (
       <main>
         <HeroSection badge={landingPage?.badge} title={landingPage?.h1} subtitle={landingPage?.subtitle}>
           <ConversionTool
@@ -201,6 +219,7 @@ export default function App() {
         <PricingSection onSelectPlan={handleSelectPlan} />
         <FAQSection />
       </main>
+      )}
 
       {/* Footer */}
       <Footer 
