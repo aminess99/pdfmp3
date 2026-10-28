@@ -1,16 +1,11 @@
 import React, { useState } from 'react';
-import { Header } from './components/Header';
+import { SiteHeader } from './components/SiteHeader';
 import { HeroSection } from './components/HeroSection';
 import { ConversionTool } from './components/ConversionTool';
-import { FeaturesBox } from './components/FeaturesBox';
-import { ValueMetrics } from './components/ValueMetrics';
 import { VoiceSamplesSection } from './components/VoiceSamplesSection';
-import { HowItWorks } from './components/HowItWorks';
+import { HowItWorks, UseCasesSection } from './components/HowItWorks';
 import { PricingSection } from './components/PricingSection';
-import { TestimonialsSection } from './components/TestimonialsSection';
-import { AudiobookGuidesSection } from './components/AudiobookGuidesSection';
 import { FAQSection } from './components/FAQSection';
-import { ContactSection } from './components/ContactSection';
 import { AuthModals } from './components/AuthModals';
 import { AudioPlayerDrawer } from './components/AudioPlayerDrawer';
 import { AudioLibraryModal } from './components/AudioLibraryModal';
@@ -185,75 +180,29 @@ export default function App() {
 
   // If Guest (unregistered user), render full Marketing Landing Page + Interactive Conversion Hook
   return (
-    <div className={`min-h-screen ${darkMode ? 'bg-[#0b0f19] text-slate-100' : 'bg-slate-900 text-slate-100'} transition-colors duration-300 font-['Cairo',sans-serif]`}>
-      {/* Header */}
-      <Header
-        darkMode={darkMode}
-        setDarkMode={setDarkMode}
-        onOpenAuth={handleOpenAuth}
-        onNavigate={handleNavigate}
-        activeSection={activeSection}
-        user={null}
-        onLogout={handleLogout}
-        onOpenLibrary={() => handleOpenAuth('login')}
-        isAdmin={false}
-      />
+    <div className="min-h-screen bg-ink text-slate-100 font-body">
+      <SiteHeader onOpenAuth={handleOpenAuth} onNavigate={handleNavigate} />
 
-      {/* Main Content Area */}
-      <main className="space-y-4">
-        {/* Hero Section */}
-        <HeroSection badge={landingPage?.badge} title={landingPage?.h1} subtitle={landingPage?.subtitle} />
-
-        {/* Core Interactive Tool & Features Box (Left: Conversion Tool, Right: Features Box) */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-4 sm:-mt-6 relative z-20">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-            
-            {/* Left Box: Core Conversion Tool (7 cols) */}
-            <div className="lg:col-span-7 flex">
-              <ConversionTool
-                onConversionStart={handleConversionStart}
-                onPreviewVoiceSample={handlePreviewVoiceSample}
-                availableVoicesList={allVoices}
-                onRequestAuth={handleOpenAuth}
-                initialDialectId={landingPage?.dialectId}
-                initialInputMode={landingPage?.inputMode}
-              />
-            </div>
-
-            {/* Right Box: Features & Info Box (5 cols) */}
-            <div className="lg:col-span-5 flex">
-              <FeaturesBox />
-            </div>
-
-          </div>
-        </section>
+      <main>
+        <HeroSection badge={landingPage?.badge} title={landingPage?.h1} subtitle={landingPage?.subtitle}>
+          <ConversionTool
+            onConversionStart={handleConversionStart}
+            onPreviewVoiceSample={handlePreviewVoiceSample}
+            availableVoicesList={allVoices}
+            onRequestAuth={handleOpenAuth}
+            initialDialectId={landingPage?.dialectId}
+            initialInputMode={landingPage?.inputMode}
+          />
+        </HeroSection>
 
         {/* SEO landing page article (only on /<slug> pages) */}
         {landingPage && <LandingContent page={landingPage} />}
 
-        {/* 4 Metrics Bar */}
-        <ValueMetrics />
-
-        {/* Voice Samples & 14 Dialects Explorer */}
         <VoiceSamplesSection availableVoicesList={allVoices} />
-
-        {/* How It Works */}
         <HowItWorks />
-
-        {/* Pricing */}
+        <UseCasesSection />
         <PricingSection onSelectPlan={handleSelectPlan} />
-
-        {/* Testimonials */}
-        <TestimonialsSection />
-
-        {/* SEO Guides & Knowledge Base */}
-        <AudiobookGuidesSection />
-
-        {/* FAQ */}
         <FAQSection />
-
-        {/* Contact */}
-        <ContactSection />
       </main>
 
       {/* Footer */}

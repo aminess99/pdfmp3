@@ -69,11 +69,9 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   const [showUploadAuthPrompt, setShowUploadAuthPrompt] = useState(false);
   const [pendingAutoConvertAfterAuth, setPendingAutoConvertAfterAuth] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedSampleBook, setSelectedSampleBook] = useState<SampleBook | null>(SAMPLE_BOOKS[0]);
+  const [selectedSampleBook, setSelectedSampleBook] = useState<SampleBook | null>(null);
+  const [pendingSampleStart, setPendingSampleStart] = useState(false);
   const [selectedDialect, setSelectedDialect] = useState<Dialect>(() => DIALECTS.find(d => d.id === initialDialectId) || DIALECTS[0]); // Moroccan Darija by default
-  
-  // Active Main Service Tab: 'audiobook' | 'chat' | 'summary' | 'writer'
-  const [activeServiceTab, setActiveServiceTab] = useState<'audiobook' | 'chat' | 'summary' | 'writer'>('audiobook');
   
   // Voice Preview State
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
@@ -89,7 +87,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   const [isExtracting, setIsExtracting] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const [conversionProgress, setConversionProgress] = useState(0);
-  const [extractedText, setExtractedText] = useState<string>(SAMPLE_BOOKS[0].sampleText);
+  const [extractedText, setExtractedText] = useState<string>('');
   const [pageCount, setPageCount] = useState<number>(SAMPLE_BOOKS[0].pages);
   const [inputMode, setInputMode] = useState<'pdf' | 'text'>(initialInputMode || 'pdf');
   const [customTitle, setCustomTitle] = useState<string>('');
@@ -99,11 +97,8 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   const [purifiedNotification, setPurifiedNotification] = useState<string | null>(null);
   const [conversionError, setConversionError] = useState<string | null>(null);
 
-  // Chat Modal on Direct Demand
-  const [showInstantChatModal, setShowInstantChatModal] = useState<boolean>(false);
-
   // Listening Mode States (Full, Summary 10m, Key Points 50%)
-  const [listeningMode, setListeningMode] = useState<ListeningMode>('summary');
+  const [listeningMode, setListeningMode] = useState<ListeningMode>('full');
 
   // Multi-Chapter Batching States
   const [detectedChapters, setDetectedChapters] = useState<BookChapter[]>([]);
@@ -126,6 +121,28 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
       handleStartConversion();
     }
   }, [user, pendingAutoConvertAfterAuth]);
+
+  // "Try a sample" starts converting once the sample text is in state
+  useEffect(() => {
+    if (pendingSampleStart && selectedSampleBook && extractedText === selectedSampleBook.sampleText) {
+      setPendingSampleStart(false);
+      handleStartConversion();
+    }
+  }, [pendingSampleStart, selectedSampleBook, extractedText]);
+
+  // A voice picked in the voice gallery becomes the tool's voice
+  useEffect(() => {
+    const onSelectVoice = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      const v = voicesPool.find((x) => x.id === id);
+      if (!v) return;
+      setSelectedVoice(v);
+      const d = DIALECTS.find((x) => x.id === v.dialectId);
+      if (d) setSelectedDialect(d);
+    };
+    window.addEventListener('select_voice', onSelectVoice);
+    return () => window.removeEventListener('select_voice', onSelectVoice);
+  }, [voicesPool]);
 
   // Keep detected chapters in sync
   useEffect(() => {
@@ -215,6 +232,12 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     setExtractedText(sample.sampleText);
     setPageCount(sample.pages);
     setConversionError(null);
+  };
+
+  const handleTrySample = () => {
+    setInputMode('pdf');
+    handleSelectSample(SAMPLE_BOOKS[0]);
+    setPendingSampleStart(true);
   };
 
   // AI Purify text
@@ -485,361 +508,223 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     }, 320);
   };
 
+  const wordCount = extractedText.split(/\s+/).filter(Boolean).length;
+  const hasInput = inputMode === 'text' ? extractedText.trim().length > 0 : Boolean(selectedFile || selectedSampleBook);
+  const modeOptions: { id: ListeningMode; label: string }[] = [
+    { id: 'full', label: 'الكتاب كاملاً' },
+    { id: 'summary', label: 'ملخص 10 دقائق' },
+    { id: 'key_points', label: 'أهم النقاط' },
+  ];
+
   return (
-    <div className="w-full bg-[#0d1322] border border-blue-900/40 rounded-3xl p-4 sm:p-7 shadow-2xl relative overflow-hidden space-y-6 font-['Cairo',sans-serif]" dir="rtl">
-      
-      {/* Decorative ambient gradient */}
-      <div className="absolute top-0 right-0 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-0 left-0 w-80 h-80 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
-
-      {/* 🌟 1. Top Multi-Service Navigation Header (Interactive Tabs) */}
-      <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 p-1.5 rounded-2xl bg-[#080d1a] border border-blue-900/50 shadow-inner">
-        
-        {/* Service 1: Audio / PDF to Speech */}
-        <button
-          type="button"
-          onClick={() => {
-            setActiveServiceTab('audiobook');
-            setListeningMode('full');
-          }}
-          className={`px-3.5 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
-            activeServiceTab === 'audiobook'
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/40 ring-1 ring-blue-400/50'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <Headphones className="w-4 h-4 text-cyan-300" />
-          <span>كتاب صوتي (Audiobook)</span>
-        </button>
-
-        {/* Service 2: Chat with PDF */}
-        <button
-          type="button"
-          onClick={() => {
-            setActiveServiceTab('chat');
-            if (extractedText.trim().length > 30) {
-              setShowInstantChatModal(true);
-            }
-          }}
-          className={`px-3.5 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
-            activeServiceTab === 'chat'
-              ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/40 ring-1 ring-purple-400/50'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <MessageSquare className="w-4 h-4 text-amber-300" />
-          <span>اسأل وتحدث (Chat PDF)</span>
-        </button>
-
-        {/* Service 3: Summary in 10 Min */}
-        <button
-          type="button"
-          onClick={() => {
-            setActiveServiceTab('summary');
-            setListeningMode('summary');
-          }}
-          className={`px-3.5 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
-            activeServiceTab === 'summary'
-              ? 'bg-gradient-to-r from-amber-600 to-indigo-600 text-white shadow-lg shadow-indigo-600/40 ring-1 ring-amber-400/50'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <Sparkles className="w-4 h-4 text-amber-300" />
-          <span>ملخص بودكاست (10 د)</span>
-        </button>
-
-        {/* Service 4: Key Points */}
-        <button
-          type="button"
-          onClick={() => {
-            setActiveServiceTab('writer');
-            setListeningMode('key_points');
-          }}
-          className={`px-3.5 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
-            activeServiceTab === 'writer'
-              ? 'bg-teal-600 text-white shadow-lg shadow-teal-600/40 ring-1 ring-teal-400/50'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <Target className="w-4 h-4 text-emerald-300" />
-          <span>النقاط الجوهرية (Key Points)</span>
-        </button>
-
-      </div>
-
-      {/* Main Headline for Service */}
-      <div className="text-center space-y-1">
-        <h2 className="text-xl sm:text-2xl font-black text-white font-['Tajawal'] flex items-center justify-center gap-2">
-          <span>
-            {activeServiceTab === 'chat'
-              ? 'تحدث واسأل أي ملف PDF أو نص بالذكاء الاصطناعي 💬'
-              : activeServiceTab === 'summary'
-              ? 'لخص أي كتاب في بودكاست صوتي مدته 10 دقائق ⏱️'
-              : activeServiceTab === 'writer'
-              ? 'استخرج أهم 7 دروس ونقاط جوهرية من كتابك 🎯'
-              : 'حوّل أي كتاب PDF أو نص إلى صوت عربي فاخر 🎧'}
-          </span>
-        </h2>
-        <p className="text-xs sm:text-sm text-slate-400">
-          اختر الطريقة الأنسب لرفع الملف أو لصق النص مباشرة أدناه للبدء الفوري
-        </p>
-      </div>
-
-      {/* Non-blocking error alert */}
-      {conversionError && (
-        <div className="relative z-20 flex items-center justify-between p-3.5 rounded-xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs font-semibold animate-in fade-in" dir="rtl">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{conversionError}</span>
-          </div>
-          <button
-            onClick={() => setConversionError(null)}
-            className="p-1 hover:bg-rose-900/50 rounded-lg text-rose-300 transition cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+    <div className="w-full font-body" dir="rtl">
+      <div className="w-full bg-card border border-line rounded-[20px] overflow-hidden">
+        {/* Input type tabs */}
+        <div role="tablist" aria-label="نوع الإدخال" className="flex gap-1.5 p-3 pb-0">
+          {([
+            { id: 'pdf', label: 'ملف PDF' },
+            { id: 'text', label: 'نص' },
+          ] as const).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={inputMode === tab.id}
+              onClick={() => {
+                setInputMode(tab.id);
+                setConversionError(null);
+                if (tab.id === 'text' && !selectedFile && selectedSampleBook) {
+                  setSelectedSampleBook(null);
+                  setExtractedText('');
+                }
+              }}
+              className={`min-h-11 px-5 rounded-[10px] text-[15px] font-semibold cursor-pointer transition-colors ${
+                inputMode === tab.id ? 'bg-raised text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
-      )}
 
-      {/* 🌟 2. Figma-Inspired 2-Column Split Dropzone */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch relative z-10">
-        
-        {/* Column 1: Drop a file or upload */}
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-3xl p-6 text-center cursor-pointer transition-all duration-300 flex flex-col items-center justify-center space-y-3 group ${
-            isDragging
-              ? 'border-blue-400 bg-blue-950/40 scale-[1.01]'
-              : selectedFile
-              ? 'border-emerald-500/60 bg-emerald-950/20'
-              : 'border-blue-900/60 hover:border-blue-500/70 bg-[#0a0f1d]/90 hover:bg-[#0a0f1d]'
-          }`}
-        >
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept=".pdf,.epub,application/pdf,application/epub+zip"
-            onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
-            className="hidden"
-          />
-
-          <div className="w-12 h-12 rounded-2xl bg-blue-600/10 border border-blue-500/30 flex items-center justify-center text-blue-400 group-hover:scale-105 transition-transform">
-            <Upload className="w-6 h-6" />
-          </div>
-
-          {isExtracting ? (
-            <div className="flex items-center gap-2 text-blue-300 font-bold text-xs animate-pulse">
-              <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-              <span>{extractionStatusText || 'جاري استخراج وقراءة نص الكتاب...'}</span>
-            </div>
-          ) : selectedFile ? (
-            <div className="space-y-1">
-              <p className="text-emerald-400 font-bold text-xs flex items-center justify-center gap-1">
-                <CheckCircle2 className="w-4 h-4" />
-                <span className="truncate max-w-[200px]">{selectedFile.name}</span>
-              </p>
-              <p className="text-[11px] text-slate-400">
-                {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • {pageCount} صفحة
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              <p className="text-xs sm:text-sm font-bold text-slate-200">
-                اسحب وأفلت ملف الـ PDF هنا
-              </p>
-              <p className="text-[11px] text-slate-400">
-                يدعم ملفات PDF و ePub حتى 50MB
-              </p>
+        <div className="p-4 sm:p-5 space-y-5">
+          {conversionError && (
+            <div role="alert" className="flex items-center justify-between gap-3 p-3 rounded-xl bg-rose-950/60 border border-rose-900 text-rose-200 text-sm">
+              <span className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                {conversionError}
+              </span>
+              <button type="button" onClick={() => setConversionError(null)} aria-label="إغلاق الرسالة" className="p-1 rounded-lg text-rose-300 hover:bg-rose-900/50 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              fileInputRef.current?.click();
-            }}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-blue-600/30 transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            <FolderOpen className="w-3.5 h-3.5" />
-            <span>اختر ملف من جهازك</span>
-          </button>
+          {inputMode === 'pdf' ? (
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`border-[1.5px] border-dashed rounded-2xl px-5 py-9 flex flex-col items-center gap-2 text-center transition-colors ${
+                isDragging ? 'border-accent bg-raised/60' : selectedFile ? 'border-brand' : 'border-line-strong'
+              }`}
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept=".pdf,.epub,application/pdf,application/epub+zip"
+                onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
+                className="hidden"
+              />
+              {isExtracting ? (
+                <p className="flex items-center gap-2 text-brand-soft text-sm font-semibold">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {extractionStatusText || 'جاري قراءة الكتاب...'}
+                </p>
+              ) : selectedFile ? (
+                <>
+                  <CheckCircle2 className="w-8 h-8 text-accent" />
+                  <p className="text-white font-semibold truncate max-w-full">{selectedFile.name}</p>
+                  <p className="text-sm text-slate-400">
+                    {(selectedFile.size / (1024 * 1024)).toFixed(1)} MB · {pageCount} صفحة ·{' '}
+                    <button type="button" onClick={() => fileInputRef.current?.click()} className="text-brand-soft hover:underline cursor-pointer">
+                      تغيير الملف
+                    </button>
+                  </p>
+                  <button type="button" onClick={handleForceOcr} className="text-xs text-slate-400 hover:text-white cursor-pointer">
+                    النص غير واضح؟ جرّب المسح العميق
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-8 h-8 text-accent" />
+                  <p className="text-[17px] font-semibold text-white">اسحب ملف PDF هنا</p>
+                  <p className="text-sm text-slate-400">
+                    أو{' '}
+                    <button type="button" onClick={() => fileInputRef.current?.click()} className="text-brand-soft hover:underline cursor-pointer">
+                      اختر ملفاً من جهازك
+                    </button>{' '}
+                    · PDF و ePub حتى 50MB
+                  </p>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <label htmlFor="tts-text" className="block text-sm text-slate-400">الصق النص الذي تريد سماعه</label>
+              <textarea
+                id="tts-text"
+                value={extractedText}
+                onChange={(e) => setExtractedText(e.target.value)}
+                rows={5}
+                dir="rtl"
+                placeholder="اكتب أو الصق نصك العربي هنا..."
+                className="w-full rounded-xl bg-ink border border-line p-3.5 text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand resize-y leading-relaxed"
+              />
+              <div className="flex items-center justify-between text-[13px] text-slate-400">
+                <span>{wordCount} كلمة · حوالي {Math.max(1, Math.round(wordCount / 130))} دقيقة</span>
+                <button
+                  type="button"
+                  onClick={handlePurifyText}
+                  disabled={isPurifying || !extractedText.trim()}
+                  className="flex items-center gap-1 hover:text-white disabled:opacity-50 cursor-pointer"
+                >
+                  <Wand2 className="w-3.5 h-3.5" />
+                  {isPurifying ? 'جاري التنقية...' : 'تنقية النص'}
+                </button>
+              </div>
+              {purifiedNotification && <p role="status" className="text-[13px] text-accent">{purifiedNotification}</p>}
+            </div>
+          )}
+
+          {/* Listening mode */}
+          <div>
+            <div id="mode-label" className="text-sm text-slate-400 mb-2.5">ماذا تريد أن تسمع؟</div>
+            <div role="radiogroup" aria-labelledby="mode-label" className="flex flex-wrap gap-2">
+              {modeOptions.map((m) => {
+                const active = listeningMode === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => setListeningMode(m.id)}
+                    className={`flex items-center gap-2 min-h-11 px-4 rounded-full text-[15px] border cursor-pointer transition-colors ${
+                      active ? 'border-brand bg-brand-deep text-white' : 'border-line text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <span className={`w-2.5 h-2.5 rounded-full border-2 ${active ? 'border-accent bg-accent' : 'border-slate-600'}`} />
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
-        {/* Column 2: Paste text directly / Quick Prompt */}
-        <div className="border border-blue-900/60 rounded-3xl p-5 bg-[#0a0f1d]/90 flex flex-col justify-between space-y-3">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-300">
-              <span className="flex items-center gap-1.5">
-                <ClipboardPaste className="w-3.5 h-3.5 text-cyan-400" />
-                <span>الصق النص أو المحتوى مباشرة:</span>
-              </span>
-              <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono border border-slate-700">
-                CTRL + V
-              </span>
-            </div>
-
-            <textarea
-              value={extractedText}
-              onChange={(e) => {
-                setExtractedText(e.target.value);
-                setSelectedFile(null);
-              }}
-              rows={4}
-              dir="rtl"
-              className="w-full rounded-2xl bg-slate-950 border border-slate-800 p-3 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-none leading-relaxed font-['Tajawal']"
-              placeholder="اكتب أو الصق نص الكتاب، المقال، أو السؤال هنا مباشرة..."
-            />
-          </div>
-
-          <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px] text-slate-400">
-            <span>
-              {extractedText.split(/\s+/).filter(Boolean).length} كلمة (~{Math.max(1, Math.round(extractedText.split(/\s+/).filter(Boolean).length / 130))} دقيقة)
+        {/* Voice + convert */}
+        <div className="border-t border-line px-4 sm:px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-10 h-10 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-display font-extrabold shrink-0">
+              {selectedVoice.name.charAt(0)}
             </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handlePurifyText}
-                disabled={isPurifying || !extractedText.trim()}
-                className="text-[10px] text-indigo-300 hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
-                title="تنقية النص بالذكاء الاصطناعي"
+            <label className="flex flex-col leading-tight min-w-0">
+              <span className="sr-only">الصوت</span>
+              <select
+                value={selectedVoice.id}
+                onChange={(e) => {
+                  const v = voicesPool.find((x) => x.id === e.target.value);
+                  if (v) {
+                    setSelectedVoice(v);
+                    const d = DIALECTS.find((x) => x.id === v.dialectId);
+                    if (d) setSelectedDialect(d);
+                  }
+                }}
+                className="bg-transparent text-white font-semibold text-[15px] focus:outline-none cursor-pointer max-w-[220px]"
               >
-                <Wand2 className="w-3 h-3 text-indigo-400" />
-                <span>تنقية الشوائب</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setExtractedText('')}
-                className="text-[10px] text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
-              >
-                مسح
-              </button>
-            </div>
+                {voicesPool.map((v) => (
+                  <option key={v.id} value={v.id} className="bg-card">
+                    {v.name.split(' - ')[0]}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[13px] text-slate-400">
+                {selectedDialect?.name} · {selectedVoice.gender === 'female' ? 'امرأة' : 'رجل'}
+              </span>
+            </label>
+            <button
+              type="button"
+              onClick={handleToggleVoicePreview}
+              aria-label={isPlayingPreview ? 'إيقاف العينة' : 'استمع لعينة الصوت'}
+              className="w-11 h-11 rounded-full border border-line-strong text-accent flex items-center justify-center shrink-0 cursor-pointer hover:bg-raised"
+            >
+              {isPlayingPreview ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+            </button>
           </div>
-        </div>
-
-      </div>
-
-      {/* 🌟 3. Quick Sample Selector */}
-      <div className="space-y-1.5">
-        <p className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>أو اختر نموذجاً جاهزاً بنقرة واحدة:</span>
-        </p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {SAMPLE_BOOKS.map((book) => {
-            const isSelected = selectedSampleBook?.id === book.id && !selectedFile;
-            return (
-              <button
-                key={book.id}
-                onClick={() => handleSelectSample(book)}
-                className={`px-2.5 py-2 rounded-xl text-xs font-semibold text-right truncate border transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-blue-600/25 border-blue-400 text-white shadow-sm'
-                    : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-                title={book.title}
-              >
-                📖 {book.title}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 🌟 4. Voice Selection Bar with Live Voice Preview (Play/Pause Sample Button) */}
-      <div className="p-4 rounded-2xl bg-[#0a0f1d]/90 border border-blue-900/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Volume2 className="w-4 h-4 text-cyan-400" />
-          <span className="text-xs font-bold text-white">القارئ الصوتي:</span>
-          <span className="text-xs text-cyan-300 font-bold bg-cyan-950/80 px-2.5 py-0.5 rounded-lg border border-cyan-800/60">
-            {selectedVoice.name} ({selectedVoice.gender === 'female' ? 'أنثى' : 'ذكر'})
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          {/* Play/Pause Sample Button */}
-          <button
-            type="button"
-            onClick={handleToggleVoicePreview}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-              isPlayingPreview
-                ? 'bg-rose-600 text-white border-rose-500 animate-pulse'
-                : 'bg-slate-800/90 hover:bg-slate-700 text-cyan-300 border-slate-700'
-            }`}
-            title="استمع لعينة هذا الصوت"
-          >
-            {isPlayingPreview ? (
-              <>
-                <Pause className="w-3.5 h-3.5 fill-current" />
-                <span>إيقاف العينة</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>استمع للعينة</span>
-              </>
-            )}
-          </button>
-
-          {/* Quick Voice Dropdown */}
-          <select
-            value={selectedVoice.id}
-            onChange={(e) => {
-              const v = voicesPool.find((x) => x.id === e.target.value);
-              if (v) setSelectedVoice(v);
-            }}
-            className="flex-1 sm:flex-none bg-slate-900 border border-slate-700 text-xs text-white rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500 cursor-pointer"
-          >
-            {voicesPool.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.name} ({v.gender === 'female' ? 'أنثى' : 'ذكر'})
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* 🌟 5. Dynamic Action CTA Button */}
-      <div className="pt-2">
-        {activeServiceTab === 'chat' ? (
-          <button
-            type="button"
-            onClick={() => setShowInstantChatModal(true)}
-            className="w-full py-4 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-black text-sm shadow-xl shadow-purple-600/40 hover:scale-[1.01] transition-all flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <MessageSquare className="w-5 h-5 text-amber-300" />
-            <span>بدء التحدث ومحادثة هذا الكتاب الآن (Chat With PDF) ✨</span>
-          </button>
-        ) : (
           <button
             type="button"
             onClick={handleStartConversion}
-            disabled={isConverting || isExtracting}
-            className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-black text-sm shadow-xl shadow-indigo-600/40 hover:scale-[1.01] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            disabled={isConverting || isExtracting || !hasInput}
+            className="flex items-center justify-center gap-2.5 min-h-[52px] px-7 rounded-2xl bg-gradient-to-l from-[#8b5cf6] to-[#3b82f6] text-white font-bold text-[17px] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
           >
-            {isConverting ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin text-cyan-300" />
-                <span>جاري المعالجة والتحويل الصوتي...</span>
-              </>
-            ) : (
-              <>
-                <Headphones className="w-5 h-5 text-cyan-300" />
-                <span>
-                  {activeServiceTab === 'summary'
-                    ? 'تحويل إلى ملخص بودكاست صوتي (10 دقائق) 🎧'
-                    : activeServiceTab === 'writer'
-                    ? 'تحويل واستماع للنقاط الجوهرية الـ 7 🎯'
-                    : 'بدء التحويل الصوتي والاستماع الفوري 🎧'}
-                </span>
-              </>
-            )}
+            {isConverting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5 fill-current" />}
+            {isConverting ? 'جاري التحويل...' : 'حوّل واستمع'}
           </button>
-        )}
+        </div>
+      </div>
+
+      {/* Sample book: try without uploading */}
+      <div className="flex flex-col items-center gap-1.5 mt-5">
+        <button
+          type="button"
+          onClick={handleTrySample}
+          className="flex items-center gap-2.5 min-h-12 px-5 rounded-xl border border-line text-slate-200 text-[15px] hover:border-line-strong hover:text-white cursor-pointer"
+        >
+          <Headphones className="w-[18px] h-[18px] text-accent" />
+          ليس لديك ملف الآن؟ اسمع مثالاً جاهزاً: {SAMPLE_BOOKS[0].title}
+        </button>
+        <p className="text-sm text-slate-400">جرّب مجاناً: 30 دقيقة عند التسجيل، بدون بطاقة دفع.</p>
       </div>
 
       {/* Book Processing Modal */}
@@ -877,32 +762,6 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         }}
         onClose={() => setShowUploadAuthPrompt(false)}
       />
-
-      {/* Chat With PDF Modal for Direct Chat Tab */}
-      {showInstantChatModal && (
-        <ChatPdfModal
-          isOpen={showInstantChatModal}
-          onClose={() => setShowInstantChatModal(false)}
-          job={{
-            id: `temp-${Date.now()}`,
-            fileName: selectedFile ? selectedFile.name : selectedSampleBook ? selectedSampleBook.title : 'المستند المرفوع',
-            fileSize: '1.5 MB',
-            totalPages: pageCount,
-            processedPages: pageCount,
-            selectedDialect,
-            selectedVoice,
-            selectedStyle,
-            status: 'completed',
-            progress: 100,
-            extractedText,
-            textChunks: [extractedText],
-            durationInSeconds: 300,
-            createdAt: new Date().toLocaleTimeString('ar-SA'),
-          }}
-          availableVoices={voicesPool}
-        />
-      )}
-
     </div>
   );
 };

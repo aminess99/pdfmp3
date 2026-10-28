@@ -1,76 +1,52 @@
 import React from 'react';
-import { UploadCloud, Sliders, Download, Sparkles } from 'lucide-react';
+import { GraduationCap, Video, Car } from 'lucide-react';
 
-export const HowItWorks: React.FC = () => {
-  const steps = [
-    {
-      num: '01',
-      icon: UploadCloud,
-      title: 'رفع كتاب PDF',
-      description: 'قم بسحب وإسقاط ملف الـ PDF الخاص بك أو اختياره من جهازك بكل سهولة وسرعة.',
-    },
-    {
-      num: '02',
-      icon: Sliders,
-      title: 'تحديد الصوت والإنصات',
-      description: 'اختر اللهجة العربية المناسبة (من بين 14 لهجة) والصوت الفضل ودرجة السرعة والنمط.',
-    },
-    {
-      num: '03',
-      icon: Download,
-      title: 'الاستماع وتحميل MP3',
-      description: 'استمع مباشرة عبر القارئ التزامني الذكي أو حمّل الملف الصوتي بصيغة MP3 للاستماع أوفلاين.',
-    },
-  ];
+const STEPS = [
+  { title: 'ارفع الكتاب أو الصق النص', text: 'PDF أو ePub أو أي نص عربي.' },
+  { title: 'اختر الصوت واللهجة', text: 'اسمع العينة قبل أن تقرر.' },
+  { title: 'استمع أو حمّل', text: 'مقسّماً إلى فصول، مع ملخص عند الطلب.' },
+];
 
-  return (
-    <section className="py-16 bg-[#090d16] relative border-t border-slate-800/80">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
-        
-        {/* Section Header */}
-        <div className="text-center space-y-3 max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-950/80 border border-indigo-500/30 text-indigo-300 text-xs sm:text-sm font-semibold">
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            <span>بسيطة وسريعة للغاية</span>
-          </div>
-          <h2 className="text-3xl sm:text-4xl font-black text-white font-['Tajawal']">
-            كيف يعمل الموقع؟
-          </h2>
-          <p className="text-slate-300 text-sm sm:text-base">
-            ثلاث خطوات بسيطة تحول كتابك المكتوب إلى تجربة صوتية استثنائية.
-          </p>
-        </div>
+const USE_CASES = [
+  { icon: GraduationCap, title: 'الطلاب', text: 'حوّل المقررات والملخصات إلى صوت وراجع دروسك وأنت في الطريق.' },
+  { icon: Video, title: 'صناع المحتوى', text: 'تعليق صوتي لمقاطعك بلهجة جمهورك: سعودي، مصري، مغربي وغيرها.' },
+  { icon: Car, title: 'المشغولون', text: 'اسمع الكتب التي لا تجد وقتاً لقراءتها، أثناء القيادة أو الرياضة.' },
+];
 
-        {/* Steps Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
-          {steps.map((step, idx) => {
-            const Icon = step.icon;
-            return (
-              <div
-                key={idx}
-                className="relative p-7 rounded-3xl bg-[#0d1322] border border-slate-800/90 hover:border-indigo-500/50 transition-all space-y-4 group"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform">
-                    <Icon className="w-7 h-7" />
-                  </div>
-                  <span className="text-3xl font-black text-slate-700 group-hover:text-indigo-400 transition-colors">
-                    {step.num}
-                  </span>
-                </div>
+export const HowItWorks: React.FC = () => (
+  <section id="how" className="border-t border-raised py-[72px] px-4 sm:px-6" dir="rtl">
+    <div className="max-w-[1160px] mx-auto flex flex-col gap-7">
+      <h2 className="font-display font-extrabold text-3xl sm:text-[34px] text-white">كيف يعمل</h2>
+      <ol className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {STEPS.map((step, i) => (
+          <li key={step.title} className="flex gap-3.5 items-start p-5 rounded-2xl bg-card">
+            <span className="w-9 h-9 shrink-0 rounded-full border border-brand text-brand-soft flex items-center justify-center font-bold">
+              {i + 1}
+            </span>
+            <span className="flex flex-col">
+              <strong className="text-white">{step.title}</strong>
+              <span className="text-slate-400 text-[15px]">{step.text}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+);
 
-                <h3 className="text-xl font-extrabold text-white font-['Tajawal']">
-                  {step.title}
-                </h3>
-                <p className="text-sm text-slate-300 leading-relaxed">
-                  {step.description}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-
+export const UseCasesSection: React.FC = () => (
+  <section className="border-t border-raised py-[72px] px-4 sm:px-6" dir="rtl">
+    <div className="max-w-[1160px] mx-auto flex flex-col gap-7">
+      <h2 className="font-display font-extrabold text-3xl sm:text-[34px] text-white">لمن هذا الموقع؟</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {USE_CASES.map(({ icon: Icon, title, text }) => (
+          <article key={title} className="p-6 rounded-2xl border border-line flex flex-col gap-2.5">
+            <Icon className="w-[26px] h-[26px] text-accent" aria-hidden="true" />
+            <h3 className="text-[19px] font-semibold text-white">{title}</h3>
+            <p className="text-slate-400">{text}</p>
+          </article>
+        ))}
       </div>
-    </section>
-  );
-};
+    </div>
+  </section>
+);
