@@ -23,7 +23,8 @@ import {
   Minimize2,
   Bookmark,
   FileText,
-  MessageSquare
+  MessageSquare,
+  Loader2
 } from 'lucide-react';
 import { ConversionJob, Voice, AudioStyle, Dialect } from '../types';
 import { audioEngine } from '../lib/audioEngine';
@@ -36,6 +37,7 @@ interface StudioViewProps {
   onExit: () => void;
   availableVoices?: Voice[];
   isUserLoggedIn?: boolean;
+  onRequestAuth?: (mode: 'login' | 'register') => void;
 }
 
 function formatTime(seconds: number): string {
@@ -49,6 +51,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
   onExit,
   availableVoices,
   isUserLoggedIn,
+  onRequestAuth,
 }) => {
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [playbackRate, setPlaybackRate] = useState<number>(1.0);
@@ -78,7 +81,27 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const [sleepTimerRemainingSec, setSleepTimerRemainingSec] = useState<number | null>(null);
   const [showSleepMenu, setShowSleepMenu] = useState<boolean>(false);
 
-  const activeSentenceRef = useRef<HTMLDivElement>(null);
+  const activeSentenceRef = useRef<HTMLButtonElement>(null);
+
+  // Reader panels (listen / AI summary / key points), cached per chapter
+  const [panel, setPanel] = useState<'listen' | 'summary' | 'key_points'>('listen');
+  const [panelCache, setPanelCache] = useState<Record<string, string>>({});
+  const [panelLoading, setPanelLoading] = useState(false);
+  const [panelPlaying, setPanelPlaying] = useState(false);
+  const [hideText, setHideText] = useState(false);
+  const [chaptersOpen, setChaptersOpen] = useState(false);
+
+  // Resume where the listener stopped last time (per book, in this browser)
+  const positionKey = `studio_pos_${job.id}`;
+  const [resumePoint, setResumePoint] = useState<{ chapter: number; sentence: number } | null>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`studio_pos_${job.id}`) || 'null');
+      return saved && (saved.chapter > 0 || saved.sentence > 0) ? saved : null;
+    } catch {
+      return null;
+    }
+  });
+  const resumeSentenceRef = useRef<number | null>(null);
   const activePlayIdRef = useRef<number>(0);
 
   const voicesPool = availableVoices && availableVoices.length > 0 ? availableVoices : VOICES;
@@ -156,11 +179,21 @@ export const StudioView: React.FC<StudioViewProps> = ({
     return () => clearInterval(timer);
   }, [sleepTimerRemainingSec]);
 
+  // Remember the current position
+  useEffect(() => {
+    if (activeSentenceIndex === 0 && activeChapterIndex === 0) return;
+    try {
+      localStorage.setItem(positionKey, JSON.stringify({ chapter: activeChapterIndex, sentence: activeSentenceIndex }));
+    } catch {}
+  }, [positionKey, activeChapterIndex, activeSentenceIndex]);
+
   // Start playback whenever chapter or job changes
   useEffect(() => {
     audioEngine.stop();
     if (sentences.length > 0) {
-      startPlayback(0);
+      const startAt = resumeSentenceRef.current ?? 0;
+      resumeSentenceRef.current = null;
+      startPlayback(Math.min(startAt, sentences.length - 1));
     }
     return () => {
       activePlayIdRef.current++;
@@ -252,6 +285,65 @@ export const StudioView: React.FC<StudioViewProps> = ({
         startPlayback(activeSentenceIndex);
       }
     }
+  };
+
+  const handleResume = () => {
+    if (!resumePoint) return;
+    const { chapter, sentence } = resumePoint;
+    setResumePoint(null);
+    if (chapters && chapter !== activeChapterIndex && chapters[chapter]) {
+      resumeSentenceRef.current = sentence;
+      setActiveChapterIndex(chapter);
+    } else {
+      handleSeekSentence(sentence);
+    }
+  };
+
+  const panelKey = `${panel}_${activeChapterIndex}`;
+  const panelText = panelCache[panelKey] || '';
+
+  const openPanel = async (next: 'listen' | 'summary' | 'key_points') => {
+    setPanel(next);
+    if (next === 'listen') return;
+    const key = `${next}_${activeChapterIndex}`;
+    if (panelCache[key]) return;
+    setPanelLoading(true);
+    try {
+      const res = await fetch('/api/ai/transform-book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: fullText, mode: next, bookTitle: cleanBookTitle(job.fileName) }),
+      });
+      const data = await res.json();
+      if (data.success && data.transformedText) {
+        setPanelCache((prev) => ({ ...prev, [key]: data.transformedText }));
+      }
+    } catch (e) {
+      console.warn('Panel transform error:', e);
+    } finally {
+      setPanelLoading(false);
+    }
+  };
+
+  const handleListenPanel = () => {
+    if (panelPlaying) {
+      audioEngine.stop();
+      setPanelPlaying(false);
+      return;
+    }
+    activePlayIdRef.current++;
+    audioEngine.stop();
+    setIsPlaying(false);
+    setPanelPlaying(true);
+    audioEngine.speak(panelText, selectedVoice, selectedStyle, playbackRate, undefined, () => setPanelPlaying(false));
+  };
+
+  const handleShare = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.origin);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
   };
 
   const handleSeekSentence = (targetIdx: number) => {
@@ -420,508 +512,478 @@ export const StudioView: React.FC<StudioViewProps> = ({
   };
 
   const cleanTitle = cleanBookTitle(job.fileName);
+  const totalBookMinutes = chapters
+    ? chapters.reduce((acc, c) => acc + (c.estimatedDurationMinutes || 0), 0)
+    : Math.round(estimatedTotalSeconds / 60);
+  const fontClass = { sm: 'text-base', base: 'text-lg', lg: 'text-xl', xl: 'text-2xl' }[readerFontSize];
+  const fontSteps: Array<'sm' | 'base' | 'lg' | 'xl'> = ['sm', 'base', 'lg', 'xl'];
+  const closeMenus = () => {
+    setShowVoicePicker(false);
+    setShowDownloadModal(false);
+    setShowSleepMenu(false);
+  };
+
+  const chapterList = (
+    <>
+      <div className="text-[13px] text-slate-400 px-2 pb-2">الفصول</div>
+      {(chapters || []).map((chap, idx) => {
+        const isActive = idx === activeChapterIndex;
+        const status = chap.status || 'completed';
+        const ready = status === 'completed';
+        return (
+          <button
+            key={chap.id}
+            type="button"
+            disabled={!ready}
+            aria-current={isActive}
+            onClick={() => {
+              setChaptersOpen(false);
+              if (ready && activeChapterIndex !== idx) {
+                setActiveChapterIndex(idx);
+                setActiveSentenceIndex(0);
+              }
+            }}
+            className={`w-full min-h-[52px] flex items-center justify-between gap-2 px-3 rounded-[10px] text-right text-[15px] transition-colors ${
+              isActive ? 'bg-raised text-white' : ready ? 'text-slate-300 hover:bg-raised/60 cursor-pointer' : 'text-slate-500 cursor-default'
+            }`}
+          >
+            <span className="flex items-center gap-2.5 min-w-0">
+              {status === 'completed' && <Check className="w-4 h-4 text-accent shrink-0" aria-hidden="true" />}
+              {status === 'converting' && <Loader2 className="w-4 h-4 text-brand-soft animate-spin shrink-0" aria-hidden="true" />}
+              {status === 'pending' && <span className="w-4 h-4 rounded-full border-2 border-slate-600 shrink-0" aria-hidden="true" />}
+              {status === 'error' && <span className="w-4 text-rose-400 font-extrabold text-center shrink-0" aria-hidden="true">!</span>}
+              <span className="truncate">{chap.title}</span>
+            </span>
+            <span className="text-[13px] text-slate-400 shrink-0">
+              {status === 'converting' ? `يُجهَّز ${chap.progress ?? 0}%` : status === 'pending' ? 'في الانتظار' : status === 'error' ? 'تعذّر' : `${chap.estimatedDurationMinutes} د`}
+            </span>
+          </button>
+        );
+      })}
+      {job.isStreamingBackground && (
+        <div className="mt-3 p-3.5 rounded-xl bg-card text-[13px] text-slate-400">
+          {job.backgroundStatus || 'ابدأ الاستماع الآن، وتُجهَّز الفصول التالية في الخلفية.'}
+        </div>
+      )}
+    </>
+  );
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#090d16] text-white flex flex-col h-screen w-screen overflow-hidden font-['Cairo',sans-serif]" dir="rtl">
-      
-      {/* 1. Top Navbar Header */}
-      <header className="h-16 px-4 sm:px-6 bg-[#0c1220] border-b border-blue-900/40 flex items-center justify-between shrink-0 z-30">
+    <div className="fixed inset-0 z-50 bg-ink text-slate-200 flex flex-col h-[100dvh] w-screen overflow-hidden font-body" dir="rtl">
+      {/* Top bar */}
+      <header className="h-16 px-3 sm:px-6 border-b border-raised flex items-center justify-between gap-3 shrink-0">
+        <button
+          type="button"
+          onClick={() => {
+            audioEngine.stop();
+            onExit();
+          }}
+          className="flex items-center gap-1.5 min-h-11 px-2 text-slate-300 hover:text-white cursor-pointer shrink-0"
+        >
+          <ArrowRight className="w-[18px] h-[18px]" />
+          <span className="hidden sm:inline">{isUserLoggedIn ? 'مكتبتي' : 'رجوع'}</span>
+        </button>
         <div className="flex items-center gap-3 min-w-0">
-          <button
-            onClick={() => {
-              audioEngine.stop();
-              onExit();
-            }}
-            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-all flex items-center gap-1.5 text-xs font-bold shrink-0"
-            title={isUserLoggedIn ? 'الرجوع إلى لوحة التحكم' : 'الرجوع للرئيسية'}
-          >
-            <ArrowRight className="w-4 h-4" />
-            <span className="hidden sm:inline">{isUserLoggedIn ? 'لوحة التحكم' : 'الرئيسية'}</span>
-          </button>
-
-          <div className="h-6 w-[1px] bg-slate-800 shrink-0" />
-
-          {/* Book Title & Chapter status */}
-          <div className="truncate min-w-0">
-            <h1 className="text-sm sm:text-base font-black text-white truncate flex items-center gap-2">
-              <span className="truncate">{cleanTitle}</span>
-              {job.listeningMode === 'summary' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
-                  ملخص مركز (10 د)
-                </span>
-              )}
-            </h1>
-            <p className="text-[11px] text-slate-400 truncate">
-              {currentChapter ? currentChapter.title : 'قراءة صوتية كاملة'} • {wordsCount} كلمة • {formatTime(estimatedTotalSeconds)}
-            </p>
-          </div>
+          <span aria-hidden="true" className="hidden sm:block w-9 h-12 rounded-md bg-gradient-to-br from-indigo-900 to-slate-900 border border-indigo-800 shrink-0" />
+          <span className="flex flex-col leading-tight min-w-0">
+            <span className="font-display font-extrabold text-base sm:text-lg text-white truncate">{cleanTitle}</span>
+            <span className="text-[13px] text-slate-400 truncate">
+              {job.listeningMode === 'summary' ? 'ملخص · ' : job.listeningMode === 'key_points' ? 'أهم النقاط · ' : ''}
+              {chapters ? (chapters.length === 1 ? 'فصل واحد · ' : `${chapters.length} فصول · `) : ''}حوالي {Math.max(1, totalBookMinutes)} دقيقة
+            </span>
+          </span>
         </div>
-
-        {/* Actions on Left (Voice Selector & Download) */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          
-          {/* Quick Voice Selector Badge */}
-          <div className="relative">
-            <button
-              onClick={() => setShowVoicePicker(!showVoicePicker)}
-              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-950/80 to-indigo-950/80 border border-blue-500/40 hover:border-blue-400 flex items-center gap-2 text-xs font-bold text-white transition-all shadow-sm"
-            >
-              <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-[10px] text-white">
-                {selectedVoice.name.slice(0, 1)}
-              </div>
-              <span className="hidden sm:inline text-blue-200">القارئ:</span>
-              <span className="truncate max-w-[90px]">{selectedVoice.name}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-blue-300" />
+        <div className="flex items-center gap-1 shrink-0">
+          {chapters && chapters.length > 1 && (
+            <button type="button" onClick={() => setChaptersOpen(true)} className="md:hidden min-h-11 px-3 text-sm text-brand-soft cursor-pointer">
+              الفصول
             </button>
-
-            {/* Voice Dropdown */}
-            {showVoicePicker && (
-              <div className="absolute left-0 mt-2 w-72 max-h-80 overflow-y-auto bg-[#0d1424] border border-blue-500/40 rounded-2xl shadow-2xl p-2 z-50 space-y-1.5 custom-scrollbar">
-                <div className="p-2 border-b border-slate-800 flex items-center justify-between text-xs text-slate-400">
-                  <span>اختر القارئ الصوتي ({voicesPool.length} صوتاً)</span>
-                </div>
-                {voicesPool.map((v) => (
-                  <button
-                    key={v.id}
-                    onClick={() => {
-                      setSelectedVoice(v);
-                      setShowVoicePicker(false);
-                    }}
-                    className={`w-full text-right p-2.5 rounded-xl text-xs flex items-center justify-between transition-all ${
-                      selectedVoice.id === v.id
-                        ? 'bg-blue-600 text-white font-bold'
-                        : 'text-slate-300 hover:bg-slate-800/80'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center text-xs shrink-0">
-                        {v.avatar ? (
-                          <img src={v.avatar} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <span>{v.gender === 'female' ? '👩' : '👨'}</span>
-                        )}
-                      </div>
-                      <div className="truncate">
-                        <div className="font-bold flex items-center gap-1.5">
-                          <span className="truncate">{v.name}</span>
-                          <span className="text-[10px] text-slate-400">
-                            {v.gender === 'female' ? 'أنثى' : 'ذكر'}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-slate-400 truncate max-w-[150px]">{v.recommendedFor || v.description}</div>
-                      </div>
-                    </div>
-                    {selectedVoice.id === v.id && <Check className="w-4 h-4 text-white shrink-0" />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Chat with PDF / Book AI Assistant */}
+          )}
           <button
-            onClick={() => {
-              audioEngine.pause();
-              setIsPlaying(false);
-              setShowChatModal(true);
-            }}
-            className="px-3 sm:px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-950/90 to-indigo-950/90 hover:from-purple-900 hover:to-indigo-900 border border-purple-500/40 text-purple-200 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-purple-950/40 cursor-pointer"
-            title="تحدث واسأل كتابك بالذكاء الاصطناعي"
+            type="button"
+            onClick={handleShare}
+            className="flex items-center gap-1.5 min-h-11 px-3 text-sm text-brand-soft hover:text-indigo-200 cursor-pointer"
           >
-            <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">اسأل الكتاب (Chat)</span>
-          </button>
-
-          {/* Download Audio Button with Choice Menu */}
-          <button
-            onClick={() => setShowDownloadModal(true)}
-            disabled={isGeneratingMp3}
-            className="px-3 sm:px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-emerald-950/40 cursor-pointer"
-            title="خيارات تحميل الكتاب الصوتي"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{isGeneratingMp3 ? 'جاري التجهيز...' : 'تحميل صوتي'}</span>
+            <Share2 className="w-4 h-4" />
+            <span className="hidden sm:inline">{copied ? 'تم نسخ الرابط' : 'مشاركة'}</span>
           </button>
         </div>
       </header>
 
-      {/* Download Choice Modal */}
-      {showDownloadModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0e1626] border border-blue-500/30 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in zoom-in duration-200">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                  <Download className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-white">خيارات تحميل الكتاب الصوتي</h3>
-                  <p className="text-[11px] text-slate-400">اختر ما ترغب في تنزيله إلى جهازك</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowDownloadModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 pt-1">
-              {/* Option 1: Current Chapter */}
-              <button
-                onClick={handleDownloadSingleChapter}
-                className="w-full p-4 rounded-2xl bg-slate-900/90 hover:bg-blue-900/30 border border-slate-700/70 hover:border-blue-500/50 text-right transition-all flex items-start justify-between group"
-              >
-                <div className="space-y-1 pr-2">
-                  <div className="text-xs font-bold text-white group-hover:text-blue-300 flex items-center gap-1.5">
-                    <span>📄 تحميل الفصل الحالي فقط</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-mono">
-                      {currentChapter?.title || `الفصل ${activeChapterIndex + 1}`}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400">
-                    تحميل فوري وسريع للفصل المعروض حالياً بنفس نبرة القارئ والسرعة.
-                  </p>
-                </div>
-                <Download className="w-4 h-4 text-slate-400 group-hover:text-blue-400 shrink-0 mt-1" />
-              </button>
-
-              {/* Option 2: Full Book */}
-              <button
-                onClick={handleDownloadFullBook}
-                className="w-full p-4 rounded-2xl bg-gradient-to-br from-blue-950/40 to-indigo-950/40 hover:from-blue-900/50 hover:to-indigo-900/50 border border-blue-500/30 hover:border-blue-400/60 text-right transition-all flex items-start justify-between group"
-              >
-                <div className="space-y-1 pr-2">
-                  <div className="text-xs font-bold text-white group-hover:text-emerald-300 flex items-center gap-1.5">
-                    <span>📚 تحميل الكتاب كاملاً (جميع الفصول)</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
-                      شامل
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400">
-                    دمج جميع فصول الكتاب في ملف صوتي واحد متكامل للاستماع إليه دون انقطاع.
-                  </p>
-                </div>
-                <Layers className="w-4 h-4 text-emerald-400 shrink-0 mt-1" />
-              </button>
-            </div>
-
-            <div className="pt-2 text-[10px] text-slate-500 text-center">
-              الصوت المحمل يطابق تماماً القارئ ({selectedVoice.name}) والسرعة ({playbackRate}x).
-            </div>
-          </div>
+      {/* Guest banner */}
+      {!isUserLoggedIn && (
+        <div className="shrink-0 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 py-2 bg-brand-deep text-indigo-100 text-sm">
+          <span>تستمع كضيف. سجّل مجاناً لتحفظ الكتاب ومكان توقفك وتحصل على 30 دقيقة.</span>
+          {onRequestAuth && (
+            <button
+              type="button"
+              onClick={() => {
+                audioEngine.pause();
+                setIsPlaying(false);
+                onRequestAuth('register');
+              }}
+              className="min-h-9 px-3.5 rounded-lg bg-brand text-white font-semibold cursor-pointer"
+            >
+              سجّل مجاناً
+            </button>
+          )}
         </div>
       )}
 
-      {/* Generating Progress Overlay */}
-      {isGeneratingMp3 && downloadProgressMsg && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#0e1626] border border-blue-500/30 rounded-3xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl">
-            <div className="w-12 h-12 rounded-2xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center mx-auto text-blue-400 animate-pulse">
-              <Download className="w-6 h-6 animate-bounce" />
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-sm font-bold text-white">جاري تحضير ملف الصوت...</h4>
-              <p className="text-xs text-blue-300">{downloadProgressMsg}</p>
-            </div>
-            <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-              <div className="bg-gradient-to-r from-blue-500 to-emerald-500 h-full w-full animate-pulse" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. Middle Body: Dual Canvas (Left: Chapters, Center/Right: Synced Text Canvas) */}
-      <div className="flex-1 flex overflow-hidden relative">
-        
-        {/* Chapters Sidebar (Collapsible or visible if multiple chapters) */}
+      {/* Body */}
+      <div className="flex-1 min-h-0 flex">
         {chapters && chapters.length > 1 && (
-          <aside className="w-64 sm:w-72 bg-[#0a0f1d] border-l border-blue-900/30 flex flex-col shrink-0 overflow-hidden hidden md:flex">
-            <div className="p-3 border-b border-blue-900/30 flex items-center justify-between text-xs font-bold text-slate-300">
-              <span className="flex items-center gap-1.5">
-                <Layers className="w-4 h-4 text-blue-400" />
-                <span>فهرس فصول الكتاب ({chapters.length})</span>
-              </span>
-            </div>
-
-            {/* Background Streaming Progress Indicator */}
-            {job.isStreamingBackground && (
-              <div className="m-2 p-2.5 rounded-xl bg-gradient-to-r from-blue-950/80 to-indigo-950/80 border border-blue-500/40 text-[11px] text-blue-200 flex items-center gap-2 shadow-lg animate-pulse">
-                <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-spin shrink-0" />
-                <span className="truncate">{job.backgroundStatus || 'جاري تجهيز باقي الفصول في الخلفية...'}</span>
-              </div>
-            )}
-            <div className="flex-1 overflow-y-auto p-2 space-y-1.5 custom-scrollbar">
-              {chapters.map((chap, idx) => {
-                const isActive = idx === activeChapterIndex;
-                return (
-                  <button
-                    key={chap.id}
-                    onClick={() => {
-                      if (activeChapterIndex !== idx) {
-                        setActiveChapterIndex(idx);
-                        setActiveSentenceIndex(0);
-                      }
-                    }}
-                    className={`w-full text-right p-3 rounded-xl transition-all text-xs flex items-center justify-between gap-2 ${
-                      isActive
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 font-bold'
-                        : 'text-slate-300 hover:bg-slate-800/60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                        isActive ? 'bg-white text-blue-700' : 'bg-slate-800 text-slate-400'
-                      }`}>
-                        {idx + 1}
-                      </span>
-                      <span className="truncate">{chap.title}</span>
-                    </div>
-                    <span className="text-[10px] opacity-75 shrink-0">~{chap.estimatedDurationMinutes} د</span>
-                  </button>
-                );
-              })}
-            </div>
+          <aside aria-label="الفصول" className="hidden md:flex w-[300px] shrink-0 border-l border-raised p-4 flex-col gap-1 overflow-y-auto">
+            {chapterList}
           </aside>
         )}
 
-        {/* Center Reader Canvas: 0-Scroll Studio experience with synchronized active sentence highlight */}
-        <section className="flex-1 flex flex-col bg-[#0b101c] overflow-hidden relative">
-          
-          {/* Reader Top Controls (Font size, Text share) */}
-          <div className="h-10 px-4 sm:px-6 bg-[#0c1222]/80 border-b border-slate-800/80 flex items-center justify-between text-xs text-slate-400 shrink-0">
-            <div className="flex items-center gap-2">
-              <BookOpen className="w-3.5 h-3.5 text-blue-400" />
-              <span>وضع القراءة والمتابعة الحية</span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-500">حجم الخط:</span>
-              <button
-                onClick={() => setReaderFontSize('sm')}
-                className={`px-1.5 py-0.5 rounded text-[11px] ${readerFontSize === 'sm' ? 'bg-blue-600 text-white font-bold' : 'hover:text-white'}`}
-              >
-                صغير
-              </button>
-              <button
-                onClick={() => setReaderFontSize('base')}
-                className={`px-1.5 py-0.5 rounded text-[11px] ${readerFontSize === 'base' ? 'bg-blue-600 text-white font-bold' : 'hover:text-white'}`}
-              >
-                متوسط
-              </button>
-              <button
-                onClick={() => setReaderFontSize('lg')}
-                className={`px-1.5 py-0.5 rounded text-[11px] ${readerFontSize === 'lg' ? 'bg-blue-600 text-white font-bold' : 'hover:text-white'}`}
-              >
-                كبير
-              </button>
-            </div>
-          </div>
-
-          {/* Reader Text Scrollable Area */}
-          <div className="flex-1 overflow-y-auto p-5 sm:p-10 max-w-4xl mx-auto w-full space-y-4 custom-scrollbar">
-            {sentences.map((sent, idx) => {
-              const isActive = idx === activeSentenceIndex;
-              return (
-                <div
-                  key={idx}
-                  ref={isActive ? activeSentenceRef : null}
-                  onClick={() => handleSeekSentence(idx)}
-                  className={`p-3.5 sm:p-4 rounded-2xl transition-all duration-300 cursor-pointer leading-relaxed ${
-                    readerFontSize === 'sm' ? 'text-sm' : readerFontSize === 'base' ? 'text-base sm:text-lg' : 'text-xl sm:text-2xl leading-loose'
-                  } ${
-                    isActive
-                      ? 'bg-gradient-to-r from-blue-900/50 via-indigo-900/40 to-blue-900/50 text-cyan-200 border border-blue-500/50 shadow-xl shadow-blue-950/50 font-bold scale-[1.01]'
-                      : 'text-slate-300 hover:bg-slate-800/40 hover:text-white border border-transparent'
+        <section className="flex-1 min-w-0 flex flex-col">
+          {/* Tabs + reader tools */}
+          <div className="flex flex-wrap items-end justify-between gap-2 px-3 sm:px-8 pt-3 border-b border-raised">
+            <div role="tablist" aria-label="أدوات الكتاب" className="flex gap-1 overflow-x-auto no-scrollbar">
+              {([
+                { id: 'listen', label: 'استماع' },
+                { id: 'summary', label: 'الملخص' },
+                { id: 'key_points', label: 'أهم النقاط' },
+              ] as const).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={panel === t.id}
+                  onClick={() => openPanel(t.id)}
+                  className={`min-h-12 px-4 -mb-px border-b-2 text-[15px] font-semibold whitespace-nowrap cursor-pointer ${
+                    panel === t.id ? 'border-accent text-white' : 'border-transparent text-slate-400 hover:text-white'
                   }`}
                 >
-                  <p>{sent}</p>
-                </div>
-              );
-            })}
+                  {t.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  audioEngine.pause();
+                  setIsPlaying(false);
+                  setShowChatModal(true);
+                }}
+                className="min-h-12 px-4 -mb-px border-b-2 border-transparent text-[15px] font-semibold text-slate-400 hover:text-white whitespace-nowrap cursor-pointer"
+              >
+                اسأل الكتاب
+              </button>
+            </div>
+            {panel === 'listen' && (
+              <div className="flex items-center gap-1.5 pb-1.5 relative">
+                <button
+                  type="button"
+                  aria-label="تصغير الخط"
+                  onClick={() => setReaderFontSize(fontSteps[Math.max(0, fontSteps.indexOf(readerFontSize) - 1)])}
+                  className="w-10 h-10 rounded-lg border border-line text-slate-300 text-sm cursor-pointer hover:bg-raised"
+                >
+                  أ-
+                </button>
+                <button
+                  type="button"
+                  aria-label="تكبير الخط"
+                  onClick={() => setReaderFontSize(fontSteps[Math.min(fontSteps.length - 1, fontSteps.indexOf(readerFontSize) + 1)])}
+                  className="w-10 h-10 rounded-lg border border-line text-slate-300 text-lg cursor-pointer hover:bg-raised"
+                >
+                  أ+
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={hideText}
+                  onClick={() => setHideText(!hideText)}
+                  className="min-h-10 px-3 rounded-lg border border-line text-slate-300 text-sm cursor-pointer hover:bg-raised"
+                >
+                  {hideText ? 'إظهار النص' : 'إخفاء النص'}
+                </button>
+                <button
+                  type="button"
+                  aria-expanded={showSleepMenu}
+                  onClick={() => {
+                    const open = !showSleepMenu;
+                    closeMenus();
+                    setShowSleepMenu(open);
+                  }}
+                  className={`min-h-10 flex items-center gap-1.5 px-3 rounded-lg border text-sm cursor-pointer ${
+                    sleepTimerRemainingSec !== null ? 'border-accent text-accent' : 'border-line text-slate-300 hover:bg-raised'
+                  }`}
+                >
+                  <Moon className="w-4 h-4" />
+                  <span className="hidden sm:inline">{sleepTimerRemainingSec !== null ? formatTime(sleepTimerRemainingSec) : 'مؤقت النوم'}</span>
+                </button>
+                {showSleepMenu && (
+                  <div className="absolute top-12 left-0 z-20 w-48 bg-card border border-line rounded-xl p-1.5 shadow-2xl shadow-black/50">
+                    {[15, 30, 45, 60].map((mins) => (
+                      <button
+                        key={mins}
+                        type="button"
+                        onClick={() => {
+                          setSleepTimerMinutes(mins);
+                          setSleepTimerRemainingSec(mins * 60);
+                          setShowSleepMenu(false);
+                        }}
+                        className="w-full min-h-10 px-3 rounded-lg text-right text-slate-200 hover:bg-raised flex items-center justify-between cursor-pointer"
+                      >
+                        بعد {mins} دقيقة
+                        {sleepTimerMinutes === mins && <Check className="w-4 h-4 text-accent" />}
+                      </button>
+                    ))}
+                    {sleepTimerMinutes !== null && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSleepTimerMinutes(null);
+                          setSleepTimerRemainingSec(null);
+                          setShowSleepMenu(false);
+                        }}
+                        className="w-full min-h-10 px-3 rounded-lg text-right text-rose-300 hover:bg-raised cursor-pointer"
+                      >
+                        إيقاف المؤقت
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-        </section>
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-12 py-6">
+            {resumePoint && panel === 'listen' && (
+              <div className="max-w-[760px] mb-5 flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-xl border border-line bg-card">
+                <span className="text-[15px]">
+                  أكمل من حيث توقفت:{' '}
+                  <strong className="text-white">
+                    {chapters?.[resumePoint.chapter]?.title || 'الكتاب'} · فقرة {resumePoint.sentence + 1}
+                  </strong>
+                </span>
+                <span className="flex gap-2">
+                  <button type="button" onClick={handleResume} className="min-h-10 px-3.5 rounded-lg bg-brand text-white font-semibold cursor-pointer">
+                    أكمل
+                  </button>
+                  <button type="button" onClick={() => setResumePoint(null)} className="min-h-10 px-3.5 rounded-lg border border-line-strong text-slate-300 cursor-pointer">
+                    من البداية
+                  </button>
+                </span>
+              </div>
+            )}
 
+            {panel === 'listen' && !hideText && (
+              <div className="max-w-[760px] flex flex-col gap-1">
+                <p className="text-[13px] text-slate-400 mb-2">اضغط على أي فقرة لتبدأ الاستماع منها</p>
+                {sentences.map((sent, idx) => {
+                  const isActive = idx === activeSentenceIndex;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      ref={isActive ? activeSentenceRef : null}
+                      aria-current={isActive}
+                      onClick={() => handleSeekSentence(idx)}
+                      className={`block w-full text-right px-3 py-2 rounded-lg leading-[2] cursor-pointer transition-colors ${fontClass} ${
+                        isActive ? 'bg-accent/10 text-white' : 'text-slate-500 hover:text-slate-300'
+                      }`}
+                    >
+                      {sent}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {panel === 'listen' && hideText && (
+              <div className="h-full flex flex-col items-center justify-center gap-4 text-center">
+                <span aria-hidden="true" className="w-[200px] h-[280px] rounded-xl bg-gradient-to-br from-indigo-900 to-slate-900 border border-indigo-800 flex items-end justify-center p-5 font-display font-extrabold text-xl text-indigo-100">
+                  {cleanTitle}
+                </span>
+                <span className="text-slate-400">{currentChapter?.title || 'وضع الاستماع فقط'}</span>
+              </div>
+            )}
+
+            {panel !== 'listen' && (
+              <div className="max-w-[760px] flex flex-col gap-4">
+                <h2 className="font-display font-extrabold text-2xl text-white">
+                  {panel === 'summary' ? 'ملخص' : 'أهم النقاط'} {currentChapter ? `· ${currentChapter.title}` : ''}
+                </h2>
+                {panelLoading ? (
+                  <p className="flex items-center gap-2 text-slate-400">
+                    <Loader2 className="w-4 h-4 animate-spin" /> جاري التلخيص بالذكاء الاصطناعي...
+                  </p>
+                ) : panelText ? (
+                  <>
+                    <p className="text-slate-300 text-lg leading-[2] whitespace-pre-line">{panelText}</p>
+                    <button
+                      type="button"
+                      onClick={handleListenPanel}
+                      className="self-start flex items-center gap-2 min-h-11 px-4 rounded-[10px] border border-line-strong text-white hover:bg-raised cursor-pointer"
+                    >
+                      {panelPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+                      {panelPlaying ? 'إيقاف' : 'استمع إليه'}
+                    </button>
+                  </>
+                ) : (
+                  <p className="text-slate-400">تعذّر إنشاء {panel === 'summary' ? 'الملخص' : 'النقاط'} الآن. حاول مرة أخرى.</p>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
       </div>
 
-      {/* 3. Bottom Player Bar - Sleek, Fixed, No-Scroll Controls */}
-      <footer className="h-28 sm:h-24 bg-[#0a0e1a] border-t border-blue-900/50 px-4 sm:px-8 flex flex-col justify-center shrink-0 z-30 space-y-2">
-        
-        {/* Waveform & Scrubber Slider */}
-        <div className="w-full max-w-4xl mx-auto space-y-1">
-          <div className="relative group">
-            {/* Waveform Bars */}
-            <div className="flex items-end justify-between gap-0.5 sm:gap-1 h-6 px-1">
-              {Array.from({ length: 42 }).map((_, i) => {
-                const isPassed = (i / 42) * 100 <= progressPercent;
-                const waveHeight = Math.sin((i / 42) * Math.PI) * 75 + (i % 3 === 0 ? 25 : 15);
-                return (
-                  <div
-                    key={i}
-                    className={`flex-1 rounded-full transition-all duration-150 ${
-                      isPlaying && isPassed
-                        ? 'bg-gradient-to-t from-blue-500 to-cyan-400'
-                        : isPassed
-                        ? 'bg-blue-600'
-                        : 'bg-slate-800'
-                    }`}
-                    style={{
-                      height: `${isPlaying ? Math.max(20, waveHeight) : Math.max(15, waveHeight * 0.35)}%`,
-                    }}
-                  />
-                );
-              })}
-            </div>
+      {/* Player bar */}
+      <footer className="relative shrink-0 border-t border-raised bg-card px-3 sm:px-6 py-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+        <div className="flex items-center gap-1.5 order-1">
+          <button type="button" onClick={() => handleSkipSeconds(-10)} aria-label="الفقرة السابقة" className="w-11 h-11 rounded-full text-slate-300 hover:text-white flex items-center justify-center cursor-pointer">
+            <SkipForward className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleTogglePlay}
+            aria-label={isPlaying ? 'إيقاف مؤقت' : 'تشغيل'}
+            className="w-14 h-14 rounded-full bg-gradient-to-l from-[#8b5cf6] to-[#3b82f6] text-white flex items-center justify-center cursor-pointer"
+          >
+            {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
+          </button>
+          <button type="button" onClick={() => handleSkipSeconds(10)} aria-label="الفقرة التالية" className="w-11 h-11 rounded-full text-slate-300 hover:text-white flex items-center justify-center cursor-pointer">
+            <SkipBack className="w-5 h-5" />
+          </button>
+        </div>
 
-            {/* Scrub Input */}
+        <div className="order-3 sm:order-2 basis-full sm:basis-auto flex-1 flex items-center gap-3 min-w-[200px]">
+          <span className="text-[13px] text-slate-400 tabular-nums">{formatTime(elapsedSeconds)}</span>
+          <div className="relative flex-1 h-1.5 rounded-full bg-line">
+            <div className="absolute top-0 right-0 h-1.5 rounded-full bg-accent" style={{ width: `${progressPercent}%` }} />
+            <label className="sr-only" htmlFor="studio-seek">موضع الاستماع</label>
             <input
+              id="studio-seek"
               type="range"
               min={0}
               max={100}
               value={progressPercent}
               onChange={(e) => {
                 const pct = Number(e.target.value);
-                const targetIdx = Math.min(sentences.length - 1, Math.floor((pct / 100) * sentences.length));
-                handleSeekSentence(targetIdx);
+                handleSeekSentence(Math.min(sentences.length - 1, Math.floor((pct / 100) * sentences.length)));
               }}
-              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+              className="absolute inset-x-0 -top-2 h-6 w-full opacity-0 cursor-pointer"
+              style={{ direction: 'rtl' }}
             />
           </div>
-
-          {/* Time & Progress Info */}
-          <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
-            <span className="text-slate-200 font-bold">{formatTime(elapsedSeconds)}</span>
-            <span className="text-blue-400 font-sans font-bold text-[10px]">
-              فقرة {activeSentenceIndex + 1} من {sentences.length}
-            </span>
-            <span className="text-slate-400">-{formatTime(remainingSeconds)}</span>
-          </div>
+          <span className="text-[13px] text-slate-400 tabular-nums">{formatTime(estimatedTotalSeconds)}</span>
         </div>
 
-        {/* Primary Controls Row */}
-        <div className="w-full max-w-4xl mx-auto flex items-center justify-between">
-          
-          {/* Left: Speed selector */}
-          <div className="flex items-center gap-1 text-xs">
-            <span className="text-slate-500 hidden sm:inline ml-1">السرعة:</span>
-            {[0.8, 1.0, 1.2, 1.5, 2.0].map((rate) => (
+        <div className="order-2 sm:order-3 flex items-center gap-2 mr-auto sm:mr-0">
+          <button
+            type="button"
+            aria-expanded={showVoicePicker}
+            onClick={() => {
+              const open = !showVoicePicker;
+              closeMenus();
+              setShowVoicePicker(open);
+            }}
+            className="min-h-11 flex items-center gap-2 px-3 rounded-[10px] border border-line-strong text-white text-sm cursor-pointer hover:bg-raised"
+          >
+            <span className="w-[26px] h-[26px] rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center text-[13px] font-bold">
+              {selectedVoice.name.charAt(0)}
+            </span>
+            <span className="hidden sm:inline">{selectedVoice.name.split(' - ')[0]}</span>
+          </button>
+          <button
+            type="button"
+            aria-label="سرعة التشغيل"
+            onClick={() => {
+              const rates = [1.0, 1.25, 1.5, 2.0, 0.8];
+              const next = rates[(rates.indexOf(playbackRate) + 1) % rates.length] || 1.0;
+              setPlaybackRate(next);
+              if (isPlaying) {
+                audioEngine.stop();
+                startPlayback(activeSentenceIndex);
+              }
+            }}
+            className="min-w-14 min-h-11 rounded-[10px] border border-line-strong text-white font-semibold text-sm cursor-pointer hover:bg-raised"
+          >
+            {playbackRate}x
+          </button>
+          <button
+            type="button"
+            aria-expanded={showDownloadModal}
+            disabled={isGeneratingMp3}
+            onClick={() => {
+              const open = !showDownloadModal;
+              closeMenus();
+              setShowDownloadModal(open);
+            }}
+            className="min-h-11 flex items-center gap-2 px-4 rounded-[10px] bg-brand text-white font-semibold text-sm cursor-pointer hover:bg-indigo-500 disabled:opacity-60"
+          >
+            {isGeneratingMp3 ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Download className="w-[18px] h-[18px]" />}
+            <span className="hidden sm:inline">{isGeneratingMp3 ? 'جاري التجهيز' : 'تحميل'}</span>
+          </button>
+        </div>
+
+        {showVoicePicker && (
+          <div className="absolute bottom-full mb-2 left-3 sm:left-40 z-30 w-[300px] max-h-[60vh] overflow-y-auto bg-card border border-line rounded-[14px] p-2 shadow-2xl shadow-black/50">
+            <div className="text-[13px] text-slate-400 px-2.5 py-1.5">غيّر الصوت دون إعادة التحويل</div>
+            {voicesPool.map((v) => (
               <button
-                key={rate}
+                key={v.id}
+                type="button"
+                aria-pressed={selectedVoice.id === v.id}
                 onClick={() => {
-                  setPlaybackRate(rate);
-                  if (isPlaying) {
-                    audioEngine.stop();
-                    startPlayback(activeSentenceIndex);
-                  }
+                  setSelectedVoice(v);
+                  setShowVoicePicker(false);
                 }}
-                className={`px-2 py-0.5 rounded-lg text-[11px] font-mono transition-all ${
-                  playbackRate === rate
-                    ? 'bg-blue-600 text-white font-bold'
-                    : 'text-slate-400 hover:text-white bg-slate-800/60'
+                className={`w-full min-h-12 flex items-center justify-between px-2.5 rounded-[10px] text-white cursor-pointer ${
+                  selectedVoice.id === v.id ? 'bg-raised' : 'hover:bg-raised/60'
                 }`}
               >
-                {rate}x
+                <span className="flex items-center gap-2.5">
+                  <span className="w-[30px] h-[30px] rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-bold">{v.name.charAt(0)}</span>
+                  {v.name.split(' - ')[0]}
+                </span>
+                <span className="text-[13px] text-slate-400">{v.gender === 'female' ? 'امرأة' : 'رجل'}</span>
               </button>
             ))}
           </div>
+        )}
 
-          {/* Center: Playback Buttons */}
-          <div className="flex items-center gap-3 sm:gap-5">
-            {/* Skip -10s */}
-            <button
-              onClick={() => handleSkipSeconds(-10)}
-              className="p-2 text-slate-400 hover:text-white transition-transform active:scale-95"
-              title="تراجع 10 ثوانٍ"
-            >
-              <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
+        {showDownloadModal && (
+          <div className="absolute bottom-full mb-2 left-3 z-30 w-[280px] bg-card border border-line rounded-[14px] p-2 shadow-2xl shadow-black/50">
+            <button type="button" onClick={handleDownloadSingleChapter} className="w-full min-h-[52px] px-3 rounded-[10px] text-right text-white hover:bg-raised flex flex-col justify-center leading-snug cursor-pointer">
+              <span>هذا الفصل</span>
+              <span className="text-xs text-slate-400">{currentChapter?.title || 'الفصل الحالي'}</span>
             </button>
-
-            {/* Play / Pause Primary Button */}
-            <button
-              onClick={handleTogglePlay}
-              className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white flex items-center justify-center shadow-lg shadow-blue-600/40 transition-transform active:scale-95"
-            >
-              {isPlaying ? (
-                <Pause className="w-5 h-5 sm:w-6 sm:h-6 fill-white" />
-              ) : (
-                <Play className="w-5 h-5 sm:w-6 sm:h-6 fill-white translate-x-[-1px]" />
-              )}
+            <button type="button" onClick={handleDownloadFullBook} className="w-full min-h-[52px] px-3 rounded-[10px] text-right text-white hover:bg-raised flex flex-col justify-center leading-snug cursor-pointer">
+              <span>الكتاب كاملاً</span>
+              <span className="text-xs text-slate-400">كل الفصول في ملف واحد</span>
             </button>
-
-            {/* Skip +10s */}
-            <button
-              onClick={() => handleSkipSeconds(10)}
-              className="p-2 text-slate-400 hover:text-white transition-transform active:scale-95"
-              title="تقديم 10 ثوانٍ"
-            >
-              <RotateCw className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
+            <p className="px-3 pt-1 pb-1.5 text-[11px] text-slate-500">بصوت {selectedVoice.name.split(' - ')[0]} وسرعة {playbackRate}x</p>
           </div>
-
-          {/* Right: Sleep Timer Menu */}
-          <div className="relative">
-            <button
-              onClick={() => setShowSleepMenu(!showSleepMenu)}
-              className={`p-2 rounded-xl text-xs flex items-center gap-1.5 transition-all ${
-                sleepTimerRemainingSec !== null
-                  ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40'
-                  : 'text-slate-400 hover:text-white bg-slate-800/60'
-              }`}
-              title="مؤقت النوم"
-            >
-              <Moon className="w-4 h-4" />
-              <span className="hidden sm:inline">
-                {sleepTimerRemainingSec !== null ? formatTime(sleepTimerRemainingSec) : 'مؤقت النوم'}
-              </span>
-            </button>
-
-            {showSleepMenu && (
-              <div className="absolute left-0 bottom-full mb-2 w-48 bg-[#0d1424] border border-blue-500/30 rounded-2xl shadow-2xl p-2 z-50 space-y-1">
-                <div className="text-[10px] text-slate-400 px-2 py-1">إيقاف القراءة تلقائياً بعد:</div>
-                {[15, 30, 45, 60].map((mins) => (
-                  <button
-                    key={mins}
-                    onClick={() => {
-                      setSleepTimerMinutes(mins);
-                      setSleepTimerRemainingSec(mins * 60);
-                      setShowSleepMenu(false);
-                    }}
-                    className="w-full text-right p-2 rounded-lg text-xs hover:bg-slate-800 text-slate-300 flex items-center justify-between"
-                  >
-                    <span>{mins} دقيقة</span>
-                    {sleepTimerMinutes === mins && <Check className="w-3.5 h-3.5 text-blue-400" />}
-                  </button>
-                ))}
-                <button
-                  onClick={() => {
-                    setSleepTimerMinutes(null);
-                    setSleepTimerRemainingSec(null);
-                    setShowSleepMenu(false);
-                  }}
-                  className="w-full text-right p-2 rounded-lg text-xs hover:bg-red-950/40 text-red-400 border-t border-slate-800 mt-1"
-                >
-                  تعطيل المؤقت
-                </button>
-              </div>
-            )}
-          </div>
-
-        </div>
-
+        )}
       </footer>
 
-      {/* Chat With PDF Modal */}
-      {showChatModal && (
-        <ChatPdfModal
-          isOpen={showChatModal}
-          onClose={() => setShowChatModal(false)}
-          job={job}
-          availableVoices={voicesPool}
-        />
+      {/* Download progress */}
+      {isGeneratingMp3 && downloadProgressMsg && (
+        <div role="status" className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-raised border border-line shadow-2xl shadow-black/50 text-white text-sm">
+          <Loader2 className="w-4 h-4 animate-spin text-accent" />
+          {downloadProgressMsg}
+        </div>
       )}
 
+      {/* Mobile chapters sheet */}
+      {chaptersOpen && chapters && (
+        <div className="md:hidden fixed inset-0 z-50 bg-slate-950/80" onClick={() => setChaptersOpen(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute bottom-0 inset-x-0 max-h-[70vh] overflow-y-auto bg-card border-t border-line rounded-t-2xl p-4 flex flex-col gap-1"
+          >
+            {chapterList}
+          </div>
+        </div>
+      )}
+
+      {showChatModal && (
+        <ChatPdfModal isOpen={showChatModal} onClose={() => setShowChatModal(false)} job={job} availableVoices={voicesPool} />
+      )}
     </div>
   );
 };

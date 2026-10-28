@@ -218,6 +218,7 @@ export default function App() {
           onExit={() => setActiveJob(null)}
           availableVoices={allVoices}
           isUserLoggedIn={false}
+          onRequestAuth={handleOpenAuth}
         />
       )}
 
