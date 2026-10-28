@@ -44,7 +44,6 @@ import { audioEngine } from '../lib/audioEngine';
 import { useAuth } from '../lib/AuthContext';
 import { db, doc, setDoc, serverTimestamp } from '../lib/firebase';
 import { BookProcessingModal } from './BookProcessingModal';
-import { BookUploadAuthPrompt } from './BookUploadAuthPrompt';
 import { ChatPdfModal } from './ChatPdfModal';
 
 interface ConversionToolProps {
@@ -66,8 +65,6 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
 }) => {
   const voicesPool = availableVoicesList && availableVoicesList.length > 0 ? availableVoicesList : VOICES;
   const { user } = useAuth();
-  const [showUploadAuthPrompt, setShowUploadAuthPrompt] = useState(false);
-  const [pendingAutoConvertAfterAuth, setPendingAutoConvertAfterAuth] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedSampleBook, setSelectedSampleBook] = useState<SampleBook | null>(null);
   const [pendingSampleStart, setPendingSampleStart] = useState(false);
@@ -113,14 +110,6 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   const extractionCancelledRef = useRef<boolean>(false);
   const progressiveSessionRef = useRef<ProgressivePdfSession | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Auto trigger conversion after user logs in if they previously attempted conversion
-  useEffect(() => {
-    if (user && pendingAutoConvertAfterAuth) {
-      setPendingAutoConvertAfterAuth(false);
-      handleStartConversion();
-    }
-  }, [user, pendingAutoConvertAfterAuth]);
 
   // "Try a sample" starts converting once the sample text is in state
   useEffect(() => {
@@ -745,23 +734,6 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         onCancel={isExtracting ? handleCancelExtraction : handleCancelConversion}
       />
 
-      {/* Book Upload Auth Prompt */}
-      <BookUploadAuthPrompt
-        isOpen={showUploadAuthPrompt && !user}
-        bookTitle={selectedFile ? selectedFile.name : 'كتابك الصوتي'}
-        pagesCount={pageCount}
-        onLogin={() => {
-          setShowUploadAuthPrompt(false);
-          setPendingAutoConvertAfterAuth(true);
-          onRequestAuth?.('login');
-        }}
-        onRegister={() => {
-          setShowUploadAuthPrompt(false);
-          setPendingAutoConvertAfterAuth(true);
-          onRequestAuth?.('register');
-        }}
-        onClose={() => setShowUploadAuthPrompt(false)}
-      />
     </div>
   );
 };

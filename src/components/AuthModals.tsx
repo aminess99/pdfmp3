@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, LogIn, UserPlus, Headphones, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { X, AlertCircle, Loader2, Check } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 
 interface AuthModalsProps {
@@ -9,57 +9,70 @@ interface AuthModalsProps {
   onSwitchMode: (mode: 'login' | 'register') => void;
 }
 
-export const AuthModals: React.FC<AuthModalsProps> = ({
-  isOpen,
-  mode,
-  onClose,
-  onSwitchMode,
-}) => {
-  const { signInWithEmail, signUpWithEmail, signInWithGoogle, quickAdminLogin } = useAuth();
-  
+const firebaseErrorMessage = (err: any): string => {
+  switch (err?.code) {
+    case 'auth/invalid-credential':
+    case 'auth/user-not-found':
+    case 'auth/wrong-password':
+      return 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';
+    case 'auth/email-already-in-use':
+      return 'هذا البريد مسجّل مسبقاً، يمكنك تسجيل الدخول بدلاً من ذلك.';
+    case 'auth/weak-password':
+      return 'كلمة المرور ضعيفة: 6 أحرف على الأقل.';
+    case 'auth/invalid-email':
+      return 'صيغة البريد الإلكتروني غير صحيحة.';
+    case 'auth/unauthorized-domain':
+      return 'تسجيل الدخول غير مفعّل لهذا النطاق بعد. أضف النطاق في إعدادات Firebase.';
+    case 'auth/too-many-requests':
+      return 'محاولات كثيرة، حاول بعد قليل.';
+    default:
+      return err?.message || 'حدث خطأ، حاول مرة أخرى.';
+  }
+};
+
+const inputClass =
+  'w-full min-h-12 bg-ink border border-line rounded-[10px] px-3.5 text-base text-white placeholder-slate-500 focus:outline-none focus:border-brand';
+
+export const AuthModals: React.FC<AuthModalsProps> = ({ isOpen, mode, onClose, onSwitchMode }) => {
+  const { signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword } = useAuth();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [forgot, setForgot] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   if (!isOpen) return null;
+
+  const switchMode = (next: 'login' | 'register') => {
+    setError(null);
+    setForgot(false);
+    onSwitchMode(next);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-
     try {
+      if (forgot) {
+        await resetPassword(email);
+        setResetSent(true);
+        return;
+      }
       if (mode === 'register') {
-        if (!name.trim()) {
-          throw new Error('يرجى إدخال اسمك الكريم.');
-        }
-        if (password.length < 6) {
-          throw new Error('يجب ألا تقل كلمة المرور عن 6 أحرف.');
-        }
+        if (!name.trim()) throw new Error('يرجى إدخال اسمك.');
+        if (password.length < 6) throw new Error('كلمة المرور يجب أن تكون 6 أحرف على الأقل.');
         await signUpWithEmail(name, email, password);
       } else {
         await signInWithEmail(email, password);
       }
-
-      setSuccess(true);
-      setTimeout(() => {
-        setSuccess(false);
-        onClose();
-      }, 1200);
+      onClose();
     } catch (err: any) {
-      let msg = err.message || 'حدث خطأ أثناء المصادقة.';
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        msg = 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';
-      } else if (err.code === 'auth/email-already-in-use') {
-        msg = 'هذا البريد الإلكتروني مسجل مسبقاً، يمكنك تسجيل الدخول بدلاً من ذلك.';
-      } else if (err.code === 'auth/weak-password') {
-        msg = 'كلمة المرور ضعيفة جداً (يجب أن تتكون من 6 خانات على الأقل).';
-      }
-      setError(msg);
+      setError(firebaseErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -70,204 +83,172 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
     setGoogleLoading(true);
     try {
       await signInWithGoogle();
-      setSuccess(true);
-      setTimeout(() => {
-        setSuccess(false);
-        onClose();
-      }, 1200);
+      onClose();
     } catch (err: any) {
-      if (err.code !== 'auth/popup-closed-by-user') {
-        setError(err.message || 'تعذر تسجيل الدخول بحساب Google حالياً.');
-      }
+      if (err?.code !== 'auth/popup-closed-by-user') setError(firebaseErrorMessage(err));
     } finally {
       setGoogleLoading(false);
     }
   };
 
-  const handleQuickAdmin = () => {
-    quickAdminLogin();
-    setSuccess(true);
-    setTimeout(() => {
-      setSuccess(false);
-      onClose();
-    }, 800);
-  };
+  const title = forgot ? 'نسيت كلمة المرور؟' : mode === 'login' ? 'مرحباً بعودتك' : 'أنشئ حسابك';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in" dir="rtl">
-      <div className="relative w-full max-w-md bg-[#0f172a] rounded-3xl border border-blue-500/30 shadow-2xl p-6 sm:p-8 text-white space-y-5">
-        
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-5 left-5 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-colors"
-        >
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/85 font-body" dir="rtl" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-title"
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-[420px] max-h-[calc(100dvh-32px)] overflow-y-auto bg-card border border-line rounded-[20px] p-6 sm:p-8 flex flex-col gap-4"
+      >
+        <button type="button" onClick={onClose} aria-label="إغلاق" className="absolute top-4 left-4 w-11 h-11 rounded-full text-slate-400 hover:text-white hover:bg-raised flex items-center justify-center cursor-pointer">
           <X className="w-5 h-5" />
         </button>
 
-        {/* Modal Header */}
-        <div className="text-center space-y-1.5">
-          <div className="w-12 h-12 rounded-2xl bg-blue-600/20 border border-blue-500/30 text-blue-400 mx-auto flex items-center justify-center">
-            <Headphones className="w-6 h-6" />
-          </div>
-          <h3 className="text-2xl font-black font-['Tajawal']">
-            {mode === 'login' ? 'تسجيل الدخول إلى حسابك' : 'إنشاء حساب جديد'}
-          </h3>
-          <p className="text-xs text-slate-400">
-            {mode === 'login'
-              ? 'مرحباً بعودتك! ادخل بياناتك لمتابعة كتبك ومكتبتك الصوتية.'
-              : 'انضم إلينا واستمتع بتحويل وحفظ كتبك بصوتك المفضل سحابياً.'}
+        <img src="/brand/logo.png" alt="Hakawati AI" width={151} height={32} className="h-8 w-auto self-start" />
+        <div className="flex flex-col gap-1">
+          <h2 id="auth-title" className="font-display font-extrabold text-[28px] text-white">{title}</h2>
+          <p className="text-sm text-slate-400">
+            {forgot
+              ? 'أدخل بريدك وسنرسل لك رابطاً لتعيين كلمة مرور جديدة.'
+              : mode === 'register'
+              ? '30 دقيقة مجانية عند التسجيل، بدون بطاقة دفع.'
+              : 'ادخل لمتابعة كتبك ومكتبتك الصوتية.'}
           </p>
         </div>
 
+        {!forgot && (
+          <div role="tablist" aria-label="نوع الحساب" className="flex gap-1 p-1 rounded-xl bg-ink">
+            {(['login', 'register'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => switchMode(m)}
+                className={`flex-1 min-h-11 rounded-[9px] text-[15px] font-semibold cursor-pointer ${mode === m ? 'bg-raised text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                {m === 'login' ? 'تسجيل الدخول' : 'حساب جديد'}
+              </button>
+            ))}
+          </div>
+        )}
+
         {error && (
-          <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div role="alert" className="p-3 rounded-xl bg-rose-950/60 border border-rose-900 text-rose-200 text-sm flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
         )}
 
-        {success ? (
-          <div className="py-8 text-center space-y-2 animate-in zoom-in">
-            <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto animate-bounce" />
-            <p className="text-base font-bold text-white">تمت العملية بنجاح!</p>
-            <p className="text-xs text-slate-400">جاري نقلك إلى مكتبتك وتفعيل ميزاتك...</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            
-            {/* Google One-Click Sign In */}
+        {resetSent ? (
+          <div role="status" className="flex flex-col items-center gap-2 py-6 text-center">
+            <Check className="w-10 h-10 text-accent" />
+            <p className="text-white font-semibold">أرسلنا رابط الاستعادة إلى {email}</p>
+            <p className="text-sm text-slate-400">تحقق من بريدك (وصندوق الرسائل غير المرغوبة).</p>
             <button
               type="button"
-              onClick={handleGoogleAuth}
-              disabled={googleLoading || loading}
-              className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-3 transition-all disabled:opacity-50"
+              onClick={() => {
+                setResetSent(false);
+                setForgot(false);
+              }}
+              className="mt-2 min-h-11 px-4 text-brand-soft hover:text-indigo-200 cursor-pointer"
             >
-              {googleLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-              ) : (
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.15z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.15C3.27 21.36 7.35 24 12 24z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.26C.46 8.16 0 9.98 0 12s.46 3.84 1.26 5.42l4.02-3.15z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.27 2.64 1.26 6.58l4.02 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
-                  />
-                </svg>
-              )}
-              <span>{mode === 'login' ? 'المتابعة باستخدام Google' : 'التسجيل باستخدام Google'}</span>
+              رجوع لتسجيل الدخول
             </button>
+          </div>
+        ) : (
+          <>
+            {!forgot && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleGoogleAuth}
+                  disabled={googleLoading || loading}
+                  className="w-full min-h-[52px] rounded-xl bg-white text-slate-900 font-bold flex items-center justify-center gap-3 cursor-pointer disabled:opacity-60"
+                >
+                  {googleLoading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
+                      <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.15z" />
+                      <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.15C3.27 21.36 7.35 24 12 24z" />
+                      <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.26C.46 8.16 0 9.98 0 12s.46 3.84 1.26 5.42l4.02-3.15z" />
+                      <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.27 2.64 1.26 6.58l4.02 3.15c.95-2.83 3.6-4.98 6.72-4.98z" />
+                    </svg>
+                  )}
+                  المتابعة بحساب Google
+                </button>
+                <div className="flex items-center gap-3 text-[13px] text-slate-500">
+                  <span className="h-px flex-1 bg-line" />
+                  أو بالبريد
+                  <span className="h-px flex-1 bg-line" />
+                </div>
+              </>
+            )}
 
-            <div className="flex items-center gap-2">
-              <span className="h-px flex-1 bg-slate-800" />
-              <span className="text-[11px] text-slate-500 font-semibold">أو بالبريد الإلكتروني</span>
-              <span className="h-px flex-1 bg-slate-800" />
-            </div>
-
-            {/* Email Form */}
-            <form onSubmit={handleSubmit} className="space-y-3.5">
-              {mode === 'register' && (
-                <div className="space-y-1 text-right">
-                  <label className="text-xs font-semibold text-slate-300">الاسم الكامل</label>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
+              {!forgot && mode === 'register' && (
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="auth-name" className="text-sm text-slate-300">الاسم</label>
+                  <input id="auth-name" type="text" required autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                <label htmlFor="auth-email" className="text-sm text-slate-300">البريد الإلكتروني</label>
+                <input
+                  id="auth-email"
+                  type="email"
+                  required
+                  dir="ltr"
+                  autoComplete="email"
+                  placeholder="name@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className={`${inputClass} text-right`}
+                />
+              </div>
+              {!forgot && (
+                <div className="flex flex-col gap-1">
+                  <span className="flex justify-between items-center">
+                    <label htmlFor="auth-pass" className="text-sm text-slate-300">كلمة المرور</label>
+                    {mode === 'login' && (
+                      <button type="button" onClick={() => { setError(null); setForgot(true); }} className="text-sm text-brand-soft hover:text-indigo-200 cursor-pointer">
+                        نسيتها؟
+                      </button>
+                    )}
+                  </span>
                   <input
-                    type="text"
+                    id="auth-pass"
+                    type="password"
                     required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="محمد أحمد"
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none"
+                    autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={inputClass}
                   />
                 </div>
               )}
-
-              <div className="space-y-1 text-right">
-                <label className="text-xs font-semibold text-slate-300">البريد الإلكتروني</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@example.com"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none"
-                />
-              </div>
-
-              <div className="space-y-1 text-right">
-                <label className="text-xs font-semibold text-slate-300">كلمة المرور</label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none"
-                />
-              </div>
-
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                className="w-full min-h-[52px] rounded-xl bg-brand hover:bg-indigo-500 text-white font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
               >
-                {loading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : mode === 'login' ? (
-                  <LogIn className="w-4 h-4" />
-                ) : (
-                  <UserPlus className="w-4 h-4" />
-                )}
-                <span>{loading ? 'جاري التحقق...' : mode === 'login' ? 'تسجيل الدخول' : 'إنشاء الحساب'}</span>
+                {loading && <Loader2 className="w-5 h-5 animate-spin" />}
+                {forgot ? 'أرسل رابط الاستعادة' : mode === 'login' ? 'دخول' : 'إنشاء الحساب'}
               </button>
-
-              {/* Quick Admin Access for aminefiverr1996@gmail.com */}
-              <div className="pt-2 border-t border-slate-800/80">
-                <button
-                  type="button"
-                  onClick={handleQuickAdmin}
-                  className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500/15 to-orange-500/15 hover:from-amber-500/25 hover:to-orange-500/25 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-sm"
-                >
-                  <span>👑 الدخول السريع كمدير المنصة (أمين)</span>
+              {forgot && (
+                <button type="button" onClick={() => setForgot(false)} className="min-h-11 text-slate-400 hover:text-white cursor-pointer">
+                  رجوع لتسجيل الدخول
                 </button>
-              </div>
+              )}
+              {!forgot && mode === 'register' && (
+                <p className="text-[13px] text-slate-400 text-center">بالتسجيل توافق على شروط الاستخدام وسياسة الخصوصية.</p>
+              )}
             </form>
-          </div>
+          </>
         )}
-
-        {/* Footer switch */}
-        <div className="pt-1 text-center text-xs text-slate-400">
-          {mode === 'login' ? (
-            <span>
-              ليس لديك حساب؟{' '}
-              <button
-                onClick={() => onSwitchMode('register')}
-                className="text-blue-400 font-bold hover:underline"
-              >
-                أنشئ حساباً مجانياً الآن
-              </button>
-            </span>
-          ) : (
-            <span>
-              لديك حساب بالفعل؟{' '}
-              <button
-                onClick={() => onSwitchMode('login')}
-                className="text-blue-400 font-bold hover:underline"
-              >
-                سجل الدخول من هنا
-              </button>
-            </span>
-          )}
-        </div>
-
       </div>
     </div>
   );
