@@ -230,7 +230,7 @@ export const AudioPlayerDrawer: React.FC<AudioPlayerDrawerProps> = ({ job, onClo
         navigator.mediaSession.metadata = new MediaMetadata({
           title: currentChapter ? currentChapter.title : cleanBookTitle(job.fileName),
           artist: job.selectedVoice.name,
-          album: 'PDFtoAudio - كتب مسموعة بالذكاء الاصطناعي',
+          album: 'Hakawati AI - كتب مسموعة بالذكاء الاصطناعي',
           artwork: [
             {
               src: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=512&h=512&fit=crop&q=80',

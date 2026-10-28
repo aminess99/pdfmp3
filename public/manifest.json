@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "PDFtoAudio - حوّل كتب PDF إلى صوت بالذكاء الاصطناعي",
-  "short_name": "PDFtoAudio",
+  "name": "Hakawati AI - حوّل كتب PDF إلى صوت بالذكاء الاصطناعي",
+  "short_name": "Hakawati AI",
   "description": "منصة رائدة لتحويل ملفات وكتب PDF إلى كتب صوتية مسموعة بـ 30 صوتاً و14 لهجة عربية.",
   "start_url": "/",
   "scope": "/",
@@ -13,15 +13,15 @@
   "dir": "rtl",
   "icons": [
     {
-      "src": "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=192&h=192&fit=crop&q=80",
+      "src": "/brand/icon-192.png",
       "sizes": "192x192",
-      "type": "image/jpeg",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=512&h=512&fit=crop&q=80",
+      "src": "/brand/icon-512.png",
       "sizes": "512x512",
-      "type": "image/jpeg",
+      "type": "image/png",
       "purpose": "any"
     }
   ]

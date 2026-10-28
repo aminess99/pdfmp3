@@ -12,7 +12,7 @@ interface LanguageContextType {
 const translations: Record<Language, Record<string, string>> = {
   ar: {
     // Brand & Header
-    'app_title': 'PDFtoAudio',
+    'app_title': 'Hakawati AI',
     'app_tagline': 'كتابك ... أصبح صوتاً',
     'nav_home': 'الرئيسية',
     'nav_pricing': 'الأسعار',
@@ -44,11 +44,11 @@ const translations: Record<Language, Record<string, string>> = {
     // Legal
     'terms': 'شروط الاستخدام',
     'privacy': 'سياسة الخصوصية',
-    'all_rights': 'جميع الحقوق محفوظة © 2026 PDFtoAudio',
+    'all_rights': 'جميع الحقوق محفوظة © 2026 Hakawati AI',
   },
   en: {
     // Brand & Header
-    'app_title': 'PDFtoAudio',
+    'app_title': 'Hakawati AI',
     'app_tagline': 'Your books, turned into lifelike speech',
     'nav_home': 'Home',
     'nav_pricing': 'Pricing',
@@ -80,7 +80,7 @@ const translations: Record<Language, Record<string, string>> = {
     // Legal
     'terms': 'Terms of Service',
     'privacy': 'Privacy Policy',
-    'all_rights': 'All Rights Reserved © 2026 PDFtoAudio',
+    'all_rights': 'All Rights Reserved © 2026 Hakawati AI',
   }
 };
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Headphones, Menu, X } from 'lucide-react';
+import { ChevronDown, Menu, X } from 'lucide-react';
 import { LANDING_PAGES, landingPath } from '../data/landingPages';
 
 interface SiteHeaderProps {
@@ -44,11 +44,8 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenAuth, onNavigate }
   return (
     <header className="relative border-b border-raised bg-ink z-30" dir="rtl">
       <div className="max-w-[1160px] mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-4">
-        <a href="/" className="flex items-center gap-2.5 text-white">
-          <span className="w-9 h-9 rounded-[10px] bg-brand flex items-center justify-center">
-            <Headphones className="w-5 h-5" aria-hidden="true" />
-          </span>
-          <span className="font-display font-extrabold text-xl">PDFtoAudio</span>
+        <a href="/" className="flex items-center shrink-0" aria-label="Hakawati AI – الصفحة الرئيسية">
+          <img src="/brand/logo.png" alt="Hakawati AI" width={170} height={36} className="h-8 sm:h-9 w-auto" />
         </a>
 
         {/* Desktop nav */}
@@ -115,7 +112,7 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenAuth, onNavigate }
             className="absolute top-0 right-0 bottom-0 w-[320px] max-w-[85vw] bg-card border-l border-line flex flex-col gap-1 px-4 pt-3 pb-5 overflow-y-auto"
           >
             <div className="flex items-center justify-between h-13">
-              <span className="font-display font-extrabold text-lg text-white">PDFtoAudio</span>
+              <img src="/brand/logo.png" alt="Hakawati AI" width={151} height={32} className="h-8 w-auto" />
               <button type="button" onClick={() => setMobileOpen(false)} aria-label="إغلاق القائمة" className="w-11 h-11 flex items-center justify-center text-slate-200 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>

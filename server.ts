@@ -110,7 +110,7 @@ async function callOpenRouter(
           "Authorization": `Bearer ${openRouterKey}`,
           "Content-Type": "application/json",
           "HTTP-Referer": process.env.APP_URL || "https://pdfmp3.onrender.com",
-          "X-Title": "PDF to Audio Arabic Studio",
+          "X-Title": "Hakawati AI",
         },
         body: JSON.stringify({
           model,
@@ -153,7 +153,7 @@ async function callOpenRouter(
 
 // Health check
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", app: "PDFtoAudio", timestamp: new Date().toISOString() });
+  res.json({ status: "ok", app: "Hakawati AI", timestamp: new Date().toISOString() });
 });
 
 // AI Text-to-Audio Script Summarizer & Diacritics Optimizer
@@ -700,7 +700,7 @@ app.post("/api/ai/extract-chapters", async (req, res) => {
 3. إذا وجدت فصولاً حقيقية: قسّم الكتاب وفقاً لعناوين فصول المؤلف الأصلية حرفياً، واستخرج نص كل فصل منقّى من أرقام الصفحات والهوامش.
 4. إذا لم تجد فصولاً أو فهارس أصلية واضحة: قسّم النص تلقائياً إلى 3 إلى 8 أجزاء منطقية متوازنة بأسماء معبرة (مثل: "الجزء الأول: المقدمة والتمهيد"، "الجزء الثاني: صلب الموضوع"... إلخ).
 5. صِغ مقدمة صوتية افتتاحية فخمة ومشوقة (Cinematic Audio Intro) باللغة العربية الفصحى لوضعها في بداية الفصل الأول على هذا النمط:
-   "كتاب: [اسم الكتاب] .. للكاتب: [اسم المؤلف أو الكاتب إن وجد] .. بصوت: ${readerVoice} .. إنتاج منصة PDF to Audio .. استماعاً ممتعاً."
+   "كتاب: [اسم الكتاب] .. للكاتب: [اسم المؤلف أو الكاتب إن وجد] .. بصوت: ${readerVoice} .. إنتاج منصة Hakawati AI .. استماعاً ممتعاً."
 
 أرجع النتيجة بصيغة JSON حصراً على هذا الشكل الدقيق:
 {
@@ -854,7 +854,7 @@ async function synthesizeWithOpenRouterGeminiTts(
           Authorization: `Bearer ${openRouterKey}`,
           "Content-Type": "application/json",
           "HTTP-Referer": process.env.APP_URL || "https://pdfmp3.onrender.com",
-          "X-Title": "PDF to Audio Arabic Studio",
+          "X-Title": "Hakawati AI",
         },
         body: JSON.stringify({
           model,
@@ -1627,7 +1627,7 @@ app.post("/api/ai/generate-cover", async (req, res) => {
                 "Authorization": `Bearer ${openRouterKey}`,
                 "Content-Type": "application/json",
                 "HTTP-Referer": process.env.APP_URL || "https://pdfmp3.onrender.com",
-                "X-Title": "PDF to Audio Arabic Studio",
+                "X-Title": "Hakawati AI",
               },
               body: JSON.stringify({
                 model: orModel,
@@ -1825,12 +1825,12 @@ function renderLandingHtml(template: string, page: LandingPage): string {
         name: page.title,
         description: page.description,
         inLanguage: "ar",
-        isPartOf: { "@type": "WebSite", name: "PDFtoAudio", url: `${SITE_URL}/` },
+        isPartOf: { "@type": "WebSite", name: "Hakawati AI", url: `${SITE_URL}/` },
       },
       {
         "@type": "BreadcrumbList",
         itemListElement: [
-          { "@type": "ListItem", position: 1, name: "PDFtoAudio", item: `${SITE_URL}/` },
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}/` },
           { "@type": "ListItem", position: 2, name: page.linkLabel, item: url },
         ],
       },

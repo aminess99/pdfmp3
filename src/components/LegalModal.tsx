@@ -24,7 +24,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose, type })
               <h3 className="text-lg font-black text-white font-['Tajawal']">
                 {type === 'privacy' ? 'سياسة الخصوصية وحماية البيانات' : 'شروط وإحكام الاستخدام'}
               </h3>
-              <p className="text-xs text-slate-300">منصة PDF to Audio • أحدث تحديث: سبتمبر 2026</p>
+              <p className="text-xs text-slate-300">منصة Hakawati AI • أحدث تحديث: سبتمبر 2026</p>
             </div>
           </div>
 
@@ -83,7 +83,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose, type })
             <div className="space-y-5">
               <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 text-indigo-200">
                 <p className="font-bold">
-                  مرحباً بك في منصة PDF to Audio. استخدامك للمنصة يعبر عن موافقتك الكاملة على هذه الشروط والأحكام.
+                  مرحباً بك في منصة Hakawati AI. استخدامك للمنصة يعبر عن موافقتك الكاملة على هذه الشروط والأحكام.
                 </p>
               </div>
 
