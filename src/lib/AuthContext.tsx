@@ -99,7 +99,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               uid: firebaseUser.uid,
               displayName: appUser.name,
               email: appUser.email,
-              role: appUser.role,
               createdAt: serverTimestamp(),
             });
           }
@@ -150,7 +149,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           uid: cred.user.uid,
           displayName: name,
           email: cred.user.email,
-          role: appUser.role,
           createdAt: serverTimestamp(),
         });
       } catch (err) {
@@ -177,7 +175,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           uid: res.user.uid,
           displayName: appUser.name,
           email: appUser.email,
-          role: appUser.role,
           createdAt: serverTimestamp(),
         }, { merge: true });
       } catch (err) {

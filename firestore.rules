@@ -13,8 +13,10 @@ service cloud.firestore {
     // Users Collection
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && request.resource.data.uid == request.auth.uid;
-      allow update: if isOwner(userId) && request.resource.data.uid == request.auth.uid;
+      // Only profile fields; roles are never client-writable
+      allow create, update: if isOwner(userId)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'displayName', 'email', 'createdAt']);
       allow delete: if isOwner(userId);
     }
 
