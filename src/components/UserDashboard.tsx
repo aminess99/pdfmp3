@@ -33,6 +33,7 @@ import { useAuth } from '../lib/AuthContext';
 import { db, collection, query, where, getDocs, deleteDoc, doc } from '../lib/firebase';
 import { ConversionTool } from './ConversionTool';
 import { cleanBookTitle } from '../lib/bookTitle';
+import { toast } from '../lib/toast';
 import { UserSettingsModal } from './UserSettingsModal';
 import { AIBookCreator } from './AIBookCreator';
 import { ChatPdfModal } from './ChatPdfModal';
@@ -119,6 +120,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         });
       } catch (err) {
         console.warn('Load audiobooks err:', err);
+        toast('تعذّر تحميل مكتبتك من السحابة، نعرض الكتب المحفوظة في هذا المتصفح.', 'error');
       }
     }
 
@@ -143,8 +145,11 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         await deleteDoc(doc(db, 'audiobooks', id));
       } catch (err) {
         console.warn('Delete book doc note:', err);
+        toast('حُذف الكتاب من هذا الجهاز، لكن تعذّر حذفه من السحابة.', 'error');
+        return;
       }
     }
+    toast('حُذف الكتاب من مكتبتك.', 'success');
   };
 
   const [filter, setFilter] = useState<'all' | 'progress' | 'new'>('all');

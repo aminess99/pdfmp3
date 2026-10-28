@@ -45,6 +45,7 @@ import { useAuth } from '../lib/AuthContext';
 import { db, doc, setDoc, serverTimestamp } from '../lib/firebase';
 import { BookProcessingModal } from './BookProcessingModal';
 import { ChatPdfModal } from './ChatPdfModal';
+import { toast } from '../lib/toast';
 
 interface ConversionToolProps {
   onConversionStart: (job: ConversionJob) => void;
@@ -489,7 +490,10 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                   listeningMode: newJob.listeningMode,
                   createdAt: serverTimestamp(),
                   createdAtStr: newJob.createdAt,
-                }).catch((err) => console.warn('Firestore audiobook save note:', err));
+                }).catch((err) => {
+                  console.warn('Firestore audiobook save note:', err);
+                  toast('لم نتمكن من حفظ الكتاب في مكتبتك على السحابة، لكنه محفوظ في هذا المتصفح.', 'error');
+                });
               } catch (cloudErr) {}
             }
 

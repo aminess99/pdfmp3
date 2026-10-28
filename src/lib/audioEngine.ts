@@ -1,3 +1,4 @@
+import { toastOnce } from './toast';
 import { Voice, AudioStyle } from '../types';
 
 export class AudioEngine {
@@ -102,6 +103,7 @@ export class AudioEngine {
 
         if (!res.ok) {
           console.warn('Server TTS returned non-200:', res.status);
+          if (res.status === 429) toastOnce('طلبات كثيرة في وقت قصير، انتظر دقيقة ثم تابع.', 'error');
           return null;
         }
 
@@ -422,6 +424,7 @@ export class AudioEngine {
   }
 
   private fallbackBrowserSpeak(text: string, voice: Voice, rate: number, sessionId: number) {
+    toastOnce('الصوت الطبيعي غير متاح الآن، نقرأ بصوت المتصفح مؤقتاً.', 'error');
     if (!this.synth) {
       console.warn('Speech synthesis not supported on this browser');
       this.isPlaying = false;

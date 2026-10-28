@@ -30,6 +30,7 @@ import { ConversionJob, Voice, AudioStyle, Dialect } from '../types';
 import { audioEngine } from '../lib/audioEngine';
 import { DIALECTS, VOICES, AUDIO_STYLES } from '../data/voices';
 import { cleanBookTitle } from '../lib/bookTitle';
+import { toast } from '../lib/toast';
 import { ChatPdfModal } from './ChatPdfModal';
 
 interface StudioViewProps {
@@ -332,9 +333,12 @@ export const StudioView: React.FC<StudioViewProps> = ({
       const data = await res.json();
       if (data.success && data.transformedText) {
         setPanelCache((prev) => ({ ...prev, [key]: data.transformedText }));
+      } else {
+        throw new Error(data.error || 'transform failed');
       }
     } catch (e) {
       console.warn('Panel transform error:', e);
+      toast(next === 'summary' ? 'تعذّر تجهيز الملخص، حاول مرة أخرى.' : 'تعذّر استخراج أهم النقاط، حاول مرة أخرى.', 'error');
     } finally {
       setPanelLoading(false);
     }
@@ -432,6 +436,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
       URL.revokeObjectURL(url);
     } catch (err) {
       console.warn('MP3 chapter download note:', err);
+      toast('تعذّر تجهيز ملف الصوت للتحميل، حاول مرة أخرى.', 'error');
     } finally {
       setIsGeneratingMp3(false);
       setDownloadProgressMsg('');
@@ -506,7 +511,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
         }),
       });
 
-      if (res.ok) {
+      if (!res.ok) throw new Error('فشل توليد ملف الصوت');
+      {
         const blob = await res.blob();
         const isWav = blob.type.includes('wav');
         const url = URL.createObjectURL(blob);
@@ -520,6 +526,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
       }
     } catch (err) {
       console.warn('MP3 full book download note:', err);
+      toast('تعذّر تجهيز ملف الكتاب كاملاً، جرّب تحميل الفصول واحداً واحداً.', 'error');
     } finally {
       setIsGeneratingMp3(false);
       setDownloadProgressMsg('');

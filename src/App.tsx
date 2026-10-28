@@ -14,6 +14,7 @@ import { PaymentCheckoutModal } from './components/PaymentCheckoutModal';
 import { LegalModal } from './components/LegalModal';
 import { LandingContent } from './components/LandingContent';
 import { NotFound } from './components/NotFound';
+import { Toaster } from './components/Toaster';
 import { findLandingPage } from './data/landingPages';
 import { ConversionJob, Voice } from './types';
 import { audioEngine } from './lib/audioEngine';
@@ -156,6 +157,7 @@ export default function App() {
   if (user) {
     return (
       <div className="min-h-screen bg-ink text-slate-100 font-body">
+      <Toaster />
         <UserDashboard
           user={{ name: user.name, email: user.email }}
           isAdmin={isAdmin}
@@ -191,6 +193,7 @@ export default function App() {
   // If Guest (unregistered user), render full Marketing Landing Page + Interactive Conversion Hook
   return (
     <div className="min-h-screen bg-ink text-slate-100 font-body">
+      <Toaster />
       <SiteHeader onOpenAuth={handleOpenAuth} onNavigate={handleNavigate} />
 
       {isNotFound ? (
