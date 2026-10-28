@@ -1,4 +1,5 @@
 import React from 'react';
+import { LANDING_PAGES, landingPath } from '../data/landingPages';
 import { Headphones, Heart, Twitter, Facebook, Mail, ShieldCheck, FileText } from 'lucide-react';
 
 interface FooterProps {
@@ -11,7 +12,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal }) => {
     <footer className="bg-[#070a12] text-slate-400 border-t border-slate-800/80 pt-12 pb-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
         
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-8">
           
           {/* Brand Info */}
           <div className="space-y-3 md:col-span-1">
@@ -44,6 +45,18 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal }) => {
               <li>
                 <button onClick={() => onNavigate('faq')} className="hover:text-white transition-colors cursor-pointer">الأسئلة الشائعة</button>
               </li>
+            </ul>
+          </div>
+
+          {/* SEO landing pages */}
+          <div className="space-y-2">
+            <h4 className="text-sm font-extrabold text-white">أدوات صوتية</h4>
+            <ul className="space-y-1.5 text-xs">
+              {LANDING_PAGES.map((page) => (
+                <li key={page.slug}>
+                  <a href={landingPath(page)} className="hover:text-white transition-colors">{page.linkLabel}</a>
+                </li>
+              ))}
             </ul>
           </div>
 

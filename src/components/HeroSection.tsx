@@ -1,7 +1,13 @@
 import React from 'react';
 import { Zap, ShieldCheck, Laptop, Download, Play, Volume2, FileText, Headphones, Sparkles, Smartphone, Cloud } from 'lucide-react';
 
-export const HeroSection: React.FC = () => {
+interface HeroSectionProps {
+  badge?: string;
+  title?: string;
+  subtitle?: string;
+}
+
+export const HeroSection: React.FC<HeroSectionProps> = ({ badge, title, subtitle }) => {
   return (
     <section className="relative overflow-hidden pt-8 pb-10 lg:pt-12 lg:pb-14 bg-[#0b0f19]">
       {/* Background ambient lighting */}
@@ -17,17 +23,25 @@ export const HeroSection: React.FC = () => {
             {/* Top Pill Badge */}
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-300 text-xs sm:text-sm font-bold shadow-inner">
               <Zap className="w-4 h-4 text-cyan-400 fill-cyan-400" />
-              <span>تحويل النص إلى صوت بالذكاء الاصطناعي</span>
+              <span>{badge || 'تحويل النص إلى صوت بالذكاء الاصطناعي'}</span>
             </div>
 
             {/* Main Headline */}
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-[1.18] tracking-tight font-['Tajawal']">
-              حوّل <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-indigo-300 underline decoration-purple-500/40 decoration-wavy decoration-2">كُتب</span> PDF إلى صوت
+              {title || (
+                <>
+                  حوّل <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-indigo-300 underline decoration-purple-500/40 decoration-wavy decoration-2">كُتب</span> PDF إلى صوت
+                </>
+              )}
             </h1>
 
             {/* Subtitle */}
             <p className="text-base sm:text-lg text-slate-300 leading-relaxed max-w-xl font-normal">
-              حوّل النص والكتابة وملفات PDF إلى كتب صوتية مسموعة بصوت طبيعي وواقعي، مع دعم لأكثر من <span className="text-blue-400 font-bold">30 صوتاً</span> و<span className="text-purple-400 font-bold">14 لهجة عربية</span>.
+              {subtitle || (
+                <>
+                  حوّل النص والكتابة وملفات PDF إلى كتب صوتية مسموعة بصوت طبيعي وواقعي، مع دعم لأكثر من <span className="text-blue-400 font-bold">30 صوتاً</span> و<span className="text-purple-400 font-bold">14 لهجة عربية</span>.
+                </>
+              )}
             </p>
 
             {/* Badges in the exact order shown in screenshot:

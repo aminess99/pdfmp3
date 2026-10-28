@@ -6,6 +6,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { VOICES } from "./src/data/voices";
+import { LANDING_PAGES, LandingPage, findLandingPage, landingPath } from "./src/data/landingPages";
 
 dotenv.config();
 
@@ -1797,6 +1798,86 @@ ${JSON.stringify(history.slice(-4))}
   }
 });
 
+// ---- SEO landing pages: serve index.html with page-specific meta tags, JSON-LD
+// and pre-rendered content so crawlers see each page without running JavaScript.
+const SITE_URL = (process.env.APP_URL || "https://pdfmp3.onrender.com").replace(/\/+$/, "");
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderLandingHtml(template: string, page: LandingPage): string {
+  const url = `${SITE_URL}${landingPath(page)}`;
+  const title = escapeHtml(page.title);
+  const description = escapeHtml(page.description);
+
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        "@id": `${url}#webpage`,
+        url,
+        name: page.title,
+        description: page.description,
+        inLanguage: "ar",
+        isPartOf: { "@type": "WebSite", name: "PDFtoAudio", url: `${SITE_URL}/` },
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "PDFtoAudio", item: `${SITE_URL}/` },
+          { "@type": "ListItem", position: 2, name: page.linkLabel, item: url },
+        ],
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: page.faqs.map((f) => ({
+          "@type": "Question",
+          name: f.question,
+          acceptedAnswer: { "@type": "Answer", text: f.answer },
+        })),
+      },
+    ],
+  };
+
+  const content = [
+    `<main dir="rtl">`,
+    `<h1>${escapeHtml(page.h1)}</h1>`,
+    `<p>${escapeHtml(page.subtitle)}</p>`,
+    ...page.sections.map(
+      (sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")
+    ),
+    `<h2>أسئلة حول ${escapeHtml(page.linkLabel)}</h2>`,
+    ...page.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    `<nav><a href="/">تحويل PDF إلى صوت</a> `,
+    ...LANDING_PAGES.filter((p) => p.slug !== page.slug).map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `),
+    `</nav></main>`,
+  ].join("");
+
+  // Replacements use functions so "$" in page text is never treated as a pattern
+  return template
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${description}" />`)
+    .replace(/<meta name="keywords" content="[^"]*" \/>/, () => `<meta name="keywords" content="${escapeHtml(page.keywords)}" />`)
+    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${url}" />`)
+    .replace(/<meta property="og:url" content="[^"]*" \/>/, () => `<meta property="og:url" content="${url}" />`)
+    .replace(/<meta property="og:title" content="[^"]*" \/>/, () => `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta name="twitter:title" content="[^"]*" \/>/, () => `<meta name="twitter:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*" \/>/, () => `<meta property="og:description" content="${description}" />`)
+    .replace(/<meta name="twitter:description" content="[^"]*" \/>/, () => `<meta name="twitter:description" content="${description}" />`)
+    .replace(
+      /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
+      () => `<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>`
+    )
+    .replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
+}
+
 // Start Express + Vite server
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -1807,6 +1888,16 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    const indexTemplate = fs.readFileSync(path.join(distPath, "index.html"), "utf8");
+    const landingHtml = new Map(LANDING_PAGES.map((p) => [p.slug, renderLandingHtml(indexTemplate, p)]));
+
+    app.use((req, res, next) => {
+      if (req.method !== "GET") return next();
+      const page = findLandingPage(req.path);
+      if (!page) return next();
+      res.type("html").send(landingHtml.get(page.slug));
+    });
+
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));

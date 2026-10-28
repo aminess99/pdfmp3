@@ -52,6 +52,8 @@ interface ConversionToolProps {
   onPreviewVoiceSample: (voice: Voice) => void;
   availableVoicesList?: Voice[];
   onRequestAuth?: (mode: 'login' | 'register') => void;
+  initialDialectId?: string;
+  initialInputMode?: 'pdf' | 'text';
 }
 
 export const ConversionTool: React.FC<ConversionToolProps> = ({
@@ -59,6 +61,8 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   onPreviewVoiceSample,
   availableVoicesList,
   onRequestAuth,
+  initialDialectId,
+  initialInputMode,
 }) => {
   const voicesPool = availableVoicesList && availableVoicesList.length > 0 ? availableVoicesList : VOICES;
   const { user } = useAuth();
@@ -66,7 +70,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   const [pendingAutoConvertAfterAuth, setPendingAutoConvertAfterAuth] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedSampleBook, setSelectedSampleBook] = useState<SampleBook | null>(SAMPLE_BOOKS[0]);
-  const [selectedDialect, setSelectedDialect] = useState<Dialect>(DIALECTS[0]); // Moroccan Darija
+  const [selectedDialect, setSelectedDialect] = useState<Dialect>(() => DIALECTS.find(d => d.id === initialDialectId) || DIALECTS[0]); // Moroccan Darija by default
   
   // Active Main Service Tab: 'audiobook' | 'chat' | 'summary' | 'writer'
   const [activeServiceTab, setActiveServiceTab] = useState<'audiobook' | 'chat' | 'summary' | 'writer'>('audiobook');
@@ -76,7 +80,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
 
   // Choose best initial voice
   const [selectedVoice, setSelectedVoice] = useState<Voice>(() => {
-    return voicesPool.find(v => v.dialectId === DIALECTS[0].id) || 
+    return voicesPool.find(v => v.dialectId === (initialDialectId || DIALECTS[0].id)) || 
            voicesPool[0];
   });
   
@@ -87,7 +91,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   const [conversionProgress, setConversionProgress] = useState(0);
   const [extractedText, setExtractedText] = useState<string>(SAMPLE_BOOKS[0].sampleText);
   const [pageCount, setPageCount] = useState<number>(SAMPLE_BOOKS[0].pages);
-  const [inputMode, setInputMode] = useState<'pdf' | 'text'>('pdf');
+  const [inputMode, setInputMode] = useState<'pdf' | 'text'>(initialInputMode || 'pdf');
   const [customTitle, setCustomTitle] = useState<string>('');
   const [aiDetectedBookTitle, setAiDetectedBookTitle] = useState<string>('');
   const [showTextPreview, setShowTextPreview] = useState<boolean>(true);

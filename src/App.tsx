@@ -19,6 +19,8 @@ import { UserDashboard } from './components/UserDashboard';
 import { Footer } from './components/Footer';
 import { PaymentCheckoutModal } from './components/PaymentCheckoutModal';
 import { LegalModal } from './components/LegalModal';
+import { LandingContent } from './components/LandingContent';
+import { findLandingPage } from './data/landingPages';
 import { ConversionJob, Voice } from './types';
 import { audioEngine } from './lib/audioEngine';
 import { useVoices } from './lib/useVoices';
@@ -26,6 +28,7 @@ import { useAuth } from './lib/AuthContext';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState<boolean>(true);
+  const [landingPage] = useState(() => findLandingPage(window.location.pathname));
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({
     isOpen: false,
     mode: 'login',
@@ -199,7 +202,7 @@ export default function App() {
       {/* Main Content Area */}
       <main className="space-y-4">
         {/* Hero Section */}
-        <HeroSection />
+        <HeroSection badge={landingPage?.badge} title={landingPage?.h1} subtitle={landingPage?.subtitle} />
 
         {/* Core Interactive Tool & Features Box (Left: Conversion Tool, Right: Features Box) */}
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-4 sm:-mt-6 relative z-20">
@@ -212,6 +215,8 @@ export default function App() {
                 onPreviewVoiceSample={handlePreviewVoiceSample}
                 availableVoicesList={allVoices}
                 onRequestAuth={handleOpenAuth}
+                initialDialectId={landingPage?.dialectId}
+                initialInputMode={landingPage?.inputMode}
               />
             </div>
 
@@ -222,6 +227,9 @@ export default function App() {
 
           </div>
         </section>
+
+        {/* SEO landing page article (only on /<slug> pages) */}
+        {landingPage && <LandingContent page={landingPage} />}
 
         {/* 4 Metrics Bar */}
         <ValueMetrics />
