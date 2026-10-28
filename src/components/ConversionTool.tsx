@@ -46,6 +46,7 @@ import { db, doc, setDoc, serverTimestamp } from '../lib/firebase';
 import { BookProcessingModal } from './BookProcessingModal';
 import { ChatPdfModal } from './ChatPdfModal';
 import { toast } from '../lib/toast';
+import { chaptersAr, minutesAr, pagesAr } from '../lib/arabicPlural';
 
 interface ConversionToolProps {
   onConversionStart: (job: ConversionJob) => void;
@@ -193,6 +194,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     }
 
     setSelectedFile(file);
+    setSelectedChapterMode('all');
     setSelectedSampleBook(null);
     setConversionError(null);
     setIsExtracting(true);
@@ -344,11 +346,15 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
           }),
         });
         const data = await res.json();
-        if (data.success && data.transformedText) {
-          processedText = data.transformedText;
-        }
+        if (!data.success || !data.transformedText) throw new Error(data.error || 'summary failed');
+        processedText = data.transformedText;
       } catch (e) {
         console.warn('Summary transformation error:', e);
+        setIsConverting(false);
+        setConversionProgress(0);
+        setConvertingChapterStatus('');
+        setConversionError('تعذّر تجهيز الملخص الآن. حاول مرة أخرى أو اختر «الكتاب كاملاً».');
+        return;
       }
     } else if (listeningMode === 'key_points') {
       setConvertingChapterStatus('جاري استخراج أهم 5 إلى 7 نقاط محورية من الكتاب...');
@@ -363,11 +369,15 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
           }),
         });
         const data = await res.json();
-        if (data.success && data.transformedText) {
-          processedText = data.transformedText;
-        }
+        if (!data.success || !data.transformedText) throw new Error(data.error || 'key points failed');
+        processedText = data.transformedText;
       } catch (e) {
         console.warn('Key points transformation error:', e);
+        setIsConverting(false);
+        setConversionProgress(0);
+        setConvertingChapterStatus('');
+        setConversionError('تعذّر استخراج أهم النقاط الآن. حاول مرة أخرى أو اختر «الكتاب كاملاً».');
+        return;
       }
     }
 
@@ -394,7 +404,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
 
             const fileSize = inputMode === 'text'
               ? `${activeText.length} حرف`
-              : (selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} ميجابايت` : '2.4 ميجابايت');
+              : (selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} ميجابايت` : '');
             
             const calculatedPages = inputMode === 'text'
               ? Math.max(1, Math.ceil(activeText.split(/\s+/).length / 250))
@@ -403,7 +413,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
             let finalChapters: BookChapter[] = [];
 
             if (listeningMode === 'full') {
-              finalChapters = detectedChapters.length > 0 ? detectedChapters : [
+              finalChapters = targetChapter ? [targetChapter] : detectedChapters.length > 0 ? detectedChapters : [
                 {
                   id: `chap_${Date.now()}_1`,
                   chapterNumber: 1,
@@ -517,6 +527,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   };
 
   const wordCount = extractedText.split(/\s+/).filter(Boolean).length;
+  const totalDetectedMinutes = detectedChapters.reduce((acc, c) => acc + (c.estimatedDurationMinutes || 0), 0);
   const hasInput = inputMode === 'text' ? extractedText.trim().length > 0 : Boolean(selectedFile || selectedSampleBook);
   const modeOptions: { id: ListeningMode; label: string }[] = [
     { id: 'full', label: 'الكتاب كاملاً' },
@@ -594,7 +605,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                   <CheckCircle2 className="w-8 h-8 text-accent" />
                   <p className="text-white font-semibold truncate max-w-full">{selectedFile.name}</p>
                   <p className="text-sm text-slate-400">
-                    {(selectedFile.size / (1024 * 1024)).toFixed(1)} MB · {pageCount} صفحة ·{' '}
+                    <bdi dir="ltr">{(selectedFile.size / (1024 * 1024)).toFixed(1)} MB</bdi> · {pagesAr(pageCount)} ·{' '}
                     <button type="button" onClick={() => fileInputRef.current?.click()} className="text-brand-soft hover:underline cursor-pointer">
                       تغيير الملف
                     </button>
@@ -630,7 +641,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                 className="w-full rounded-xl bg-ink border border-line p-3.5 text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand resize-y leading-relaxed"
               />
               <div className="flex items-center justify-between text-[13px] text-slate-400">
-                <span>{wordCount} كلمة · حوالي {Math.max(1, Math.round(wordCount / 130))} دقيقة</span>
+                <span>{wordCount} كلمة · حوالي {minutesAr(Math.max(1, Math.round(wordCount / 130)))}</span>
                 <button
                   type="button"
                   onClick={handlePurifyText}
@@ -669,6 +680,28 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
               })}
             </div>
           </div>
+
+          {/* Confirm what will be converted once the book is read */}
+          {inputMode === 'pdf' && selectedFile && !isExtracting && listeningMode === 'full' && detectedChapters.length > 1 && (
+            <div className="flex flex-col gap-2">
+              <label htmlFor="chapter-pick" className="text-sm text-slate-400">
+                وجدنا {chaptersAr(detectedChapters.length)} · حوالي {minutesAr(totalDetectedMinutes)}
+              </label>
+              <select
+                id="chapter-pick"
+                value={selectedChapterMode}
+                onChange={(e) => setSelectedChapterMode(e.target.value)}
+                className="w-full min-h-12 bg-ink border border-line rounded-[10px] px-3.5 text-[15px] text-white cursor-pointer focus:outline-none focus:border-brand"
+              >
+                <option value="all">الكتاب كاملاً</option>
+                {detectedChapters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title} · {c.estimatedDurationMinutes} د
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Voice + convert */}

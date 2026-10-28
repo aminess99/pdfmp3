@@ -32,6 +32,7 @@ import { DIALECTS, VOICES, AUDIO_STYLES } from '../data/voices';
 import { cleanBookTitle } from '../lib/bookTitle';
 import { toast } from '../lib/toast';
 import { ChatPdfModal } from './ChatPdfModal';
+import { chaptersAr, minutesAr } from '../lib/arabicPlural';
 
 interface StudioViewProps {
   job: ConversionJob;
@@ -611,7 +612,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
             <span className="font-display font-extrabold text-base sm:text-lg text-white truncate">{cleanTitle}</span>
             <span className="text-[13px] text-slate-400 truncate">
               {job.listeningMode === 'summary' ? 'ملخص · ' : job.listeningMode === 'key_points' ? 'أهم النقاط · ' : ''}
-              {chapters ? (chapters.length === 1 ? 'فصل واحد · ' : `${chapters.length} فصول · `) : ''}حوالي {Math.max(1, totalBookMinutes)} دقيقة
+              {chapters ? `${chaptersAr(chapters.length)} · ` : ''}حوالي {minutesAr(Math.max(1, totalBookMinutes))}
             </span>
           </span>
         </div>

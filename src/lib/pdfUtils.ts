@@ -79,6 +79,76 @@ export async function purifyTextWithAI(text: string): Promise<string> {
   return cleanArabicExtractedText(text);
 }
 
+// Many Arabic PDFs store shaped glyphs (presentation forms, e.g. "ﺼ") in visual order,
+// which reads as reversed, disconnected letters. Normalize and restore logical order.
+const MIRROR: Record<string, string> = { '(': ')', ')': '(', '[': ']', ']': '[', '{': '}', '}': '{' };
+
+const reverseLine = (line: string): string =>
+  Array.from(line)
+    .reverse()
+    .join('')
+    // Latin words and numbers were already in reading order before the line was reversed
+    .replace(/[A-Za-z0-9\u0660-\u0669.,:%\/-]{2,}/g, (run) => Array.from(run).reverse().join(''))
+    .replace(/[()[\]{}]/g, (c) => MIRROR[c]);
+
+// Real words that end in "لا" (mostly adverbs written without tanween)
+const COMMON_LA_ENDINGS = /^(?:[وف]?(?:مثلا|أولا|اولا|طويلا|قليلا|فعلا|أصلا|اصلا|كلا|إلا|الا|ألا|جميلا|سهلا|مستقبلا|سبيلا|دليلا|بديلا|ليلا|عملا|أملا|حلا|شكلا|قبلا|تفصيلا|تحليلا|مقابلا|كاملا|شاملا|عاجلا))[.,:؛،]?$/;
+
+// Reversed Arabic shows the article "ال" at word ends ("لا") far more often than at word starts
+const looksReversed = (line: string): boolean => {
+  const words = line.split(/\s+/);
+  const forward = words.filter((w) => /^(?:ال|وال|بال|فال|لل)/.test(w)).length;
+  const backward = words.filter((w) => w.length > 2 && /لا$/.test(w) && !COMMON_LA_ENDINGS.test(w)).length;
+  // Short lines (headings) rarely have two article words, so one is enough there
+  return backward > forward * 2 && (backward >= 2 || words.length <= 4);
+};
+
+export function normalizeArabicPdfText(text: string): string {
+  if (!text) return '';
+  return text
+    .normalize('NFKC')
+    .split('\n')
+    .map((line) => (looksReversed(line) ? reverseLine(line) : line))
+    .join('\n')
+    // A decomposed lam-alef ligature can come out swapped: "األمثلة" -> "الأمثلة"
+    .replace(/ا([أإآ])ل/g, 'ال$1');
+}
+
+// pdf.js emits its own space items, so concatenate as-is and break lines on hasEOL
+function pageItemsToText(items: any[]): string {
+  const rawLines: string[][] = [[]];
+  for (const item of items) {
+    rawLines[rawLines.length - 1].push(String(item.str || '').normalize('NFKC'));
+    if (item.hasEOL) rawLines.push([]);
+  }
+
+  const lines = rawLines
+    .map((parts) => {
+      const line = parts.join('');
+      if (!looksReversed(line)) return line;
+      // Visual order: multi-letter items are usually already in reading order, so flip
+      // the item sequence first and fall back to flipping characters if that's not enough
+      const byItems = parts.slice().reverse().join('').replace(/[()[\]{}]/g, (c) => MIRROR[c]);
+      return looksReversed(byItems) ? reverseLine(line) : byItems;
+    })
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim().replace(/ا([أإآ])ل/g, 'ال$1'))
+    .filter(Boolean);
+
+  // Re-join wrapped lines into paragraphs; keep breaks after sentence ends and around short lines (headings)
+  const isShort = (line: string) => line.split(/\s+/).length <= 8;
+  let out = '';
+  lines.forEach((line, i) => {
+    if (i === 0) {
+      out = line;
+      return;
+    }
+    const prev = lines[i - 1];
+    const keepBreak = /[.!?؟:»"]$/.test(prev) || isShort(prev) || isShort(line);
+    out += (keepBreak ? '\n' : ' ') + line;
+  });
+  return out;
+}
+
 function hasMeaningfulArabic(text: string): boolean {
   if (!text || text.trim().length < 60) return false;
   const arabicLetters = text.match(/[\u0600-\u06FF]/g);
@@ -126,11 +196,7 @@ export async function extractTextFromPDFFile(
         try {
           const page = await pdfDoc.getPage(i);
           const textContent = await page.getTextContent();
-          const pageText = textContent.items
-            .map((item: any) => item.str || '')
-            .filter((str: string) => str.trim().length > 0)
-            .join(' ')
-            .trim();
+          const pageText = pageItemsToText(textContent.items);
 
           if (pageText.length > 0) {
             pageTexts.push(pageText);
@@ -176,7 +242,7 @@ export async function extractTextFromPDFFile(
     if (res.ok) {
       const data = await res.json();
       if (data.text && data.text.trim().length > 20) {
-        const cleanedAiText = cleanArabicExtractedText(data.text);
+        const cleanedAiText = cleanArabicExtractedText(normalizeArabicPdfText(data.text));
         if (onProgress) onProgress(100);
         return { success: true, text: cleanedAiText, pagesCount: data.pagesCount || numPages || 1 };
       }
@@ -240,11 +306,7 @@ export async function startProgressivePdfExtraction(
       try {
         const page = await pdfDoc.getPage(i);
         const textContent = await page.getTextContent();
-        const pageText = textContent.items
-          .map((item: any) => item.str || '')
-          .filter((str: string) => str.trim().length > 0)
-          .join(' ')
-          .trim();
+        const pageText = pageItemsToText(textContent.items);
         if (pageText) {
           initialPageTexts.push(pageText);
         }
@@ -264,11 +326,7 @@ export async function startProgressivePdfExtraction(
         try {
           const page = await pdfDoc.getPage(i);
           const textContent = await page.getTextContent();
-          const pageText = textContent.items
-            .map((item: any) => item.str || '')
-            .filter((str: string) => str.trim().length > 0)
-            .join(' ')
-            .trim();
+          const pageText = pageItemsToText(textContent.items);
           if (pageText) {
             chunkTexts.push(pageText);
           }

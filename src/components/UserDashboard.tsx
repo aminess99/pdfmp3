@@ -37,6 +37,7 @@ import { toast } from '../lib/toast';
 import { UserSettingsModal } from './UserSettingsModal';
 import { AIBookCreator } from './AIBookCreator';
 import { ChatPdfModal } from './ChatPdfModal';
+import { minutesAr } from '../lib/arabicPlural';
 
 interface UserDashboardProps {
   user: { name: string; email: string };
@@ -208,7 +209,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         <div className="p-4 rounded-[14px] bg-card border border-line flex flex-col gap-2.5">
           <span className="flex justify-between text-sm">
             <span className="text-slate-400">رصيدك</span>
-            <strong className="text-white">{balance} دقيقة</strong>
+            <strong className="text-white">{minutesAr(Number(balance) || 0)}</strong>
           </span>
           <button type="button" onClick={openCheckout} className="self-start text-sm text-brand-soft hover:text-indigo-200 cursor-pointer">
             شحن الرصيد

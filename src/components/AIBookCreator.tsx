@@ -3,6 +3,7 @@ import { ArrowRight, BookOpen, Check, FileDown, Headphones, Loader2, RefreshCw, 
 import { GeneratedBookStructure, createProfessionalArabicPdf } from '../lib/bookPdfGenerator';
 import { generateCrispBookCoverPng } from '../lib/bookCoverCanvas';
 import { ConversionJob, Voice } from '../types';
+import { chaptersAr, pagesAr } from '../lib/arabicPlural';
 
 interface AIBookCreatorProps {
   onStartAudioJob: (job: ConversionJob) => void;
@@ -37,9 +38,6 @@ const COVER_STYLES = [
 ] as const;
 
 const PAGE_OPTIONS = [10, 15, 25];
-
-// Arabic plural: 3–10 take صفحات, 11+ take صفحة
-const pagesLabel = (n: number) => `${n} ${n >= 3 && n <= 10 ? 'صفحات' : 'صفحة'}`;
 
 const fieldClass =
   'w-full min-h-12 bg-ink border border-line rounded-[10px] px-3.5 text-[15px] text-white placeholder-slate-500 focus:outline-none focus:border-brand';
@@ -463,7 +461,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
                 <div role="radiogroup" aria-labelledby="pages-label" className="flex flex-wrap gap-2">
                   {PAGE_OPTIONS.map((pages) => (
                     <button key={pages} type="button" role="radio" aria-checked={targetPages === pages} onClick={() => setTargetPages(pages)} className={chipClass(targetPages === pages)}>
-                      {pagesLabel(pages)}
+                      {pagesAr(pages)}
                     </button>
                   ))}
                 </div>
@@ -509,7 +507,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
                 className="text-right p-3.5 rounded-xl border border-line hover:border-brand bg-ink flex flex-col gap-1 cursor-pointer"
               >
                 <span className="text-[15px] font-semibold text-white leading-snug">{preset.title}</span>
-                <span className="text-[13px] text-slate-400">{preset.genre} · {pagesLabel(preset.pages)}</span>
+                <span className="text-[13px] text-slate-400">{preset.genre} · {pagesAr(preset.pages)}</span>
               </button>
             ))}
           </aside>
@@ -618,7 +616,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
               <span className="text-sm text-brand-soft">{generatedBook.genre}</span>
               <h3 className="font-display font-extrabold text-3xl text-white leading-tight">{generatedBook.title}</h3>
               {generatedBook.subtitle && <p className="text-slate-300">{generatedBook.subtitle}</p>}
-              <p className="text-sm text-slate-500">تأليف {generatedBook.author} · {generatedBook.chapters.length === 1 ? 'فصل واحد' : `${generatedBook.chapters.length} فصول`}</p>
+              <p className="text-sm text-slate-500">تأليف {generatedBook.author} · {chaptersAr(generatedBook.chapters.length)}</p>
             </header>
 
             {generatedBook.synopsis && (

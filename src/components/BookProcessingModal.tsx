@@ -1,6 +1,7 @@
 import React from 'react';
 import { Check, Loader2, X } from 'lucide-react';
 import { BookChapter } from '../types';
+import { chaptersAr, pagesAr } from '../lib/arabicPlural';
 
 interface BookProcessingModalProps {
   isOpen: boolean;
@@ -40,7 +41,7 @@ export const BookProcessingModal: React.FC<BookProcessingModalProps> = ({
   const steps = mode === 'extracting' ? EXTRACT_STEPS : CONVERT_STEPS;
   const pct = Math.max(0, Math.min(100, Math.round(progress)));
   const activeStep = Math.min(steps.length - 1, Math.floor((pct / 100) * steps.length));
-  const meta = [pageCount ? `${pageCount} صفحة` : '', fileSize || '', chapters && chapters.length > 1 ? `${chapters.length} فصول` : '']
+  const meta = [pageCount ? pagesAr(pageCount) : '', fileSize || '', chapters && chapters.length > 1 ? chaptersAr(chapters.length) : '']
     .filter(Boolean)
     .join(' · ');
 
