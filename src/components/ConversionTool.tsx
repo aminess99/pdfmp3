@@ -499,7 +499,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         if (nextVal < 35) {
           setConvertingChapterStatus('جاري مواءمة النبرة الصوتية وقواعد النطق...');
         } else if (nextVal < 70) {
-          setConvertingChapterStatus(`جاري توليد الترددات الصوتية بصوت: ${selectedVoice.name}...`);
+          setConvertingChapterStatus(`جاري توليد الصوت بصوت ${selectedVoice.name.split(' - ')[0]}...`);
         } else {
           setConvertingChapterStatus('جاري بناء الملف الصوتي وتجهيز مسار الاستماع...');
         }
@@ -732,8 +732,8 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         isOpen={isConverting || isExtracting}
         mode={isExtracting ? 'extracting' : 'converting'}
         fileName={selectedFile ? selectedFile.name : selectedSampleBook ? selectedSampleBook.title : 'كتابك الصوتي'}
-        fileSize={selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : '2.4 MB'}
-        pageCount={pageCount}
+        fileSize={selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : undefined}
+        pageCount={selectedFile ? pageCount : undefined}
         progress={isExtracting ? extractionProgress : conversionProgress}
         currentStatusText={isExtracting ? extractionStatusText : convertingChapterStatus}
         voiceName={selectedVoice?.name}
