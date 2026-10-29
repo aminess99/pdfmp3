@@ -6,8 +6,9 @@ interface QuickResultProps {
   blob: Blob | null;
   voiceName: string;
   fileName: string;
-  onOpenStudio: () => void;
-  onClose: () => void;
+  onOpenStudio?: () => void;
+  onClose?: () => void;
+  autoPlay?: boolean;
 }
 
 const fmt = (sec: number) => {
@@ -16,7 +17,7 @@ const fmt = (sec: number) => {
 };
 
 // Inline player for short texts: listen and download without opening the studio
-export const QuickResult: React.FC<QuickResultProps> = ({ url, blob, voiceName, fileName, onOpenStudio, onClose }) => {
+export const QuickResult: React.FC<QuickResultProps> = ({ url, blob, voiceName, fileName, onOpenStudio, onClose, autoPlay = true }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
@@ -30,12 +31,12 @@ export const QuickResult: React.FC<QuickResultProps> = ({ url, blob, voiceName, 
     audio.onplay = () => setPlaying(true);
     audio.onpause = () => setPlaying(false);
     audio.onended = () => setPlaying(false);
-    audio.play().catch(() => setPlaying(false));
+    if (autoPlay) audio.play().catch(() => setPlaying(false));
     return () => {
       audio.pause();
       audioRef.current = null;
     };
-  }, [url]);
+  }, [url, autoPlay]);
 
   const toggle = () => {
     const audio = audioRef.current;
@@ -69,9 +70,11 @@ export const QuickResult: React.FC<QuickResultProps> = ({ url, blob, voiceName, 
         <span className="text-sm text-slate-300">
           جاهز بصوت <strong className="text-white">{voiceName}</strong>
         </span>
-        <button type="button" onClick={onClose} aria-label="إغلاق النتيجة" className="-m-2 w-10 h-10 rounded-full text-slate-400 hover:text-white flex items-center justify-center cursor-pointer">
-          <X className="w-4 h-4" />
-        </button>
+        {onClose && (
+          <button type="button" onClick={onClose} aria-label="إغلاق النتيجة" className="-m-2 w-10 h-10 rounded-full text-slate-400 hover:text-white flex items-center justify-center cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <button
@@ -101,10 +104,12 @@ export const QuickResult: React.FC<QuickResultProps> = ({ url, blob, voiceName, 
           <Download className="w-4 h-4" />
           تحميل الصوت
         </button>
-        <button type="button" onClick={onOpenStudio} className="min-h-11 px-4 rounded-[10px] border border-line text-slate-300 hover:text-white text-sm flex items-center gap-2 cursor-pointer">
-          <Maximize2 className="w-4 h-4" />
-          فتح في الاستوديو
-        </button>
+        {onOpenStudio && (
+          <button type="button" onClick={onOpenStudio} className="min-h-11 px-4 rounded-[10px] border border-line text-slate-300 hover:text-white text-sm flex items-center gap-2 cursor-pointer">
+            <Maximize2 className="w-4 h-4" />
+            فتح في الاستوديو
+          </button>
+        )}
       </div>
     </div>
   );

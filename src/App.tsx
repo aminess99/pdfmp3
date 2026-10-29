@@ -15,6 +15,8 @@ import { LegalModal } from './components/LegalModal';
 import { LandingContent } from './components/LandingContent';
 import { NotFound } from './components/NotFound';
 import { Toaster } from './components/Toaster';
+import { SharePage } from './components/SharePage';
+import { SHARE_PATH_RE } from './lib/shares';
 import { findLandingPage } from './data/landingPages';
 import { HOME_SECTIONS } from './data/homeContent';
 import { ConversionJob, Voice } from './types';
@@ -25,7 +27,8 @@ import { useAuth } from './lib/AuthContext';
 export default function App() {
   const [darkMode, setDarkMode] = useState<boolean>(true);
   const [landingPage] = useState(() => findLandingPage(window.location.pathname));
-  const [isNotFound] = useState(() => !landingPage && !['/', '/index.html'].includes(window.location.pathname));
+  const [shareId] = useState(() => window.location.pathname.match(SHARE_PATH_RE)?.[1] || null);
+  const [isNotFound] = useState(() => !landingPage && !shareId && !['/', '/index.html'].includes(window.location.pathname));
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({
     isOpen: false,
     mode: 'login',
@@ -153,6 +156,31 @@ export default function App() {
     const t = setTimeout(() => document.getElementById(id)?.scrollIntoView(), 300);
     return () => clearTimeout(t);
   }, []);
+
+  // Shared clip page (/s/<id>), the same for guests and signed-in users
+  if (shareId) {
+    return (
+      <div className="min-h-screen bg-ink text-slate-100 font-body">
+        <Toaster />
+        <SiteHeader onOpenAuth={handleOpenAuth} onNavigate={handleNavigate} />
+        <main>
+          <SharePage shareId={shareId} />
+        </main>
+        <Footer onNavigate={handleNavigate} onOpenLegal={(type) => setLegalModal({ isOpen: true, type })} />
+        {authModal.isOpen && (
+          <AuthModals
+            isOpen={authModal.isOpen}
+            mode={authModal.mode}
+            onClose={handleCloseAuth}
+            onSwitchMode={(mode) => setAuthModal({ isOpen: true, mode })}
+          />
+        )}
+        {legalModal.isOpen && (
+          <LegalModal isOpen={legalModal.isOpen} onClose={() => setLegalModal({ ...legalModal, isOpen: false })} type={legalModal.type} />
+        )}
+      </div>
+    );
+  }
 
   // If User is Authenticated, render App Dashboard directly (no marketing distraction!)
   if (user) {

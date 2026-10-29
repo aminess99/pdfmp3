@@ -9,6 +9,7 @@ import { VOICES } from "./src/data/voices";
 import { LANDING_PAGES, LandingPage, findLandingPage, landingPath } from "./src/data/landingPages";
 import { HOME_H1, HOME_SUBTITLE, HOME_SECTIONS, HOW_STEPS, USE_CASES } from "./src/data/homeContent";
 import { FAQS } from "./src/data/sampleBooks";
+import firebaseConfig from "./src/lib/firebaseConfig";
 
 dotenv.config();
 
@@ -1913,6 +1914,64 @@ function renderHomeHtml(template: string): string {
   return template.replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
 }
 
+// Shared clips (/s/<id>) live in Firestore with public read; fetch them over REST
+// so the page carries real Open Graph tags for WhatsApp / Facebook previews.
+const SHARE_ID_RE = /^[A-Za-z0-9_-]{10,40}$/;
+const shareCache = new Map<string, { at: number; clip: { text: string; bookTitle: string; chapterTitle: string } | null }>();
+
+async function fetchSharedClip(id: string) {
+  const hit = shareCache.get(id);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.clip;
+  const url =
+    `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}` +
+    `/databases/${encodeURIComponent(firebaseConfig.firestoreDatabaseId || "(default)")}` +
+    `/documents/shares/${id}?key=${firebaseConfig.apiKey}`;
+  let clip: { text: string; bookTitle: string; chapterTitle: string } | null = null;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (res.ok) {
+      const f = (await res.json()).fields || {};
+      clip = {
+        text: f.text?.stringValue || "",
+        bookTitle: f.bookTitle?.stringValue || "",
+        chapterTitle: f.chapterTitle?.stringValue || "",
+      };
+    } else if (res.status !== 404) {
+      return null; // transient error: don't cache
+    }
+  } catch {
+    return null;
+  }
+  if (shareCache.size > 500) shareCache.clear();
+  shareCache.set(id, { at: Date.now(), clip });
+  return clip;
+}
+
+function renderShareHtml(template: string, id: string, clip: { text: string; bookTitle: string; chapterTitle: string }): string {
+  const url = `${SITE_URL}/s/${id}`;
+  const book = clip.bookTitle || "كتاب صوتي";
+  const title = escapeHtml(`مقطع مسموع من «${book}» | Hakawati AI`);
+  const snippet = clip.text.length > 180 ? clip.text.slice(0, 177) + "..." : clip.text;
+  const description = escapeHtml(snippet);
+  const content =
+    `<main dir="rtl"><h1>${escapeHtml(book)}</h1>` +
+    (clip.chapterTitle ? `<p>${escapeHtml(clip.chapterTitle)}</p>` : "") +
+    `<blockquote>${escapeHtml(clip.text)}</blockquote><a href="/">جرّب Hakawati AI</a></main>`;
+  return template
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${description}" />`)
+    // User-generated pages: shareable, but kept out of the search index
+    .replace(/<meta name="robots" content="[^"]*" \/>/, () => '<meta name="robots" content="noindex, follow" />')
+    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${url}" />`)
+    .replace(/<meta property="og:url" content="[^"]*" \/>/, () => `<meta property="og:url" content="${url}" />`)
+    .replace(/<meta property="og:title" content="[^"]*" \/>/, () => `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta name="twitter:title" content="[^"]*" \/>/, () => `<meta name="twitter:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*" \/>/, () => `<meta property="og:description" content="${description}" />`)
+    .replace(/<meta name="twitter:description" content="[^"]*" \/>/, () => `<meta name="twitter:description" content="${description}" />`)
+    .replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/, "")
+    .replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
+}
+
 // Start Express + Vite server
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -1939,6 +1998,18 @@ async function startServer() {
     const notFoundHtml = indexTemplate
       .replace(/<title>[^<]*<\/title>/, () => "<title>الصفحة غير موجودة – Hakawati AI</title>")
       .replace(/<meta name="robots" content="[^"]*" \/>/, () => '<meta name="robots" content="noindex" />');
+
+    app.get("/s/:id", async (req, res, next) => {
+      const id = req.params.id.replace(/\/$/, "");
+      if (!SHARE_ID_RE.test(id)) return res.status(404).type("html").send(notFoundHtml);
+      const clip = await fetchSharedClip(id);
+      if (clip === null && !shareCache.has(id)) {
+        // Firestore unreachable: serve the app shell, which loads the clip client-side
+        return res.type("html").send(indexTemplate);
+      }
+      if (!clip) return res.status(404).type("html").send(notFoundHtml);
+      res.type("html").send(renderShareHtml(indexTemplate, id, clip));
+    });
 
     app.use(express.static(distPath));
     app.get("*", (req, res) => {

@@ -32,6 +32,7 @@ import { audioEngine } from '../lib/audioEngine';
 import { DIALECTS, VOICES, AUDIO_STYLES } from '../data/voices';
 import { cleanBookTitle } from '../lib/bookTitle';
 import { toast } from '../lib/toast';
+import { createShare, shareUrl } from '../lib/shares';
 import { ChatPdfModal } from './ChatPdfModal';
 import { chaptersAr, minutesAr } from '../lib/arabicPlural';
 
@@ -361,12 +362,43 @@ export const StudioView: React.FC<StudioViewProps> = ({
     audioEngine.speak(panelText, selectedVoice, selectedStyle, playbackRate, undefined, () => setPanelPlaying(false));
   };
 
+  // Share the paragraph being listened to as a public clip page (/s/<id>)
+  const [isSharing, setIsSharing] = useState(false);
   const handleShare = async () => {
+    if (!isUserLoggedIn) {
+      toast('سجّل مجاناً لتشارك مقاطع من كتبك.', 'info');
+      if (onRequestAuth) {
+        audioEngine.pause();
+        setIsPlaying(false);
+        onRequestAuth('register');
+      }
+      return;
+    }
+    const text = sentences[activeSentenceIndex] || sentences[0] || '';
+    if (!text.trim() || isSharing) return;
+    setIsSharing(true);
     try {
-      await navigator.clipboard.writeText(window.location.origin);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {}
+      const id = await createShare({
+        text,
+        voiceId: selectedVoice.id,
+        bookTitle: cleanTitle,
+        chapterTitle: currentChapter?.title || '',
+      });
+      const url = shareUrl(id);
+      if (navigator.share) {
+        await navigator.share({ title: cleanTitle, text: 'استمع لهذا المقطع:', url }).catch(() => {});
+      } else {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        toast('نسخنا رابط المقطع، الصقه حيث تريد.', 'success');
+      }
+    } catch (err) {
+      console.warn('Share error:', err);
+      toast('تعذّر إنشاء رابط المشاركة، حاول مرة أخرى.', 'error');
+    } finally {
+      setIsSharing(false);
+    }
   };
 
   const cycleSpeed = () => {
@@ -645,10 +677,12 @@ export const StudioView: React.FC<StudioViewProps> = ({
           <button
             type="button"
             onClick={handleShare}
-            className="flex items-center gap-1.5 min-h-11 px-3 text-sm text-brand-soft hover:text-indigo-200 cursor-pointer"
+            disabled={isSharing}
+            title="شارك الفقرة الحالية برابط"
+            className="flex items-center gap-1.5 min-h-11 px-3 text-sm text-brand-soft hover:text-indigo-200 cursor-pointer disabled:opacity-60"
           >
-            <Share2 className="w-4 h-4" />
-            <span className="hidden sm:inline">{copied ? 'تم نسخ الرابط' : 'مشاركة'}</span>
+            {isSharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+            <span className="hidden sm:inline">{copied ? 'تم نسخ الرابط' : 'مشاركة المقطع'}</span>
           </button>
         </div>
       </header>
