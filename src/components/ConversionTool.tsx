@@ -45,8 +45,9 @@ import { useAuth } from '../lib/AuthContext';
 import { db, doc, setDoc, serverTimestamp } from '../lib/firebase';
 import { BookProcessingModal } from './BookProcessingModal';
 import { ChatPdfModal } from './ChatPdfModal';
+import { QuickResult } from './QuickResult';
 import { toast } from '../lib/toast';
-import { chaptersAr, minutesAr, pagesAr } from '../lib/arabicPlural';
+import { chaptersAr, minutesAr, pagesAr, wordsAr } from '../lib/arabicPlural';
 
 interface ConversionToolProps {
   onConversionStart: (job: ConversionJob) => void;
@@ -316,12 +317,43 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     setConvertingChapterStatus('');
   };
 
+  // Short pasted texts are read right here instead of opening the studio
+  const QUICK_MAX_WORDS = 150;
+  const [quickResult, setQuickResult] = useState<{ url: string; blob: Blob | null; voiceName: string } | null>(null);
+  const [isQuickLoading, setIsQuickLoading] = useState(false);
+
+  useEffect(() => {
+    setQuickResult(null);
+  }, [extractedText, selectedVoice, inputMode]);
+
+  const handleQuickConvert = async () => {
+    const text = extractedText.trim();
+    setConversionError(null);
+    setIsQuickLoading(true);
+    audioEngine.stop();
+    try {
+      const url = await audioEngine.generateSpeechUrl(text, selectedVoice, 1);
+      if (!url) throw new Error('tts failed');
+      setQuickResult({ url, blob: audioEngine.getCachedBlob(text, selectedVoice, 1), voiceName: selectedVoice.name.split(' - ')[0] });
+    } catch {
+      setConversionError('تعذّر توليد الصوت الآن. حاول مرة أخرى بعد قليل.');
+    } finally {
+      setIsQuickLoading(false);
+    }
+  };
+
   // Start conversion & Build audiobook
-  const handleStartConversion = async () => {
+  const handleStartConversion = async (forceStudio = false) => {
     if (!extractedText.trim()) {
       setConversionError('يرجى رفع ملف PDF أو كتابة نص أولاً.');
       return;
     }
+
+    if (!forceStudio && inputMode === 'text' && listeningMode === 'full' && wordCount <= QUICK_MAX_WORDS) {
+      handleQuickConvert();
+      return;
+    }
+    setQuickResult(null);
 
     setIsConverting(true);
     setConversionProgress(5);
@@ -641,7 +673,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                 className="w-full rounded-xl bg-ink border border-line p-3.5 text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand resize-y leading-relaxed"
               />
               <div className="flex items-center justify-between text-[13px] text-slate-400">
-                <span>{wordCount} كلمة · حوالي {minutesAr(Math.max(1, Math.round(wordCount / 130)))}</span>
+                <span>{wordCount === 0 ? '0 كلمة' : wordsAr(wordCount)} · حوالي {minutesAr(Math.max(1, Math.round(wordCount / 130)))}</span>
                 <button
                   type="button"
                   onClick={handlePurifyText}
@@ -653,6 +685,16 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                 </button>
               </div>
               {purifiedNotification && <p role="status" className="text-[13px] text-accent">{purifiedNotification}</p>}
+              {quickResult && (
+                <QuickResult
+                  url={quickResult.url}
+                  blob={quickResult.blob}
+                  voiceName={quickResult.voiceName}
+                  fileName={customTitle.trim() || 'Hakawati-AI'}
+                  onOpenStudio={() => handleStartConversion(true)}
+                  onClose={() => setQuickResult(null)}
+                />
+              )}
             </div>
           )}
 
@@ -745,12 +787,12 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
           </div>
           <button
             type="button"
-            onClick={handleStartConversion}
-            disabled={isConverting || isExtracting || !hasInput}
+            onClick={() => handleStartConversion()}
+            disabled={isConverting || isExtracting || isQuickLoading || !hasInput}
             className="flex items-center justify-center gap-2.5 min-h-[52px] px-7 rounded-2xl bg-gradient-to-l from-[#8b5cf6] to-[#3b82f6] text-white font-bold text-[17px] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
           >
-            {isConverting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5 fill-current" />}
-            {isConverting ? 'جاري التحويل...' : 'حوّل واستمع'}
+            {isConverting || isQuickLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5 fill-current" />}
+            {isConverting || isQuickLoading ? 'جاري التحويل...' : 'حوّل واستمع'}
           </button>
         </div>
       </div>

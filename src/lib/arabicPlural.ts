@@ -9,3 +9,4 @@ export const pluralAr = (n: number, one: string, two: string, few: string, many:
 export const pagesAr = (n: number) => pluralAr(n, 'صفحة واحدة', 'صفحتان', 'صفحات', 'صفحة');
 export const minutesAr = (n: number) => pluralAr(n, 'دقيقة واحدة', 'دقيقتان', 'دقائق', 'دقيقة');
 export const chaptersAr = (n: number) => pluralAr(n, 'فصل واحد', 'فصلان', 'فصول', 'فصلاً');
+export const wordsAr = (n: number) => pluralAr(n, 'كلمة واحدة', 'كلمتان', 'كلمات', 'كلمة');
