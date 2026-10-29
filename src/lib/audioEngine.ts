@@ -537,6 +537,13 @@ export class AudioEngine {
     this.isPlaying = false;
   }
 
+  // Fraction (0–1) of the clip that is currently playing, for progress bars
+  public getCurrentClipProgress(): number {
+    const a = this.currentAudioElement;
+    if (!a || !a.duration || !isFinite(a.duration)) return 0;
+    return Math.min(1, a.currentTime / a.duration);
+  }
+
   public getIsPlaying(): boolean {
     return this.isPlaying;
   }

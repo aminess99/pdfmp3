@@ -51,6 +51,10 @@ import { chaptersAr, minutesAr, pagesAr, wordsAr } from '../lib/arabicPlural';
 import { voiceLabel, voiceInitial, dialectLabel, genderLabel } from '../lib/voiceLabel';
 import { tr, DIR } from '../lib/i18n';
 
+// "320 KB" under a megabyte, "2.4 MB" above it
+const formatFileSize = (bytes: number): string =>
+  bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
 interface ConversionToolProps {
   onConversionStart: (job: ConversionJob) => void;
   onPreviewVoiceSample: (voice: Voice) => void;
@@ -438,7 +442,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
 
             const fileSize = inputMode === 'text'
               ? tr(`${activeText.length} حرف`, `${activeText.length} characters`)
-              : (selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : '');
+              : (selectedFile ? formatFileSize(selectedFile.size) : '');
             
             const calculatedPages = inputMode === 'text'
               ? Math.max(1, Math.ceil(activeText.split(/\s+/).length / 250))
@@ -639,7 +643,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                   <CheckCircle2 className="w-8 h-8 text-accent" />
                   <p className="text-white font-semibold truncate max-w-full">{selectedFile.name}</p>
                   <p className="text-sm text-slate-400">
-                    <bdi dir="ltr">{(selectedFile.size / (1024 * 1024)).toFixed(1)} MB</bdi> · {pagesAr(pageCount)} ·{' '}
+                    <bdi dir="ltr">{formatFileSize(selectedFile.size)}</bdi> · {pagesAr(pageCount)} ·{' '}
                     <button type="button" onClick={() => fileInputRef.current?.click()} className="text-brand-soft hover:underline cursor-pointer">
                       {tr("تغيير الملف", "Change file")}
                     </button>
@@ -817,7 +821,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         isOpen={isConverting || isExtracting}
         mode={isExtracting ? 'extracting' : 'converting'}
         fileName={selectedFile ? selectedFile.name : selectedSampleBook ? selectedSampleBook.title : tr("كتابك الصوتي", "Your audiobook")}
-        fileSize={selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : undefined}
+        fileSize={selectedFile ? formatFileSize(selectedFile.size) : undefined}
         pageCount={selectedFile ? pageCount : undefined}
         progress={isExtracting ? extractionProgress : conversionProgress}
         currentStatusText={isExtracting ? extractionStatusText : convertingChapterStatus}

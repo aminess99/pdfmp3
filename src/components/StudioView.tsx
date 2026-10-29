@@ -160,11 +160,19 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
   // Duration calculations
   const wordsCount = useMemo(() => fullText.split(/\s+/).filter(Boolean).length, [fullText]);
-  const estimatedTotalSeconds = currentChapter?.estimatedDurationMinutes 
-    ? currentChapter.estimatedDurationMinutes * 60 
-    : Math.max(30, Math.round(wordsCount * 0.4));
+  // ~130 words per minute of Arabic narration (chapter minutes are rounded, too coarse for short texts)
+  const estimatedTotalSeconds = Math.max(5, Math.round((wordsCount / 130) * 60));
 
-  const elapsedSeconds = Math.round(estimatedTotalSeconds * (progressPercent / 100));
+  // progressPercent marks where the current paragraph starts; add how far into it the audio is
+  const [clipFraction, setClipFraction] = useState(0);
+  useEffect(() => {
+    if (!isPlaying) return;
+    const timer = setInterval(() => setClipFraction(audioEngine.getCurrentClipProgress()), 250);
+    return () => clearInterval(timer);
+  }, [isPlaying]);
+  const shownPercent = Math.min(100, progressPercent + (clipFraction * 100) / Math.max(1, sentences.length));
+
+  const elapsedSeconds = Math.round(estimatedTotalSeconds * (shownPercent / 100));
   const remainingSeconds = Math.max(0, estimatedTotalSeconds - elapsedSeconds);
 
   // Auto-scroll active text into view smoothly
@@ -232,8 +240,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
     setIsPlaying(true);
 
     const currentText = sentences[sentenceIdx];
-    const progress = Math.round(((sentenceIdx + 1) / sentences.length) * 100);
-    setProgressPercent(progress);
+    setProgressPercent((sentenceIdx / sentences.length) * 100);
+    setClipFraction(0);
 
     // Lookahead pre-fetch next segments
     if (sentenceIdx + 1 < sentences.length) {
@@ -927,7 +935,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
             <span className="flex flex-col leading-tight min-w-0">
               <span className="text-white text-[15px] font-semibold truncate">{currentChapter?.title || cleanTitle}</span>
               <span className="text-[13px] text-slate-400 tabular-nums">
-                {formatTime(elapsedSeconds)} / {formatTime(estimatedTotalSeconds)} · {voiceLabel(selectedVoice)}
+                <bdi dir="ltr">{formatTime(elapsedSeconds)} / {formatTime(estimatedTotalSeconds)}</bdi> · {voiceLabel(selectedVoice)}
               </span>
             </span>
           </button>
@@ -940,7 +948,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
           </button>
           <span className="absolute top-0 inset-x-0 h-0.5 bg-line" aria-hidden="true">
-            <span className="absolute top-0 start-0 h-0.5 bg-accent" style={{ width: `${progressPercent}%` }} />
+            <span className="absolute top-0 start-0 h-0.5 bg-accent" style={{ width: `${shownPercent}%` }} />
           </span>
         </div>
 
@@ -964,14 +972,14 @@ export const StudioView: React.FC<StudioViewProps> = ({
         <div className="hidden md:flex order-2 flex-1 items-center gap-3 min-w-[200px]">
           <span className="text-[13px] text-slate-400 tabular-nums">{formatTime(elapsedSeconds)}</span>
           <div className="relative flex-1 h-1.5 rounded-full bg-line">
-            <div className="absolute top-0 start-0 h-1.5 rounded-full bg-accent" style={{ width: `${progressPercent}%` }} />
+            <div className="absolute top-0 start-0 h-1.5 rounded-full bg-accent" style={{ width: `${shownPercent}%` }} />
             <label className="sr-only" htmlFor="studio-seek">{tr("موضع الاستماع", "Listening position")}</label>
             <input
               id="studio-seek"
               type="range"
               min={0}
               max={100}
-              value={progressPercent}
+              value={Math.round(shownPercent)}
               onChange={(e) => {
                 const pct = Number(e.target.value);
                 handleSeekSentence(Math.min(sentences.length - 1, Math.floor((pct / 100) * sentences.length)));
@@ -1116,14 +1124,14 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
             <div className="flex flex-col gap-1.5">
               <div className="relative h-1.5 rounded-full bg-line">
-                <div className="absolute top-0 start-0 h-1.5 rounded-full bg-accent" style={{ width: `${progressPercent}%` }} />
+                <div className="absolute top-0 start-0 h-1.5 rounded-full bg-accent" style={{ width: `${shownPercent}%` }} />
                 <label className="sr-only" htmlFor="np-seek">{tr("موضع الاستماع", "Listening position")}</label>
                 <input
                   id="np-seek"
                   type="range"
                   min={0}
                   max={100}
-                  value={progressPercent}
+                  value={Math.round(shownPercent)}
                   onChange={(e) => {
                     const pct = Number(e.target.value);
                     handleSeekSentence(Math.min(sentences.length - 1, Math.floor((pct / 100) * sentences.length)));
