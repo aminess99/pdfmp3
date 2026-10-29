@@ -32,7 +32,7 @@ export const Toaster: React.FC = () => {
   return (
     <div
       aria-live="polite"
-      className="fixed z-[90] top-4 inset-x-4 sm:inset-x-auto sm:left-6 sm:w-[380px] flex flex-col gap-2 pointer-events-none font-body"
+      className="fixed z-[90] top-[72px] inset-x-4 sm:top-20 sm:inset-x-auto sm:left-6 sm:w-[380px] flex flex-col gap-2 pointer-events-none font-body"
       dir="rtl"
     >
       {items.map((t) => (

@@ -14,6 +14,7 @@ import {
   SkipForward,
   Layers,
   Moon,
+  ChevronUp,
   Clock,
   ChevronDown,
   Volume2,
@@ -98,6 +99,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const [panelPlaying, setPanelPlaying] = useState(false);
   const [hideText, setHideText] = useState(false);
   const [chaptersOpen, setChaptersOpen] = useState(false);
+  // Full-screen player on phones
+  const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
 
   // Resume where the listener stopped last time (per book, in this browser)
   const positionKey = `studio_pos_${job.id}`;
@@ -364,6 +367,23 @@ export const StudioView: React.FC<StudioViewProps> = ({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {}
+  };
+
+  const cycleSpeed = () => {
+    const rates = [1.0, 1.25, 1.5, 2.0, 0.8];
+    const next = rates[(rates.indexOf(playbackRate) + 1) % rates.length] || 1.0;
+    setPlaybackRate(next);
+    if (isPlaying) {
+      audioEngine.stop();
+      startPlayback(activeSentenceIndex);
+    }
+  };
+
+  const SLEEP_STEPS: (number | null)[] = [null, 15, 30, 45, 60];
+  const cycleSleep = () => {
+    const next = SLEEP_STEPS[(SLEEP_STEPS.indexOf(sleepTimerMinutes) + 1) % SLEEP_STEPS.length];
+    setSleepTimerMinutes(next);
+    setSleepTimerRemainingSec(next === null ? null : next * 60);
   };
 
   const handleSeekSentence = (targetIdx: number) => {
@@ -856,7 +876,38 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
       {/* Player bar */}
       <footer className="relative shrink-0 border-t border-raised bg-card px-3 sm:px-6 py-3 flex flex-wrap items-center gap-x-5 gap-y-2">
-        <div className="flex items-center gap-1.5 order-1">
+        {/* Phone: compact bar that opens the full-screen player */}
+        <div className="md:hidden w-full flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setNowPlayingOpen(true)}
+            aria-label="فتح المشغّل"
+            className="flex-1 min-w-0 flex items-center gap-3 text-right cursor-pointer"
+          >
+            <span aria-hidden="true" className="w-11 h-11 rounded-lg bg-gradient-to-br from-indigo-700 to-slate-900 border border-indigo-800 flex items-center justify-center shrink-0">
+              <ChevronUp className="w-5 h-5 text-indigo-200" />
+            </span>
+            <span className="flex flex-col leading-tight min-w-0">
+              <span className="text-white text-[15px] font-semibold truncate">{currentChapter?.title || cleanTitle}</span>
+              <span className="text-[13px] text-slate-400 tabular-nums">
+                {formatTime(elapsedSeconds)} / {formatTime(estimatedTotalSeconds)} · {selectedVoice.name.split(' - ')[0]}
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={handleTogglePlay}
+            aria-label={isPlaying ? 'إيقاف مؤقت' : 'تشغيل'}
+            className="w-12 h-12 rounded-full bg-gradient-to-l from-[#8b5cf6] to-[#3b82f6] text-white flex items-center justify-center shrink-0 cursor-pointer"
+          >
+            {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
+          </button>
+          <span className="absolute top-0 inset-x-0 h-0.5 bg-line" aria-hidden="true">
+            <span className="absolute top-0 right-0 h-0.5 bg-accent" style={{ width: `${progressPercent}%` }} />
+          </span>
+        </div>
+
+        <div className="hidden md:flex items-center gap-1.5 order-1">
           <button type="button" onClick={() => handleSkipSeconds(-10)} aria-label="الفقرة السابقة" className="w-11 h-11 rounded-full text-slate-300 hover:text-white flex items-center justify-center cursor-pointer">
             <SkipForward className="w-5 h-5" />
           </button>
@@ -873,7 +924,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
           </button>
         </div>
 
-        <div className="order-3 sm:order-2 basis-full sm:basis-auto flex-1 flex items-center gap-3 min-w-[200px]">
+        <div className="hidden md:flex order-2 flex-1 items-center gap-3 min-w-[200px]">
           <span className="text-[13px] text-slate-400 tabular-nums">{formatTime(elapsedSeconds)}</span>
           <div className="relative flex-1 h-1.5 rounded-full bg-line">
             <div className="absolute top-0 right-0 h-1.5 rounded-full bg-accent" style={{ width: `${progressPercent}%` }} />
@@ -895,7 +946,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
           <span className="text-[13px] text-slate-400 tabular-nums">{formatTime(estimatedTotalSeconds)}</span>
         </div>
 
-        <div className="order-2 sm:order-3 flex items-center gap-2 mr-auto sm:mr-0">
+        <div className="hidden md:flex order-3 items-center gap-2">
           <button
             type="button"
             aria-expanded={showVoicePicker}
@@ -914,15 +965,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
           <button
             type="button"
             aria-label="سرعة التشغيل"
-            onClick={() => {
-              const rates = [1.0, 1.25, 1.5, 2.0, 0.8];
-              const next = rates[(rates.indexOf(playbackRate) + 1) % rates.length] || 1.0;
-              setPlaybackRate(next);
-              if (isPlaying) {
-                audioEngine.stop();
-                startPlayback(activeSentenceIndex);
-              }
-            }}
+            onClick={cycleSpeed}
             className="min-w-14 min-h-11 rounded-[10px] border border-line-strong text-white font-semibold text-sm cursor-pointer hover:bg-raised"
           >
             {playbackRate}x
@@ -989,6 +1032,137 @@ export const StudioView: React.FC<StudioViewProps> = ({
         <div role="status" className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-raised border border-line shadow-2xl shadow-black/50 text-white text-sm">
           <Loader2 className="w-4 h-4 animate-spin text-accent" />
           {downloadProgressMsg}
+        </div>
+      )}
+
+      {/* Phone: full-screen now playing */}
+      {nowPlayingOpen && (
+        <div role="dialog" aria-modal="true" aria-label="المشغّل" className="md:hidden fixed inset-0 z-[55] bg-ink flex flex-col px-5 pt-3 pb-6 overflow-y-auto">
+          <div className="flex items-center justify-between shrink-0">
+            <button type="button" onClick={() => setNowPlayingOpen(false)} aria-label="إغلاق المشغّل" className="w-11 h-11 -mr-2 rounded-full text-slate-300 flex items-center justify-center cursor-pointer">
+              <ChevronDown className="w-6 h-6" />
+            </button>
+            <span className="text-sm text-slate-400">يُشغَّل الآن</span>
+            {chapters && chapters.length > 1 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setNowPlayingOpen(false);
+                  setChaptersOpen(true);
+                }}
+                className="min-h-11 px-2 text-sm text-brand-soft cursor-pointer"
+              >
+                الفصول
+              </button>
+            ) : (
+              <span className="w-11" />
+            )}
+          </div>
+
+          <div className="flex-1 flex flex-col justify-center gap-6 py-4">
+            <div
+              aria-hidden="true"
+              className="w-full max-w-[260px] aspect-square mx-auto rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-900 to-slate-900 border border-indigo-800 flex flex-col items-center justify-center gap-3 p-6 text-center shadow-2xl shadow-indigo-950/60"
+            >
+              <img src="/brand/icon-192.png" alt="" width={64} height={64} className="w-16 h-16 opacity-90" />
+              <span className="font-display font-extrabold text-xl text-white leading-snug line-clamp-3">{cleanTitle}</span>
+            </div>
+
+            <div className="flex flex-col gap-1 text-center">
+              <span className="font-display font-extrabold text-xl text-white truncate">{currentChapter?.title || cleanTitle}</span>
+              <span className="text-sm text-slate-400">{selectedVoice.name.split(' - ')[0]}</span>
+            </div>
+
+            {!hideText && sentences[activeSentenceIndex] && (
+              <p className="text-slate-300 text-[17px] leading-[1.9] text-center line-clamp-4">{sentences[activeSentenceIndex]}</p>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <div className="relative h-1.5 rounded-full bg-line">
+                <div className="absolute top-0 right-0 h-1.5 rounded-full bg-accent" style={{ width: `${progressPercent}%` }} />
+                <label className="sr-only" htmlFor="np-seek">موضع الاستماع</label>
+                <input
+                  id="np-seek"
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={progressPercent}
+                  onChange={(e) => {
+                    const pct = Number(e.target.value);
+                    handleSeekSentence(Math.min(sentences.length - 1, Math.floor((pct / 100) * sentences.length)));
+                  }}
+                  className="absolute inset-x-0 -top-3 h-8 w-full opacity-0 cursor-pointer"
+                  style={{ direction: 'rtl' }}
+                />
+              </div>
+              <div className="flex justify-between text-[13px] text-slate-400 tabular-nums">
+                <span>{formatTime(elapsedSeconds)}</span>
+                <span>{formatTime(estimatedTotalSeconds)}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center gap-6">
+              <button type="button" onClick={() => handleSkipSeconds(-10)} aria-label="الفقرة السابقة" className="w-14 h-14 rounded-full text-slate-200 flex items-center justify-center cursor-pointer">
+                <SkipForward className="w-7 h-7" />
+              </button>
+              <button
+                type="button"
+                onClick={handleTogglePlay}
+                aria-label={isPlaying ? 'إيقاف مؤقت' : 'تشغيل'}
+                className="w-20 h-20 rounded-full bg-white text-ink flex items-center justify-center cursor-pointer"
+              >
+                {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current" />}
+              </button>
+              <button type="button" onClick={() => handleSkipSeconds(10)} aria-label="الفقرة التالية" className="w-14 h-14 rounded-full text-slate-200 flex items-center justify-center cursor-pointer">
+                <SkipBack className="w-7 h-7" />
+              </button>
+            </div>
+          </div>
+
+          <div className="shrink-0 grid grid-cols-4 gap-2">
+            <label className="relative min-h-14 rounded-xl bg-card border border-line flex flex-col items-center justify-center text-[12px] text-slate-400 cursor-pointer">
+              <span className="w-6 h-6 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center text-[12px] font-bold">{selectedVoice.name.charAt(0)}</span>
+              الصوت
+              <select
+                value={selectedVoice.id}
+                onChange={(e) => {
+                  const v = voicesPool.find((x) => x.id === e.target.value);
+                  if (v) setSelectedVoice(v);
+                }}
+                aria-label="الصوت"
+                className="absolute inset-0 opacity-0 cursor-pointer"
+              >
+                {voicesPool.map((v) => (
+                  <option key={v.id} value={v.id}>{v.name.split(' - ')[0]}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" onClick={cycleSpeed} aria-label="سرعة التشغيل" className="min-h-14 rounded-xl bg-card border border-line flex flex-col items-center justify-center text-[12px] text-slate-400 cursor-pointer">
+              <span className="text-white font-semibold text-[15px]">{playbackRate}x</span>
+              السرعة
+            </button>
+            <button
+              type="button"
+              onClick={cycleSleep}
+              aria-label="مؤقت النوم"
+              className={`min-h-14 rounded-xl bg-card border flex flex-col items-center justify-center text-[12px] cursor-pointer ${
+                sleepTimerRemainingSec !== null ? 'border-accent text-accent' : 'border-line text-slate-400'
+              }`}
+            >
+              <Moon className="w-5 h-5" />
+              {sleepTimerRemainingSec !== null ? formatTime(sleepTimerRemainingSec) : 'النوم'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadSingleChapter}
+              disabled={isGeneratingMp3}
+              aria-label="تحميل هذا الفصل"
+              className="min-h-14 rounded-xl bg-card border border-line flex flex-col items-center justify-center text-[12px] text-slate-400 cursor-pointer disabled:opacity-60"
+            >
+              {isGeneratingMp3 ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+              تحميل
+            </button>
+          </div>
         </div>
       )}
 

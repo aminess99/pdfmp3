@@ -264,7 +264,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           </button>
         </header>
 
-        <main className="flex-1 w-full max-w-[1160px] mx-auto px-4 sm:px-8 lg:px-10 py-6 sm:py-8">
+        <main className="flex-1 w-full max-w-[1160px] mx-auto px-4 sm:px-8 lg:px-10 pt-6 pb-24 md:py-8">
           {activeTab === 'library' && (
             <div className="flex flex-col gap-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
@@ -424,6 +424,37 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           )}
         </main>
       </div>
+
+      {/* Phone: bottom navigation */}
+      <nav aria-label="التنقل" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur border-t border-line grid grid-cols-4 pb-[env(safe-area-inset-bottom)]">
+        {([
+          ['library', 'مكتبتي', Library],
+          ['new_book', 'تحويل', Plus],
+          ['ai_creator', 'تأليف', Wand2],
+        ] as const).map(([tab, label, Icon]) => (
+          <button
+            key={tab}
+            type="button"
+            aria-current={activeTab === tab ? 'page' : undefined}
+            onClick={() => {
+              setActiveTab(tab);
+              window.scrollTo({ top: 0 });
+            }}
+            className={`min-h-16 flex flex-col items-center justify-center gap-1 text-[12px] cursor-pointer ${activeTab === tab ? 'text-white' : 'text-slate-400'}`}
+          >
+            <Icon className={`w-[22px] h-[22px] ${activeTab === tab ? 'text-accent' : ''}`} />
+            {label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setShowSettingsModal(true)}
+          className="min-h-16 flex flex-col items-center justify-center gap-1 text-[12px] text-slate-400 cursor-pointer"
+        >
+          <Settings className="w-[22px] h-[22px]" />
+          الإعدادات
+        </button>
+      </nav>
 
       {showSettingsModal && <UserSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} user={user} />}
 
