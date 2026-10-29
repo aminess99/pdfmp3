@@ -1,4 +1,5 @@
 import React from 'react';
+import { HOME_H1, HOME_SUBTITLE } from '../data/homeContent';
 
 interface HeroSectionProps {
   badge?: string;
@@ -15,10 +16,10 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ badge, title, subtitle
         <span className="px-3 py-1 rounded-full bg-raised text-brand-soft text-sm">{badge}</span>
       )}
       <h1 className="font-display font-extrabold text-[34px] sm:text-5xl lg:text-[56px] leading-tight text-white">
-        {title || 'حوّل أي نص أو كتاب إلى صوت طبيعي'}
+        {title || HOME_H1}
       </h1>
       <p className="text-lg text-slate-400">
-        {subtitle || '30 صوتاً · 14 لهجة عربية · جرّب مجاناً'}
+        {subtitle || HOME_SUBTITLE}
       </p>
     </div>
     <div className="w-full max-w-[760px]">{children}</div>

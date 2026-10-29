@@ -16,6 +16,7 @@ import { LandingContent } from './components/LandingContent';
 import { NotFound } from './components/NotFound';
 import { Toaster } from './components/Toaster';
 import { findLandingPage } from './data/landingPages';
+import { HOME_SECTIONS } from './data/homeContent';
 import { ConversionJob, Voice } from './types';
 import { audioEngine } from './lib/audioEngine';
 import { useVoices } from './lib/useVoices';
@@ -213,8 +214,17 @@ export default function App() {
           />
         </HeroSection>
 
-        {/* SEO landing page article (only on /<slug> pages) */}
-        {landingPage && <LandingContent page={landingPage} />}
+        {/* SEO article: page-specific on /<slug> landing pages, general on the home page */}
+        {landingPage ? (
+          <LandingContent
+            sections={landingPage.sections}
+            faqs={landingPage.faqs}
+            faqTitle={`أسئلة حول ${landingPage.linkLabel}`}
+            currentSlug={landingPage.slug}
+          />
+        ) : (
+          <LandingContent sections={HOME_SECTIONS} currentSlug="" />
+        )}
 
         <VoiceSamplesSection availableVoicesList={allVoices} />
         <HowItWorks />

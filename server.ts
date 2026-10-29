@@ -7,6 +7,8 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { VOICES } from "./src/data/voices";
 import { LANDING_PAGES, LandingPage, findLandingPage, landingPath } from "./src/data/landingPages";
+import { HOME_H1, HOME_SUBTITLE, HOME_SECTIONS, HOW_STEPS, USE_CASES } from "./src/data/homeContent";
+import { FAQS } from "./src/data/sampleBooks";
 
 dotenv.config();
 
@@ -1888,6 +1890,29 @@ function renderLandingHtml(template: string, page: LandingPage): string {
     .replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
 }
 
+// The home page is a client-rendered app, so put its text into #root for crawlers
+// that read raw HTML (React replaces it on load with the same content).
+function renderHomeHtml(template: string): string {
+  const content = [
+    `<main dir="rtl">`,
+    `<h1>${escapeHtml(HOME_H1)}</h1>`,
+    `<p>${escapeHtml(HOME_SUBTITLE)}</p>`,
+    ...HOME_SECTIONS.map(
+      (sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")
+    ),
+    `<h2>كيف يعمل</h2><ol>`,
+    ...HOW_STEPS.map((st) => `<li><strong>${escapeHtml(st.title)}</strong> ${escapeHtml(st.text)}</li>`),
+    `</ol><h2>لمن هذه الأداة؟</h2>`,
+    ...USE_CASES.map((u) => `<h3>${escapeHtml(u.title)}</h3><p>${escapeHtml(u.text)}</p>`),
+    `<h2>الأسئلة الشائعة</h2>`,
+    ...FAQS.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    `<nav>`,
+    ...LANDING_PAGES.map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `),
+    `</nav></main>`,
+  ].join("");
+  return template.replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
+}
+
 // Start Express + Vite server
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -1900,9 +1925,11 @@ async function startServer() {
     const distPath = path.join(process.cwd(), "dist");
     const indexTemplate = fs.readFileSync(path.join(distPath, "index.html"), "utf8");
     const landingHtml = new Map(LANDING_PAGES.map((p) => [p.slug, renderLandingHtml(indexTemplate, p)]));
+    const homeHtml = renderHomeHtml(indexTemplate);
 
     app.use((req, res, next) => {
       if (req.method !== "GET") return next();
+      if (req.path === "/" || req.path === "/index.html") return res.type("html").send(homeHtml);
       const page = findLandingPage(req.path);
       if (!page) return next();
       res.type("html").send(landingHtml.get(page.slug));
@@ -1915,9 +1942,6 @@ async function startServer() {
 
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      if (req.path === "/" || req.path === "/index.html") {
-        return res.sendFile(path.join(distPath, "index.html"));
-      }
       res.status(404).type("html").send(notFoundHtml);
     });
   }

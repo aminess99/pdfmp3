@@ -1,17 +1,10 @@
 import React from 'react';
 import { GraduationCap, Video, Car } from 'lucide-react';
 
-const STEPS = [
-  { title: 'ارفع الكتاب أو الصق النص', text: 'PDF أو ePub أو أي نص عربي.' },
-  { title: 'اختر الصوت واللهجة', text: 'اسمع العينة قبل أن تقرر.' },
-  { title: 'استمع أو حمّل', text: 'مقسّماً إلى فصول، مع ملخص عند الطلب.' },
-];
+import { HOW_STEPS as STEPS, USE_CASES as USE_CASE_TEXT } from '../data/homeContent';
 
-const USE_CASES = [
-  { icon: GraduationCap, title: 'الطلاب', text: 'حوّل المقررات والملخصات إلى صوت وراجع دروسك وأنت في الطريق.' },
-  { icon: Video, title: 'صناع المحتوى', text: 'تعليق صوتي لمقاطعك بلهجة جمهورك: سعودي، مصري، مغربي وغيرها.' },
-  { icon: Car, title: 'المشغولون', text: 'اسمع الكتب التي لا تجد وقتاً لقراءتها، أثناء القيادة أو الرياضة.' },
-];
+const USE_CASE_ICONS = [GraduationCap, Video, Car];
+const USE_CASES = USE_CASE_TEXT.map((u, i) => ({ ...u, icon: USE_CASE_ICONS[i] }));
 
 export const HowItWorks: React.FC = () => (
   <section id="how" className="border-t border-raised py-[72px] px-4 sm:px-6" dir="rtl">

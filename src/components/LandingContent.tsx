@@ -1,55 +1,59 @@
 import React from 'react';
-import { HelpCircle, ArrowLeft } from 'lucide-react';
-import { LandingPage, LANDING_PAGES, landingPath } from '../data/landingPages';
+import { LANDING_PAGES, landingPath } from '../data/landingPages';
 
 interface LandingContentProps {
-  page: LandingPage;
+  sections: { heading: string; paragraphs: string[] }[];
+  faqs?: { question: string; answer: string }[];
+  faqTitle?: string;
+  // Slug of the current landing page, left out of the related links ('' on the home page)
+  currentSlug?: string;
 }
 
-// Page-specific article + FAQ for SEO landing pages (mirrors what server.ts pre-renders)
-export const LandingContent: React.FC<LandingContentProps> = ({ page }) => {
-  const related = LANDING_PAGES.filter((p) => p.slug !== page.slug);
+// SEO article + FAQ for the home and landing pages (mirrors what server.ts pre-renders)
+export const LandingContent: React.FC<LandingContentProps> = ({ sections, faqs, faqTitle, currentSlug }) => {
+  const related = LANDING_PAGES.filter((p) => p.slug !== currentSlug);
 
   return (
-    <section className="py-16 bg-[#0b0f19] border-t border-slate-800/80" dir="rtl">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
-        {page.sections.map((section, idx) => (
-          <article key={idx} className="space-y-3">
-            <h2 className="text-2xl sm:text-3xl font-black text-white font-['Tajawal']">{section.heading}</h2>
-            {section.paragraphs.map((p, pIdx) => (
-              <p key={pIdx} className="text-slate-300 text-sm sm:text-base leading-relaxed">
+    <section className="border-t border-raised py-[72px] px-4 sm:px-6" dir="rtl">
+      <div className="max-w-[820px] mx-auto flex flex-col gap-10">
+        {sections.map((section) => (
+          <article key={section.heading} className="flex flex-col gap-3">
+            <h2 className="font-display font-extrabold text-2xl sm:text-3xl text-white">{section.heading}</h2>
+            {section.paragraphs.map((p, idx) => (
+              <p key={idx} className="text-slate-300 text-base sm:text-[17px] leading-[1.9]">
                 {p}
               </p>
             ))}
           </article>
         ))}
 
-        <div className="space-y-4">
-          <h2 className="flex items-center gap-2 text-2xl sm:text-3xl font-black text-white font-['Tajawal']">
-            <HelpCircle className="w-6 h-6 text-cyan-400" />
-            أسئلة حول {page.linkLabel}
-          </h2>
-          {page.faqs.map((faq, idx) => (
-            <div key={idx} className="rounded-2xl bg-[#0d1322] border border-slate-800 p-5 space-y-2">
-              <h3 className="text-base font-bold text-white">{faq.question}</h3>
-              <p className="text-sm text-slate-300 leading-relaxed">{faq.answer}</p>
-            </div>
-          ))}
-        </div>
+        {faqs && faqs.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <h2 className="font-display font-extrabold text-2xl sm:text-3xl text-white">{faqTitle}</h2>
+            {faqs.map((faq) => (
+              <div key={faq.question} className="rounded-[14px] bg-card border border-line p-5 flex flex-col gap-2">
+                <h3 className="text-[17px] font-semibold text-white">{faq.question}</h3>
+                <p className="text-slate-400 leading-[1.8]">{faq.answer}</p>
+              </div>
+            ))}
+          </div>
+        )}
 
-        <nav className="space-y-3" aria-label="صفحات ذات صلة">
-          <h2 className="text-lg font-bold text-white">صفحات ذات صلة</h2>
+        <nav aria-label="صفحات ذات صلة" className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold text-white">أدوات أخرى</h2>
           <div className="flex flex-wrap gap-2">
-            <a href="/" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm text-slate-200 hover:border-indigo-500 hover:text-white transition-colors">
-              تحويل PDF إلى صوت <ArrowLeft className="w-4 h-4" />
-            </a>
+            {currentSlug !== '' && (
+              <a href="/" className="min-h-11 px-4 rounded-[10px] border border-line text-sm text-slate-300 hover:text-white hover:border-line-strong flex items-center">
+                تحويل PDF إلى صوت
+              </a>
+            )}
             {related.map((p) => (
               <a
                 key={p.slug}
                 href={landingPath(p)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-sm text-slate-200 hover:border-indigo-500 hover:text-white transition-colors"
+                className="min-h-11 px-4 rounded-[10px] border border-line text-sm text-slate-300 hover:text-white hover:border-line-strong flex items-center"
               >
-                {p.linkLabel} <ArrowLeft className="w-4 h-4" />
+                {p.linkLabel}
               </a>
             ))}
           </div>
