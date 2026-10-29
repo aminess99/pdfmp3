@@ -2,6 +2,7 @@ import React from 'react';
 import { Check, Loader2, X } from 'lucide-react';
 import { BookChapter } from '../types';
 import { chaptersAr, pagesAr } from '../lib/arabicPlural';
+import { tr, DIR } from '../lib/i18n';
 
 interface BookProcessingModalProps {
   isOpen: boolean;
@@ -20,8 +21,8 @@ interface BookProcessingModalProps {
   onCancel: () => void;
 }
 
-const EXTRACT_STEPS = ['قراءة الملف', 'استخراج النص', 'اكتشاف العنوان والفصول'];
-const CONVERT_STEPS = ['تجهيز النص', 'مواءمة النطق مع الصوت', 'توليد الصوت', 'فتح الاستوديو'];
+const EXTRACT_STEPS = [tr('قراءة الملف', 'Reading the file'), tr('استخراج النص', 'Extracting the text'), tr('اكتشاف العنوان والفصول', 'Finding the title and chapters')];
+const CONVERT_STEPS = [tr('تجهيز النص', 'Preparing the text'), tr('مواءمة النطق مع الصوت', 'Matching pronunciation to the voice'), tr('توليد الصوت', 'Generating audio'), tr('فتح الاستوديو', 'Opening the studio')];
 
 export const BookProcessingModal: React.FC<BookProcessingModalProps> = ({
   isOpen,
@@ -46,7 +47,7 @@ export const BookProcessingModal: React.FC<BookProcessingModalProps> = ({
     .join(' · ');
 
   return (
-    <div className="fixed inset-0 z-[60] bg-slate-950/85 flex items-center justify-center p-4 font-body" dir="rtl">
+    <div className="fixed inset-0 z-[60] bg-slate-950/85 flex items-center justify-center p-4 font-body" dir={DIR}>
       <div
         role="dialog"
         aria-modal="true"
@@ -56,19 +57,19 @@ export const BookProcessingModal: React.FC<BookProcessingModalProps> = ({
         <div className="flex items-start justify-between gap-3">
           <div className="flex flex-col gap-1 min-w-0">
             <h2 id="processing-title" className="font-display font-extrabold text-2xl text-white">
-              {mode === 'extracting' ? 'جاري قراءة كتابك' : 'جاري تجهيز الصوت'}
+              {mode === 'extracting' ? tr("جاري قراءة كتابك", "Reading your book") : tr("جاري تجهيز الصوت", "Preparing the audio")}
             </h2>
             <p className="text-slate-400 text-sm truncate">
               {fileName}
               {meta && ` · ${meta}`}
             </p>
           </div>
-          <button type="button" onClick={onCancel} aria-label="إلغاء" className="w-11 h-11 shrink-0 rounded-full text-slate-400 hover:text-white hover:bg-raised flex items-center justify-center cursor-pointer">
+          <button type="button" onClick={onCancel} aria-label={tr("إلغاء", "Cancel")} className="w-11 h-11 shrink-0 rounded-full text-slate-400 hover:text-white hover:bg-raised flex items-center justify-center cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <ol className="flex flex-col gap-2" aria-label="مراحل التجهيز">
+        <ol className="flex flex-col gap-2" aria-label={tr("مراحل التجهيز", "Progress steps")}>
           {steps.map((step, i) => {
             const done = i < activeStep;
             const running = i === activeStep;
@@ -93,7 +94,7 @@ export const BookProcessingModal: React.FC<BookProcessingModalProps> = ({
             <span className="text-white font-semibold tabular-nums">{pct}%</span>
           </div>
           <div className="relative h-1.5 rounded-full bg-line overflow-hidden">
-            <div className="absolute top-0 right-0 h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${pct}%` }} />
+            <div className="absolute top-0 start-0 h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${pct}%` }} />
           </div>
         </div>
 
@@ -103,14 +104,14 @@ export const BookProcessingModal: React.FC<BookProcessingModalProps> = ({
               {voiceName.charAt(0)}
             </span>
             <span>
-              بصوت <strong className="text-white font-semibold">{voiceName.split(' - ')[0]}</strong>
+              {tr('بصوت', 'Voice:')} <strong className="text-white font-semibold">{voiceName}</strong>
               {dialectName && ` · ${dialectName}`}
             </span>
           </div>
         )}
 
         <button type="button" onClick={onCancel} className="self-start min-h-11 px-4 rounded-[10px] border border-line-strong text-slate-300 hover:text-white hover:bg-raised cursor-pointer">
-          إلغاء
+          {tr("إلغاء", "Cancel")}
         </button>
       </div>
     </div>

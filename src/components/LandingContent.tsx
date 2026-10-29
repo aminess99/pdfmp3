@@ -1,5 +1,6 @@
 import React from 'react';
 import { LANDING_PAGES, landingPath } from '../data/landingPages';
+import { tr, DIR, HOME_PATH, isEn } from '../lib/i18n';
 
 interface LandingContentProps {
   sections: { heading: string; paragraphs: string[] }[];
@@ -14,7 +15,7 @@ export const LandingContent: React.FC<LandingContentProps> = ({ sections, faqs, 
   const related = LANDING_PAGES.filter((p) => p.slug !== currentSlug);
 
   return (
-    <section className="border-t border-raised py-[72px] px-4 sm:px-6" dir="rtl">
+    <section className="border-t border-raised py-[72px] px-4 sm:px-6" dir={DIR}>
       <div className="max-w-[820px] mx-auto flex flex-col gap-10">
         {sections.map((section) => (
           <article key={section.heading} className="flex flex-col gap-3">
@@ -39,12 +40,14 @@ export const LandingContent: React.FC<LandingContentProps> = ({ sections, faqs, 
           </div>
         )}
 
-        <nav aria-label="صفحات ذات صلة" className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold text-white">أدوات أخرى</h2>
+        {/* The landing pages are Arabic-only, so the English site does not link them here */}
+        {!isEn && (
+        <nav aria-label={tr("صفحات ذات صلة", "Related pages")} className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold text-white">{tr("أدوات أخرى", "Other tools")}</h2>
           <div className="flex flex-wrap gap-2">
             {currentSlug !== '' && (
-              <a href="/" className="min-h-11 px-4 rounded-[10px] border border-line text-sm text-slate-300 hover:text-white hover:border-line-strong flex items-center">
-                تحويل PDF إلى صوت
+              <a href={HOME_PATH} className="min-h-11 px-4 rounded-[10px] border border-line text-sm text-slate-300 hover:text-white hover:border-line-strong flex items-center">
+                {tr("تحويل PDF إلى صوت", "Arabic PDF to audio")}
               </a>
             )}
             {related.map((p) => (
@@ -58,6 +61,7 @@ export const LandingContent: React.FC<LandingContentProps> = ({ sections, faqs, 
             ))}
           </div>
         </nav>
+        )}
       </div>
     </section>
   );

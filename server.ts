@@ -7,8 +7,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { VOICES } from "./src/data/voices";
 import { LANDING_PAGES, LandingPage, findLandingPage, landingPath } from "./src/data/landingPages";
-import { HOME_H1, HOME_SUBTITLE, HOME_SECTIONS, HOW_STEPS, USE_CASES } from "./src/data/homeContent";
-import { FAQS } from "./src/data/sampleBooks";
+import { HOME_CONTENT, HOME_SEO } from "./src/data/homeContent";
 import firebaseConfig from "./src/lib/firebaseConfig";
 
 dotenv.config();
@@ -1892,26 +1891,91 @@ function renderLandingHtml(template: string, page: LandingPage): string {
 }
 
 // The home page is a client-rendered app, so put its text into #root for crawlers
-// that read raw HTML (React replaces it on load with the same content).
-function renderHomeHtml(template: string): string {
+// that read raw HTML (React replaces it on load with the same content). The same
+// template serves Arabic at / and English at /en, with matching head tags and JSON-LD.
+function renderHomeHtml(template: string, lang: "ar" | "en"): string {
+  const c = HOME_CONTENT[lang];
+  const seo = HOME_SEO[lang];
+  const en = lang === "en";
+  const url = en ? `${SITE_URL}/en` : `${SITE_URL}/`;
+  const title = escapeHtml(seo.title);
+  const description = escapeHtml(seo.description);
+
   const content = [
-    `<main dir="rtl">`,
-    `<h1>${escapeHtml(HOME_H1)}</h1>`,
-    `<p>${escapeHtml(HOME_SUBTITLE)}</p>`,
-    ...HOME_SECTIONS.map(
+    `<main dir="${en ? "ltr" : "rtl"}">`,
+    `<h1>${escapeHtml(c.h1)}</h1>`,
+    `<p>${escapeHtml(c.subtitle)}</p>`,
+    ...c.sections.map(
       (sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")
     ),
-    `<h2>كيف يعمل</h2><ol>`,
-    ...HOW_STEPS.map((st) => `<li><strong>${escapeHtml(st.title)}</strong> ${escapeHtml(st.text)}</li>`),
-    `</ol><h2>لمن هذه الأداة؟</h2>`,
-    ...USE_CASES.map((u) => `<h3>${escapeHtml(u.title)}</h3><p>${escapeHtml(u.text)}</p>`),
-    `<h2>الأسئلة الشائعة</h2>`,
-    ...FAQS.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    `<h2>${en ? "How it works" : "كيف يعمل"}</h2><ol>`,
+    ...c.steps.map((st) => `<li><strong>${escapeHtml(st.title)}</strong> ${escapeHtml(st.text)}</li>`),
+    `</ol><h2>${en ? "Who is it for?" : "لمن هذا الموقع؟"}</h2>`,
+    ...c.useCases.map((u) => `<h3>${escapeHtml(u.title)}</h3><p>${escapeHtml(u.text)}</p>`),
+    `<h2>${en ? "Frequently asked questions" : "الأسئلة الشائعة"}</h2>`,
+    ...c.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
     `<nav>`,
-    ...LANDING_PAGES.map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `),
+    `<a href="${en ? "/" : "/en"}">${en ? "العربية" : "English"}</a> `,
+    ...(en ? [] : LANDING_PAGES.map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `)),
     `</nav></main>`,
   ].join("");
-  return template.replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
+
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebApplication",
+        "@id": `${url}#webapp`,
+        name: "Hakawati AI",
+        alternateName: "حكواتي",
+        url,
+        description: seo.description,
+        inLanguage: lang,
+        applicationCategory: "MultimediaApplication",
+        operatingSystem: "All",
+        browserRequirements: "Requires JavaScript. Requires HTML5.",
+        offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      },
+      {
+        "@type": "HowTo",
+        "@id": `${url}#howto`,
+        name: en ? "How to turn an Arabic PDF or text into audio" : "كيفية تحويل كتاب PDF أو نص إلى صوت",
+        step: c.steps.map((st, i) => ({ "@type": "HowToStep", position: i + 1, name: st.title, text: st.text })),
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: c.faqs.map((f) => ({
+          "@type": "Question",
+          name: f.question,
+          acceptedAnswer: { "@type": "Answer", text: f.answer },
+        })),
+      },
+    ],
+  };
+
+  const alternates =
+    `<link rel="alternate" hreflang="ar" href="${SITE_URL}/" />` +
+    `<link rel="alternate" hreflang="en" href="${SITE_URL}/en" />` +
+    `<link rel="alternate" hreflang="x-default" href="${SITE_URL}/" />`;
+
+  return template
+    .replace(/<html lang="ar" dir="rtl">/, () => (en ? '<html lang="en" dir="ltr">' : '<html lang="ar" dir="rtl">'))
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${description}" />`)
+    .replace(/<meta name="keywords" content="[^"]*" \/>/, () => `<meta name="keywords" content="${escapeHtml(seo.keywords)}" />`)
+    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${url}" />${alternates}`)
+    .replace(/<meta property="og:url" content="[^"]*" \/>/, () => `<meta property="og:url" content="${url}" />`)
+    .replace(/<meta property="og:locale" content="[^"]*" \/>/, () => `<meta property="og:locale" content="${seo.ogLocale}" />`)
+    .replace(/<meta property="og:title" content="[^"]*" \/>/, () => `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta name="twitter:title" content="[^"]*" \/>/, () => `<meta name="twitter:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*" \/>/, () => `<meta property="og:description" content="${description}" />`)
+    .replace(/<meta name="twitter:description" content="[^"]*" \/>/, () => `<meta name="twitter:description" content="${description}" />`)
+    .replace(
+      /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
+      () => `<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>`
+    )
+    .replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
 }
 
 // Shared clips (/s/<id>) live in Firestore with public read; fetch them over REST
@@ -1984,11 +2048,13 @@ async function startServer() {
     const distPath = path.join(process.cwd(), "dist");
     const indexTemplate = fs.readFileSync(path.join(distPath, "index.html"), "utf8");
     const landingHtml = new Map(LANDING_PAGES.map((p) => [p.slug, renderLandingHtml(indexTemplate, p)]));
-    const homeHtml = renderHomeHtml(indexTemplate);
+    const homeHtml = renderHomeHtml(indexTemplate, "ar");
+    const homeHtmlEn = renderHomeHtml(indexTemplate, "en");
 
     app.use((req, res, next) => {
       if (req.method !== "GET") return next();
       if (req.path === "/" || req.path === "/index.html") return res.type("html").send(homeHtml);
+      if (req.path === "/en" || req.path === "/en/") return res.type("html").send(homeHtmlEn);
       const page = findLandingPage(req.path);
       if (!page) return next();
       res.type("html").send(landingHtml.get(page.slug));

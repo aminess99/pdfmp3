@@ -3,6 +3,8 @@ import { Play, Pause } from 'lucide-react';
 import { DIALECTS, VOICES } from '../data/voices';
 import { Voice } from '../types';
 import { audioEngine } from '../lib/audioEngine';
+import { voiceLabel, voiceRecommendedFor, dialectLabel, genderLabel } from '../lib/voiceLabel';
+import { tr, DIR } from '../lib/i18n';
 
 interface VoiceSamplesSectionProps {
   availableVoicesList?: Voice[];
@@ -50,22 +52,22 @@ export const VoiceSamplesSection: React.FC<VoiceSamplesSectionProps> = ({ availa
     }`;
 
   return (
-    <section id="voices" className="border-t border-raised py-[72px] px-4 sm:px-6" dir="rtl">
+    <section id="voices" className="border-t border-raised py-[72px] px-4 sm:px-6" dir={DIR}>
       <div className="max-w-[1160px] mx-auto flex flex-col gap-7">
         <div className="flex flex-col gap-2">
-          <h2 className="font-display font-extrabold text-3xl sm:text-[34px] text-white">اسمع قبل أن تختار</h2>
+          <h2 className="font-display font-extrabold text-3xl sm:text-[34px] text-white">{tr("اسمع قبل أن تختار", "Listen before you choose")}</h2>
           <p className="text-slate-400">
-            {voicesPool.length} صوتاً و{DIALECTS.length} لهجة. اختر الصوت ليصبح قارئ كتابك.
+            {tr(`${voicesPool.length} صوتاً و${DIALECTS.length} لهجة. اختر الصوت ليصبح قارئ كتابك.`, `${voicesPool.length} voices in ${DIALECTS.length} dialects. Pick the one that will narrate your book.`)}
           </p>
         </div>
 
-        <div role="tablist" aria-label="تصفية حسب اللهجة" className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+        <div role="tablist" aria-label={tr("تصفية حسب اللهجة", "Filter by dialect")} className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
           <button type="button" role="tab" aria-selected={dialectId === 'all'} onClick={() => setDialectId('all')} className={chipClass(dialectId === 'all')}>
-            الكل
+            {tr("الكل", "All")}
           </button>
           {DIALECTS.map((d) => (
             <button key={d.id} type="button" role="tab" aria-selected={dialectId === d.id} onClick={() => setDialectId(d.id)} className={chipClass(dialectId === d.id)}>
-              {d.name.split(' (')[0]}
+              {dialectLabel(d, true)}
             </button>
           ))}
         </div>
@@ -84,7 +86,7 @@ export const VoiceSamplesSection: React.FC<VoiceSamplesSectionProps> = ({ availa
                   <button
                     type="button"
                     onClick={() => togglePlay(voice)}
-                    aria-label={`${playing ? 'إيقاف عينة' : 'تشغيل عينة'} ${voice.name.split(' - ')[0]}`}
+                    aria-label={`${playing ? tr('إيقاف عينة', 'Stop sample') : tr('تشغيل عينة', 'Play sample')} ${voiceLabel(voice)}`}
                     className="w-11 h-11 rounded-full bg-brand text-white flex items-center justify-center shrink-0 cursor-pointer hover:bg-indigo-500"
                   >
                     {playing ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
@@ -96,11 +98,11 @@ export const VoiceSamplesSection: React.FC<VoiceSamplesSectionProps> = ({ availa
                   </div>
                 </div>
                 <div className="flex flex-col leading-normal">
-                  <span className="font-bold text-white text-[17px]">{voice.name.split(' - ')[0]}</span>
+                  <span className="font-bold text-white text-[17px]">{voiceLabel(voice)}</span>
                   <span className="text-sm text-slate-400">
-                    {dialect?.name.split(' (')[0]} · {voice.gender === 'female' ? 'امرأة' : 'رجل'}
+                    {dialectLabel(dialect, true)} · {genderLabel(voice)}
                   </span>
-                  <span className="text-sm text-slate-300 mt-1">{voice.recommendedFor}</span>
+                  <span className="text-sm text-slate-300 mt-1">{voiceRecommendedFor(voice)}</span>
                 </div>
                 <button
                   type="button"
@@ -110,7 +112,7 @@ export const VoiceSamplesSection: React.FC<VoiceSamplesSectionProps> = ({ availa
                     selected ? 'border-brand bg-brand text-white' : 'border-line-strong text-white hover:bg-raised'
                   }`}
                 >
-                  {selected ? 'الصوت المختار' : 'اختر هذا الصوت'}
+                  {selected ? tr("الصوت المختار", "Selected voice") : tr("اختر هذا الصوت", "Use this voice")}
                 </button>
               </div>
             );
@@ -123,7 +125,7 @@ export const VoiceSamplesSection: React.FC<VoiceSamplesSectionProps> = ({ availa
             onClick={() => setShowAll(!showAll)}
             className="self-center min-h-11 px-5 rounded-xl border border-line text-slate-200 hover:text-white cursor-pointer"
           >
-            {showAll ? 'عرض أقل' : `عرض كل الأصوات (${filtered.length})`}
+            {showAll ? tr("عرض أقل", "Show less") : tr(`عرض كل الأصوات (${filtered.length})`, `Show all voices (${filtered.length})`)}
           </button>
         )}
       </div>

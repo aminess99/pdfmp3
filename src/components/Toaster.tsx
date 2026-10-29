@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, Check, Info, X } from 'lucide-react';
 import { TOAST_EVENT, ToastDetail } from '../lib/toast';
+import { tr, DIR } from '../lib/i18n';
 
 interface ToastItem extends ToastDetail {
   id: number;
@@ -32,8 +33,8 @@ export const Toaster: React.FC = () => {
   return (
     <div
       aria-live="polite"
-      className="fixed z-[90] top-[72px] inset-x-4 sm:top-20 sm:inset-x-auto sm:left-6 sm:w-[380px] flex flex-col gap-2 pointer-events-none font-body"
-      dir="rtl"
+      className="fixed z-[90] top-[72px] inset-x-4 sm:top-20 sm:inset-x-auto sm:end-6 sm:w-[380px] flex flex-col gap-2 pointer-events-none font-body"
+      dir={DIR}
     >
       {items.map((t) => (
         <div
@@ -46,7 +47,7 @@ export const Toaster: React.FC = () => {
           <button
             type="button"
             onClick={() => setItems((prev) => prev.filter((x) => x.id !== t.id))}
-            aria-label="إغلاق"
+            aria-label={tr("إغلاق", "Close")}
             className="-m-2 w-9 h-9 rounded-full text-slate-400 hover:text-white flex items-center justify-center cursor-pointer shrink-0"
           >
             <X className="w-4 h-4" />

@@ -38,6 +38,8 @@ import { UserSettingsModal } from './UserSettingsModal';
 import { AIBookCreator } from './AIBookCreator';
 import { ChatPdfModal } from './ChatPdfModal';
 import { minutesAr } from '../lib/arabicPlural';
+import { tr, DIR } from '../lib/i18n';
+import { voiceLabel } from '../lib/voiceLabel';
 
 interface UserDashboardProps {
   user: { name: string; email: string };
@@ -101,7 +103,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           if (!combined.some((item) => item.id === docSnap.id)) {
             combined.unshift({
               id: docSnap.id,
-              fileName: data.fileName || 'كتاب صوتي',
+              fileName: data.fileName || tr("كتاب صوتي", "Audiobook"),
               fileSize: data.fileSize || '',
               totalPages: data.totalPages || 10,
               processedPages: data.processedPages || 10,
@@ -121,7 +123,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         });
       } catch (err) {
         console.warn('Load audiobooks err:', err);
-        toast('تعذّر تحميل مكتبتك من السحابة، نعرض الكتب المحفوظة في هذا المتصفح.', 'error');
+        toast(tr("تعذّر تحميل مكتبتك من السحابة، نعرض الكتب المحفوظة في هذا المتصفح.", "Couldn’t load your cloud library; showing books saved in this browser."), 'error');
       }
     }
 
@@ -135,7 +137,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 
   const handleDeleteBook = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('هل تريد حذف هذا الكتاب من مكتبتك؟')) return;
+    if (!confirm(tr("هل تريد حذف هذا الكتاب من مكتبتك؟", "Delete this book from your library?"))) return;
     const updated = savedBooks.filter((b) => b.id !== id);
     setSavedBooks(updated);
     try {
@@ -146,11 +148,11 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         await deleteDoc(doc(db, 'audiobooks', id));
       } catch (err) {
         console.warn('Delete book doc note:', err);
-        toast('حُذف الكتاب من هذا الجهاز، لكن تعذّر حذفه من السحابة.', 'error');
+        toast(tr("حُذف الكتاب من هذا الجهاز، لكن تعذّر حذفه من السحابة.", "Deleted from this device, but it couldn’t be deleted from the cloud."), 'error');
         return;
       }
     }
-    toast('حُذف الكتاب من مكتبتك.', 'success');
+    toast(tr("حُذف الكتاب من مكتبتك.", "Book deleted from your library."), 'success');
   };
 
   const [filter, setFilter] = useState<'all' | 'progress' | 'new'>('all');
@@ -174,15 +176,15 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   const COVER_HUES = ['#312e81', '#164e63', '#3b0764', '#1e3a8a', '#134e4a', '#4c1d95'];
   const balance = localStorage.getItem('user_minutes_quota') || '30';
   const openCheckout = () =>
-    onOpenCheckout?.({ id: 'popular', name: 'باقة الشغوف', priceUsd: 19.99, minutes: 666, unitRateUsd: 0.03 });
+    onOpenCheckout?.({ id: 'popular', name: tr("باقة الشغوف", "Book lover"), priceUsd: 19.99, minutes: 666, unitRateUsd: 0.03 });
 
   const navItem = (active: boolean) =>
-    `w-full min-h-11 flex items-center gap-2.5 px-3 rounded-[10px] text-[15px] text-right cursor-pointer transition-colors ${
+    `w-full min-h-11 flex items-center gap-2.5 px-3 rounded-[10px] text-[15px] text-start cursor-pointer transition-colors ${
       active ? 'bg-raised text-white' : 'text-slate-300 hover:bg-raised/60 hover:text-white'
     }`;
 
   const sidebar = (
-    <nav aria-label="القائمة الجانبية" className="flex flex-col gap-1 h-full">
+    <nav aria-label={tr("القائمة الجانبية", "Sidebar")} className="flex flex-col gap-1 h-full">
       <img src="/brand/logo.png" alt="Hakawati AI" width={151} height={32} className="h-8 w-auto self-start mx-2 mb-5" />
       <button
         type="button"
@@ -192,35 +194,35 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         }}
         className="flex items-center justify-center gap-2 min-h-12 rounded-xl bg-gradient-to-l from-[#8b5cf6] to-[#3b82f6] text-white font-bold mb-3 cursor-pointer"
       >
-        <Plus className="w-[18px] h-[18px]" /> تحويل جديد
+        <Plus className="w-[18px] h-[18px]" /> {tr(tr("تحويل جديد", "New conversion"), 'New conversion')}
       </button>
       <button type="button" aria-current={activeTab === 'library'} onClick={() => { setActiveTab('library'); setShowMobileDrawer(false); }} className={navItem(activeTab === 'library')}>
-        <Library className="w-[18px] h-[18px]" /> مكتبتي
-        <span className="mr-auto text-xs text-slate-400">{savedBooks.length}</span>
+        <Library className="w-[18px] h-[18px]" /> {tr(tr("مكتبتي", "My library"), 'My library')}
+        <span className="ms-auto text-xs text-slate-400">{savedBooks.length}</span>
       </button>
       <button type="button" aria-current={activeTab === 'ai_creator'} onClick={() => { setActiveTab('ai_creator'); setShowMobileDrawer(false); }} className={navItem(activeTab === 'ai_creator')}>
-        <Wand2 className="w-[18px] h-[18px]" /> تأليف كتاب
+        <Wand2 className="w-[18px] h-[18px]" /> {tr('تأليف كتاب', 'Write a book')}
       </button>
       <button type="button" onClick={() => { setShowSettingsModal(true); setShowMobileDrawer(false); }} className={navItem(false)}>
-        <Settings className="w-[18px] h-[18px]" /> الإعدادات
+        <Settings className="w-[18px] h-[18px]" /> {tr(tr("الإعدادات", "Settings"), 'Settings')}
       </button>
 
       <div className="mt-auto flex flex-col gap-3">
         <div className="p-4 rounded-[14px] bg-card border border-line flex flex-col gap-2.5">
-          <span className="flex justify-between text-sm">
-            <span className="text-slate-400">رصيدك</span>
+          <span className="flex justify-between gap-2 text-sm">
+            <span className="text-slate-400">{tr("رصيدك", "Your balance")}</span>
             <strong className="text-white">{minutesAr(Number(balance) || 0)}</strong>
           </span>
           <button type="button" onClick={openCheckout} className="self-start text-sm text-brand-soft hover:text-indigo-200 cursor-pointer">
-            شحن الرصيد
+            {tr("شحن الرصيد", "Top up")}
           </button>
         </div>
         <div className="flex items-center gap-2.5 px-2">
           <span className="w-9 h-9 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-bold shrink-0">
-            {user.name ? user.name.charAt(0).toUpperCase() : 'م'}
+            {user.name ? user.name.charAt(0).toUpperCase() : tr('م', 'U')}
           </span>
           <span className="flex flex-col leading-tight min-w-0">
-            <span className="text-sm text-white truncate">{user.name || 'المشترك'}</span>
+            <span className="text-sm text-white truncate">{user.name || tr('المشترك', 'Member')}</span>
             <span className="text-xs text-slate-400 truncate" dir="ltr">{user.email}</span>
           </span>
         </div>
@@ -232,22 +234,22 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           }}
           className="flex items-center gap-2 min-h-11 px-3 rounded-[10px] text-slate-400 hover:text-rose-300 hover:bg-raised/60 cursor-pointer"
         >
-          <LogOut className="w-[18px] h-[18px]" /> تسجيل الخروج
+          <LogOut className="w-[18px] h-[18px]" /> {tr('تسجيل الخروج', 'Log out')}
         </button>
       </div>
     </nav>
   );
 
   return (
-    <div className="min-h-screen bg-ink text-slate-200 flex font-body" dir="rtl">
+    <div className="min-h-screen bg-ink text-slate-200 flex font-body" dir={DIR}>
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-[260px] shrink-0 border-l border-raised p-4 sticky top-0 h-screen">{sidebar}</aside>
+      <aside className="hidden md:flex w-[260px] shrink-0 border-e border-raised p-4 sticky top-0 h-screen">{sidebar}</aside>
 
       {/* Mobile drawer */}
       {showMobileDrawer && (
         <div className="md:hidden fixed inset-0 z-50 bg-slate-950/80" onClick={() => setShowMobileDrawer(false)}>
-          <div onClick={(e) => e.stopPropagation()} className="absolute inset-y-0 right-0 w-[280px] max-w-[85vw] bg-card border-l border-line p-4 overflow-y-auto">
-            <button type="button" onClick={() => setShowMobileDrawer(false)} aria-label="إغلاق القائمة" className="absolute top-3 left-3 w-11 h-11 flex items-center justify-center text-slate-300 cursor-pointer">
+          <div onClick={(e) => e.stopPropagation()} className="absolute inset-y-0 start-0 w-[280px] max-w-[85vw] bg-card border-e border-line p-4 overflow-y-auto">
+            <button type="button" onClick={() => setShowMobileDrawer(false)} aria-label={tr("إغلاق القائمة", "Close menu")} className="absolute top-3 end-3 w-11 h-11 flex items-center justify-center text-slate-300 cursor-pointer">
               <X className="w-5 h-5" />
             </button>
             {sidebar}
@@ -259,7 +261,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         {/* Mobile top bar */}
         <header className="md:hidden h-16 px-4 border-b border-raised flex items-center justify-between">
           <img src="/brand/logo.png" alt="Hakawati AI" width={151} height={32} className="h-8 w-auto" />
-          <button type="button" onClick={() => setShowMobileDrawer(true)} aria-label="فتح القائمة" className="w-11 h-11 rounded-[10px] bg-raised flex items-center justify-center cursor-pointer">
+          <button type="button" onClick={() => setShowMobileDrawer(true)} aria-label={tr("فتح القائمة", "Open menu")} className="w-11 h-11 rounded-[10px] bg-raised flex items-center justify-center cursor-pointer">
             <Menu className="w-5 h-5" />
           </button>
         </header>
@@ -268,24 +270,24 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           {activeTab === 'library' && (
             <div className="flex flex-col gap-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
-                <h1 className="font-display font-extrabold text-[32px] text-white">مكتبتي</h1>
+                <h1 className="font-display font-extrabold text-[32px] text-white">{tr("مكتبتي", "My library")}</h1>
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="relative">
-                    <span className="sr-only">ابحث في كتبك</span>
-                    <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+                    <span className="sr-only">{tr("ابحث في كتبك", "Search your books")}</span>
+                    <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
                     <input
                       type="search"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="ابحث في كتبك..."
-                      className="min-h-11 w-56 bg-card border border-line rounded-full pr-9 pl-4 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand"
+                      placeholder={tr("ابحث في كتبك...", "Search your books...")}
+                      className="min-h-11 w-56 bg-card border border-line rounded-full ps-9 pe-4 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand"
                     />
                   </label>
-                  <div role="tablist" aria-label="تصفية الكتب" className="flex gap-1.5">
+                  <div role="tablist" aria-label={tr("تصفية الكتب", "Filter books")} className="flex gap-1.5">
                     {([
-                      { id: 'all', label: 'الكل' },
-                      { id: 'progress', label: 'قيد الاستماع' },
-                      { id: 'new', label: 'لم تبدأ' },
+                      { id: 'all', label: tr("الكل", "All") },
+                      { id: 'progress', label: tr("قيد الاستماع", "In progress") },
+                      { id: 'new', label: tr("لم تبدأ", "Not started") },
                     ] as const).map((f) => (
                       <button
                         key={f.id}
@@ -308,15 +310,15 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => onStartJob(continueBook)}
-                  className="flex items-center gap-5 p-5 rounded-[18px] bg-card border border-line text-right hover:border-line-strong cursor-pointer"
+                  className="flex items-center gap-5 p-5 rounded-[18px] bg-card border border-line text-start hover:border-line-strong cursor-pointer"
                 >
                   <span aria-hidden="true" className="w-[72px] h-[100px] shrink-0 rounded-lg bg-gradient-to-br from-indigo-900 to-slate-900 border border-indigo-800" />
                   <span className="flex-1 min-w-0 flex flex-col gap-1.5">
-                    <span className="text-[13px] text-accent font-semibold">تابع الاستماع</span>
+                    <span className="text-[13px] text-accent font-semibold">{tr("تابع الاستماع", "Continue listening")}</span>
                     <span className="font-display font-extrabold text-[22px] text-white truncate">{cleanBookTitle(continueBook.fileName)}</span>
-                    <span className="text-sm text-slate-400">بصوت {continueBook.selectedVoice?.name?.split(' - ')[0] || 'عربي'}</span>
+                    <span className="text-sm text-slate-400">{tr('بصوت', 'Voice:')} {continueBook.selectedVoice ? voiceLabel(continueBook.selectedVoice) : tr('عربي', 'Arabic')}</span>
                     <span className="relative h-[5px] max-w-[420px] rounded-full bg-line">
-                      <span className="absolute top-0 right-0 h-full rounded-full bg-accent" style={{ width: `${progressOf(continueBook)}%` }} />
+                      <span className="absolute top-0 start-0 h-full rounded-full bg-accent" style={{ width: `${progressOf(continueBook)}%` }} />
                     </span>
                   </span>
                   <span className="w-14 h-14 shrink-0 rounded-full bg-brand text-white flex items-center justify-center">
@@ -342,32 +344,32 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                         <button
                           type="button"
                           onClick={() => onStartJob(book)}
-                          className="relative aspect-[3/4] rounded-[10px] border border-line flex items-end p-3.5 text-right font-display font-extrabold text-base text-indigo-50 cursor-pointer hover:border-line-strong"
+                          className="relative aspect-[3/4] rounded-[10px] border border-line flex items-end p-3.5 text-start font-display font-extrabold text-base text-indigo-50 cursor-pointer hover:border-line-strong"
                           style={{ background: `linear-gradient(160deg, ${COVER_HUES[i % COVER_HUES.length]}, #0b0f19)` }}
-                          aria-label={`استمع إلى ${title}`}
+                          aria-label={tr(`استمع إلى ${title}`, `Listen to ${title}`)}
                         >
                           <span className="line-clamp-3">{title}</span>
-                          <span className="absolute top-2.5 left-2.5 w-9 h-9 rounded-full bg-brand text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="absolute top-2.5 end-2.5 w-9 h-9 rounded-full bg-brand text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                             <Play className="w-4 h-4 fill-current" />
                           </span>
                         </button>
                         <span className="flex flex-col leading-snug">
                           <span className="font-semibold text-white truncate">{title}</span>
                           <span className="text-[13px] text-slate-400">
-                            {pct > 0 ? `${pct}%` : 'لم يبدأ'} · {minutes} د · {book.selectedVoice?.name?.split(' (')[0] || ''}
+                            {pct > 0 ? `${pct}%` : tr('لم يبدأ', 'Not started')} · {minutes} {tr('د', 'min')} · {book.selectedVoice ? voiceLabel(book.selectedVoice).split(' (')[0] : ''}
                           </span>
                         </span>
                         <span className="relative h-1 rounded-full bg-line">
-                          <span className="absolute top-0 right-0 h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+                          <span className="absolute top-0 start-0 h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
                         </span>
                         <span className="flex gap-1">
                           <button type="button" onClick={() => setChatBook(book)} className="min-h-9 px-2.5 rounded-lg text-[13px] text-brand-soft hover:bg-raised cursor-pointer">
-                            اسأل الكتاب
+                            {tr("اسأل الكتاب", "Ask the book")}
                           </button>
                           <button
                             type="button"
                             onClick={(e) => handleDeleteBook(book.id, e)}
-                            aria-label={`حذف ${title}`}
+                            aria-label={tr(`حذف ${title}`, `Delete ${title}`)}
                             className="min-h-9 w-9 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-raised flex items-center justify-center cursor-pointer"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -379,13 +381,13 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                 </div>
               ) : (
                 <div className="min-h-[360px] rounded-2xl border-[1.5px] border-dashed border-line flex flex-col items-center justify-center gap-3 text-center p-6">
-                  <strong className="text-xl text-white">{savedBooks.length === 0 ? 'مكتبتك فارغة' : 'لا نتائج'}</strong>
+                  <strong className="text-xl text-white">{savedBooks.length === 0 ? tr('مكتبتك فارغة', 'Your library is empty') : tr('لا نتائج', 'No results')}</strong>
                   <span className="text-slate-400 max-w-[320px]">
-                    {savedBooks.length === 0 ? 'حوّل أول كتاب وسيُحفظ هنا مع مكان توقفك.' : 'جرّب كلمة بحث أو تصفية أخرى.'}
+                    {savedBooks.length === 0 ? tr('حوّل أول كتاب وسيُحفظ هنا مع مكان توقفك.', 'Convert your first book and it will be saved here with your place.') : tr('جرّب كلمة بحث أو تصفية أخرى.', 'Try another search or filter.')}
                   </span>
                   {savedBooks.length === 0 && (
                     <button type="button" onClick={() => setActiveTab('new_book')} className="min-h-12 px-6 rounded-xl bg-brand text-white font-bold cursor-pointer">
-                      حوّل أول كتاب
+                      {tr("حوّل أول كتاب", "Convert your first book")}
                     </button>
                   )}
                 </div>
@@ -396,8 +398,8 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           {activeTab === 'new_book' && (
             <div className="flex flex-col gap-6 items-center">
               <div className="text-center flex flex-col gap-2">
-                <h1 className="font-display font-extrabold text-[32px] text-white">تحويل جديد</h1>
-                <p className="text-slate-400">ارفع كتاباً أو الصق نصاً، اختر الصوت، واستمع.</p>
+                <h1 className="font-display font-extrabold text-[32px] text-white">{tr("تحويل جديد", "New conversion")}</h1>
+                <p className="text-slate-400">{tr("ارفع كتاباً أو الصق نصاً، اختر الصوت، واستمع.", "Upload a book or paste text, pick a voice, and listen.")}</p>
               </div>
               <div className="w-full max-w-[760px]">
                 <ConversionTool
@@ -426,11 +428,11 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       </div>
 
       {/* Phone: bottom navigation */}
-      <nav aria-label="التنقل" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur border-t border-line grid grid-cols-4 pb-[env(safe-area-inset-bottom)]">
+      <nav aria-label={tr("التنقل", "Navigation")} className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur border-t border-line grid grid-cols-4 pb-[env(safe-area-inset-bottom)]">
         {([
-          ['library', 'مكتبتي', Library],
-          ['new_book', 'تحويل', Plus],
-          ['ai_creator', 'تأليف', Wand2],
+          ['library', tr("مكتبتي", "My library"), Library],
+          ['new_book', tr("تحويل", "Convert"), Plus],
+          ['ai_creator', tr("تأليف", "Write"), Wand2],
         ] as const).map(([tab, label, Icon]) => (
           <button
             key={tab}
@@ -452,7 +454,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           className="min-h-16 flex flex-col items-center justify-center gap-1 text-[12px] text-slate-400 cursor-pointer"
         >
           <Settings className="w-[22px] h-[22px]" />
-          الإعدادات
+          {tr("الإعدادات", "Settings")}
         </button>
       </nav>
 

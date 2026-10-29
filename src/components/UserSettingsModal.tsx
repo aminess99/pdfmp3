@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { X, Check } from 'lucide-react';
 import { VOICES } from '../data/voices';
+import { voiceLabel } from '../lib/voiceLabel';
+import { tr, DIR } from '../lib/i18n';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
@@ -46,7 +48,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/85 font-body" dir="rtl" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/85 font-body" dir={DIR} onClick={onClose}>
       <form
         role="dialog"
         aria-modal="true"
@@ -56,16 +58,16 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
         className="relative w-full max-w-[520px] max-h-[calc(100dvh-32px)] overflow-y-auto bg-card border border-line rounded-[20px] p-6 sm:p-7 flex flex-col gap-1 text-slate-200"
       >
         <div className="flex items-center justify-between mb-3">
-          <h2 id="settings-title" className="font-display font-extrabold text-2xl text-white">الإعدادات</h2>
-          <button type="button" onClick={onClose} aria-label="إغلاق" className="w-11 h-11 rounded-full text-slate-400 hover:text-white hover:bg-raised flex items-center justify-center cursor-pointer">
+          <h2 id="settings-title" className="font-display font-extrabold text-2xl text-white">{tr("الإعدادات", "Settings")}</h2>
+          <button type="button" onClick={onClose} aria-label={tr("إغلاق", "Close")} className="w-11 h-11 rounded-full text-slate-400 hover:text-white hover:bg-raised flex items-center justify-center cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="flex items-center justify-between gap-4 min-h-[72px] border-b border-raised">
           <span className="flex flex-col leading-snug">
-            <label htmlFor="pref-voice" className="text-white font-semibold">الصوت الافتراضي</label>
-            <span className="text-[13px] text-slate-400">يُختار تلقائياً في كل تحويل جديد</span>
+            <label htmlFor="pref-voice" className="text-white font-semibold">{tr("الصوت الافتراضي", "Default voice")}</label>
+            <span className="text-[13px] text-slate-400">{tr("يُختار تلقائياً في كل تحويل جديد", "Picked automatically for every new conversion")}</span>
           </span>
           <select
             id="pref-voice"
@@ -73,15 +75,15 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
             onChange={(e) => setVoiceId(e.target.value)}
             className="min-h-11 max-w-[200px] bg-ink border border-line rounded-[10px] px-3 text-[15px] text-white cursor-pointer"
           >
-            <option value="">حسب اللهجة</option>
+            <option value="">{tr("حسب اللهجة", "By dialect")}</option>
             {VOICES.map((v) => (
-              <option key={v.id} value={v.id}>{v.name.split(' - ')[0]}</option>
+              <option key={v.id} value={v.id}>{voiceLabel(v)}</option>
             ))}
           </select>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 min-h-[72px] border-b border-raised py-3">
-          <span id="speed-label" className="text-white font-semibold">السرعة الافتراضية</span>
+          <span id="speed-label" className="text-white font-semibold">{tr("السرعة الافتراضية", "Default speed")}</span>
           <div role="radiogroup" aria-labelledby="speed-label" className="flex gap-1.5">
             {SPEEDS.map((s) => (
               <button
@@ -102,24 +104,24 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
 
         <div className="flex items-center justify-between gap-4 min-h-[72px] border-b border-raised">
           <span className="flex flex-col leading-snug">
-            <span className="text-white font-semibold">الانتقال تلقائياً للفصل التالي</span>
-            <span className="text-[13px] text-slate-400">عند انتهاء الفصل يبدأ الذي بعده</span>
+            <span className="text-white font-semibold">{tr("الانتقال تلقائياً للفصل التالي", "Auto-play next chapter")}</span>
+            <span className="text-[13px] text-slate-400">{tr("عند انتهاء الفصل يبدأ الذي بعده", "When a chapter ends, the next one starts")}</span>
           </span>
           <button
             type="button"
             role="switch"
             aria-checked={autoNext}
-            aria-label="الانتقال تلقائياً للفصل التالي"
+            aria-label={tr("الانتقال تلقائياً للفصل التالي", "Auto-play next chapter")}
             onClick={() => setAutoNext(!autoNext)}
             className={`relative w-[52px] h-8 rounded-full shrink-0 cursor-pointer transition-colors ${autoNext ? 'bg-brand' : 'bg-line-strong'}`}
           >
-            <span className={`absolute top-1 w-6 h-6 rounded-full bg-white transition-all ${autoNext ? 'left-1' : 'left-[24px]'}`} />
+            <span className={`absolute top-1 w-6 h-6 rounded-full bg-white transition-all ${autoNext ? 'end-1' : 'end-[24px]'}`} />
           </button>
         </div>
 
         <div className="flex items-center gap-3 py-5">
           <span className="w-11 h-11 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-bold shrink-0">
-            {user.name ? user.name.charAt(0).toUpperCase() : 'م'}
+            {user.name ? user.name.charAt(0).toUpperCase() : tr('م', 'U')}
           </span>
           <span className="flex flex-col leading-tight min-w-0">
             <span className="text-white font-semibold truncate">{user.name}</span>
@@ -129,7 +131,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
 
         <button type="submit" className="min-h-12 rounded-xl bg-brand hover:bg-indigo-500 text-white font-bold flex items-center justify-center gap-2 cursor-pointer">
           {saved && <Check className="w-5 h-5" />}
-          {saved ? 'تم الحفظ' : 'حفظ'}
+          {saved ? tr("تم الحفظ", "Saved") : tr("حفظ", "Save")}
         </button>
       </form>
     </div>

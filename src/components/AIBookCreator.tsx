@@ -4,6 +4,8 @@ import { GeneratedBookStructure, createProfessionalArabicPdf } from '../lib/book
 import { generateCrispBookCoverPng } from '../lib/bookCoverCanvas';
 import { ConversionJob, Voice } from '../types';
 import { chaptersAr, pagesAr } from '../lib/arabicPlural';
+import { voiceLabel } from '../lib/voiceLabel';
+import { tr, DIR } from '../lib/i18n';
 
 interface AIBookCreatorProps {
   onStartAudioJob: (job: ConversionJob) => void;
@@ -12,7 +14,7 @@ interface AIBookCreatorProps {
 }
 
 const LANGUAGES = [
-  { value: 'ar', label: 'العربية' },
+  { value: 'ar', label: tr('العربية', 'Arabic') },
   { value: 'en', label: 'English' },
   { value: 'fr', label: 'Français' },
   { value: 'es', label: 'Español' },
@@ -20,21 +22,21 @@ const LANGUAGES = [
 ];
 
 const GENRES = [
-  'قصص أطفال صغار ومغامرات',
-  'تنمية ذاتية وإنتاجية',
-  'ريادة أعمال ومال واستثمار',
-  'أدب ورواية وقصص خيالية',
-  'فكر وتاريخ وفلسفة',
-  'صحة نفسية وتطوير شخصي',
+  tr("قصص أطفال صغار ومغامرات", "Children’s stories and adventures"),
+  tr("تنمية ذاتية وإنتاجية", "Self-help and productivity"),
+  tr("ريادة أعمال ومال واستثمار", "Business, money and investing"),
+  tr("أدب ورواية وقصص خيالية", "Fiction and novels"),
+  tr("فكر وتاريخ وفلسفة", "Ideas, history and philosophy"),
+  tr("صحة نفسية وتطوير شخصي", "Mental health and personal growth"),
 ];
 
-const TONES = ['ملهم وعميق مع أمثلة عملية', 'مسلٍ، حنون، وبسيط للأطفال', 'أكاديمي وبحثي دقيق', 'روائي وسينمائي مشوق'];
+const TONES = [tr("ملهم وعميق مع أمثلة عملية", "Inspiring, with practical examples"), tr("مسلٍ، حنون، وبسيط للأطفال", "Fun, warm and simple for kids"), tr("أكاديمي وبحثي دقيق", "Academic and precise"), tr("روائي وسينمائي مشوق", "Gripping and cinematic")];
 
 const COVER_STYLES = [
-  { value: 'cinematic', label: 'سينمائي' },
-  { value: 'fantasy', label: 'خيالي' },
-  { value: 'minimal', label: 'بسيط عصري' },
-  { value: 'vintage', label: 'كلاسيكي' },
+  { value: 'cinematic', label: tr("سينمائي", "Cinematic") },
+  { value: 'fantasy', label: tr("خيالي", "Fantasy") },
+  { value: 'minimal', label: tr("بسيط عصري", "Modern minimal") },
+  { value: 'vintage', label: tr("كلاسيكي", "Classic") },
 ] as const;
 
 const PAGE_OPTIONS = [10, 15, 25];
@@ -65,11 +67,11 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
   // Questionnaire Form State
   const [topic, setTopic] = useState('');
   const [customTitle, setCustomTitle] = useState('');
-  const [authorName, setAuthorName] = useState('الكاتب المبدع');
-  const [genre, setGenre] = useState('تنمية ذاتية وإنتاجية');
-  const [targetAudience, setTargetAudience] = useState('الشباب والرواد والمهتمون بالنجاح');
+  const [authorName, setAuthorName] = useState(tr("الكاتب المبدع", "Author"));
+  const [genre, setGenre] = useState(tr("تنمية ذاتية وإنتاجية", "Self-help and productivity"));
+  const [targetAudience, setTargetAudience] = useState(tr("الشباب والرواد والمهتمون بالنجاح", "Young people, founders and anyone driven to succeed"));
   const [targetPages, setTargetPages] = useState<number>(15);
-  const [tone, setTone] = useState('ملهم وعميق مع أمثلة عملية');
+  const [tone, setTone] = useState(tr("ملهم وعميق مع أمثلة عملية", "Inspiring, with practical examples"));
   const [coverStyle, setCoverStyle] = useState<'cinematic' | 'minimal' | 'vintage' | 'fantasy'>('cinematic');
 
   // Freeform Prompt State
@@ -86,44 +88,44 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
   // Quick Preset Ideas (Including Kids Story, Self-Help, Sci-Fi, Business)
   const presets = [
     {
-      title: 'مغامرة الأرنوب سمسم في الغابة العجيبة',
-      genre: 'قصص أطفال صغار ومغامرات',
+      title: tr("مغامرة الأرنوب سمسم في الغابة العجيبة", "Simsim the Bunny in the Wonder Forest"),
+      genre: tr("قصص أطفال صغار ومغامرات", "Children’s stories and adventures"),
       pages: 10,
-      tone: 'مسلٍ، حنون، وبسيط للأطفال',
-      targetAudience: 'الأطفال الصغار والأمهات والأباء',
+      tone: tr("مسلٍ، حنون، وبسيط للأطفال", "Fun, warm and simple for kids"),
+      targetAudience: tr("الأطفال الصغار والأمهات والأباء", "Young children and their parents"),
       coverStyle: 'fantasy' as const,
       isKids: true,
-      freeformSample: 'اكتب قصة أطفال مشوقة ولطيفة عن الأرنوب سمسم الذي يتعلم أهمية الصدق ومساعدة الأصدقاء في الغابة السحرية، بكلمات بسيطة ورسوم ملونة مبهجة.'
+      freeformSample: tr("اكتب قصة أطفال مشوقة ولطيفة عن الأرنوب سمسم الذي يتعلم أهمية الصدق ومساعدة الأصدقاء في الغابة السحرية، بكلمات بسيطة ورسوم ملونة مبهجة.", "Write a sweet, exciting children’s story about Simsim the bunny, who learns the value of honesty and helping friends in a magical forest, in simple words.")
     },
     {
-      title: 'عادات التركيز الفائق في عصر التشتت',
-      genre: 'تنمية ذاتية وإنتاجية',
+      title: tr("عادات التركيز الفائق في عصر التشتت", "Deep focus habits in an age of distraction"),
+      genre: tr("تنمية ذاتية وإنتاجية", "Self-help and productivity"),
       pages: 15,
-      tone: 'ملهم وعميق مع أمثلة عملية',
-      targetAudience: 'الشباب والرواد',
+      tone: tr("ملهم وعميق مع أمثلة عملية", "Inspiring, with practical examples"),
+      targetAudience: tr("الشباب والرواد", "Young people and founders"),
       coverStyle: 'cinematic' as const,
       isKids: false,
-      freeformSample: 'صغ كتاباً ملهماً عن بناء تركيز عميق وإنجاز المهام الصعبة بدون توتر، مع 5 فصول واستراتيجيات عملية.'
+      freeformSample: tr("صغ كتاباً ملهماً عن بناء تركيز عميق وإنجاز المهام الصعبة بدون توتر، مع 5 فصول واستراتيجيات عملية.", "Write an inspiring book about building deep focus and getting hard things done without stress, with 5 chapters and practical strategies.")
     },
     {
-      title: 'أسرار بناء المشاريع الناشئة والذكاء المالي',
-      genre: 'ريادة أعمال ومال واستثمار',
+      title: tr("أسرار بناء المشاريع الناشئة والذكاء المالي", "Building startups and financial intelligence"),
+      genre: tr("ريادة أعمال ومال واستثمار", "Business, money and investing"),
       pages: 20,
-      tone: 'ملهم وعميق مع أمثلة عملية',
-      targetAudience: 'رواد الأعمال والمستثمرون',
+      tone: tr("ملهم وعميق مع أمثلة عملية", "Inspiring, with practical examples"),
+      targetAudience: tr("رواد الأعمال والمستثمرون", "Entrepreneurs and investors"),
       coverStyle: 'minimal' as const,
       isKids: false,
-      freeformSample: 'كتاب استراتيجي لشرح أساسيات إطلاق الابتكارات، جذب المستثمرين، وإدارة التدفقات المالية.'
+      freeformSample: tr("كتاب استراتيجي لشرح أساسيات إطلاق الابتكارات، جذب المستثمرين، وإدارة التدفقات المالية.", "A strategic book on launching new ideas, attracting investors and managing cash flow.")
     },
     {
-      title: 'رحلة إلى ما وراء النجوم (رواية خيال علمي)',
-      genre: 'أدب ورواية وقصص خيالية',
+      title: tr("رحلة إلى ما وراء النجوم (رواية خيال علمي)", "Journey beyond the stars (sci-fi novel)"),
+      genre: tr("أدب ورواية وقصص خيالية", "Fiction and novels"),
       pages: 12,
-      tone: 'روائي وسينمائي مشوق',
-      targetAudience: 'عشاق الروايات الخيالية',
+      tone: tr("روائي وسينمائي مشوق", "Gripping and cinematic"),
+      targetAudience: tr("عشاق الروايات الخيالية", "Fans of science fiction"),
       coverStyle: 'fantasy' as const,
       isKids: false,
-      freeformSample: 'رواية مشوقة عن رحلة استكشافية للفضاء واكتشاف كوكب جديد مليء بالأسرار.'
+      freeformSample: tr("رواية مشوقة عن رحلة استكشافية للفضاء واكتشاف كوكب جديد مليء بالأسرار.", "A gripping novel about a space expedition that discovers a planet full of secrets.")
     },
   ];
 
@@ -143,7 +145,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
     const activeInput = creationMode === 'freeform_prompt' ? freeformPrompt : topic;
     
     if (!activeInput.trim()) {
-      setErrorMsg('اكتب فكرة الكتاب أولاً.');
+      setErrorMsg(tr("اكتب فكرة الكتاب أولاً.", "Write the book idea first."));
       return;
     }
 
@@ -153,7 +155,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
 
     try {
       // Phase 1: Generating Book Chapters & Deep Content with Selected Language & Mode
-      setGenerationPhase('نكتب الفصول والمحتوى...');
+      setGenerationPhase(tr("نكتب الفصول والمحتوى...", "Writing the chapters..."));
       
       const bookRes = await fetch('/api/ai/generate-book', {
         method: 'POST',
@@ -165,7 +167,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
           targetAudience,
           tone,
           targetPages,
-          authorName: authorName || 'الكاتب المبدع',
+          authorName: authorName || tr("الكاتب المبدع", "Author"),
           language,
           creationMode,
           freeformPrompt,
@@ -174,16 +176,16 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
 
       const bookData = await bookRes.json();
       if (!bookData.success || !bookData.book) {
-        throw new Error(bookData.error || 'تعذر توليد فصول الكتاب');
+        throw new Error(bookData.error || tr("تعذر توليد فصول الكتاب", "Couldn’t generate the book chapters"));
       }
 
       const book: GeneratedBookStructure = bookData.book;
-      book.author = authorName || book.author || 'الكاتب المبدع';
+      book.author = authorName || book.author || tr("الكاتب المبدع", "Author");
       book.coverStyle = coverStyle;
       book.language = language;
 
       // Phase 2: Generating the book cover
-      setGenerationPhase('نصمم الغلاف...');
+      setGenerationPhase(tr("نصمم الغلاف...", "Designing the cover..."));
       
       let coverImg = '';
       
@@ -228,11 +230,11 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
 
       setCoverImageUrl(coverImg);
       setGeneratedBook(book);
-      setGenerationPhase('اكتمل الكتاب');
+      setGenerationPhase(tr("اكتمل الكتاب", "Book ready"));
       setStep(3);
     } catch (err: any) {
       console.error('Book Generation Error:', err);
-      setErrorMsg(err.message || 'حدث خطأ أثناء توليد الكتاب. يرجى إعادة المحاولة.');
+      setErrorMsg(err.message || tr("حدث خطأ أثناء توليد الكتاب. يرجى إعادة المحاولة.", "Something went wrong while generating the book. Please try again."));
       setStep(1);
     } finally {
       setIsGenerating(false);
@@ -284,7 +286,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error('Download PDF error:', e);
-      setErrorMsg('تعذر تجهيز ملف PDF، حاول مرة أخرى.');
+      setErrorMsg(tr("تعذر تجهيز ملف PDF، حاول مرة أخرى.", "Couldn’t prepare the PDF. Please try again."));
     }
   };
 
@@ -344,14 +346,14 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
   };
 
   const isQuestionnaire = creationMode === 'questionnaire';
-  const coverDone = generationPhase === 'نصمم الغلاف...';
+  const coverDone = generationPhase === tr("نصمم الغلاف...", "Designing the cover...");
 
   return (
-    <div className="flex flex-col gap-6 font-body text-slate-200" dir="rtl">
+    <div className="flex flex-col gap-6 font-body text-slate-200" dir={DIR}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <h2 className="font-display font-extrabold text-[28px] text-white">اصنع كتاباً بالذكاء الاصطناعي</h2>
-          <p className="text-slate-400">اكتب فكرة، ونؤلف لك كتاباً كاملاً بغلاف، تحمّله PDF أو تستمع له مباشرة.</p>
+          <h2 className="font-display font-extrabold text-[28px] text-white">{tr("اصنع كتاباً بالذكاء الاصطناعي", "Create a book with AI")}</h2>
+          <p className="text-slate-400">{tr("اكتب فكرة، ونؤلف لك كتاباً كاملاً بغلاف، تحمّله PDF أو تستمع له مباشرة.", "Write an idea and we’ll write a full book with a cover that you can download as a PDF or listen to right away.")}</p>
         </div>
         {onBackToLibrary && (
           <button
@@ -359,8 +361,8 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
             onClick={onBackToLibrary}
             className="min-h-11 px-4 rounded-[10px] border border-line text-slate-300 hover:text-white hover:border-line-strong flex items-center gap-2 cursor-pointer"
           >
-            <ArrowRight className="w-4 h-4" />
-            مكتبتي
+            <ArrowRight className="w-4 h-4 ltr:rotate-180" />
+            {tr("مكتبتي", "My library")}
           </button>
         )}
       </div>
@@ -368,10 +370,10 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
       {step === 1 && (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-5 items-start">
           <form onSubmit={handleStartGeneration} className="bg-card border border-line rounded-[20px] p-5 sm:p-7 flex flex-col gap-5">
-            <div role="tablist" aria-label="طريقة الإنشاء" className="flex gap-1 p-1 rounded-xl bg-ink self-start">
+            <div role="tablist" aria-label={tr("طريقة الإنشاء", "Creation mode")} className="flex gap-1 p-1 rounded-xl bg-ink self-start">
               {([
-                ['questionnaire', 'خطوة بخطوة'],
-                ['freeform_prompt', 'وصف حر'],
+                ['questionnaire', tr('خطوة بخطوة', 'Step by step')],
+                ['freeform_prompt', tr('وصف حر', 'Free description')],
               ] as const).map(([mode, label]) => (
                 <button
                   key={mode}
@@ -390,25 +392,25 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
 
             {isQuestionnaire ? (
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="book-topic" className={labelClass}>عن ماذا يتحدث الكتاب؟</label>
+                <label htmlFor="book-topic" className={labelClass}>{tr("عن ماذا يتحدث الكتاب؟", "What is the book about?")}</label>
                 <textarea
                   id="book-topic"
                   rows={3}
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
-                  placeholder="مثال: كيف تبني عادة القراءة اليومية في 30 يوماً"
+                  placeholder={tr("مثال: كيف تبني عادة القراءة اليومية في 30 يوماً", "e.g. How to build a daily reading habit in 30 days")}
                   className={`${fieldClass} py-3 resize-y leading-relaxed`}
                 />
               </div>
             ) : (
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="book-prompt" className={labelClass}>صف الكتاب الذي تريده بأسلوبك</label>
+                <label htmlFor="book-prompt" className={labelClass}>{tr("صف الكتاب الذي تريده بأسلوبك", "Describe the book you want, in your own words")}</label>
                 <textarea
                   id="book-prompt"
                   rows={6}
                   value={freeformPrompt}
                   onChange={(e) => setFreeformPrompt(e.target.value)}
-                  placeholder="الموضوع، الجمهور، عدد الفصول، الأسلوب، وأي تفاصيل تهمك..."
+                  placeholder={tr("الموضوع، الجمهور، عدد الفصول، الأسلوب، وأي تفاصيل تهمك...", "Topic, audience, number of chapters, style, and any details that matter to you...")}
                   className={`${fieldClass} py-3 resize-y leading-relaxed`}
                 />
               </div>
@@ -417,16 +419,16 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {isQuestionnaire && (
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="book-title" className={labelClass}>العنوان <span className="text-slate-500 font-normal">(اختياري)</span></label>
+                  <label htmlFor="book-title" className={labelClass}>{tr('العنوان', 'Title')} <span className="text-slate-500 font-normal">{tr('(اختياري)', '(optional)')}</span></label>
                   <input id="book-title" type="text" value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} className={fieldClass} />
                 </div>
               )}
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="book-author" className={labelClass}>اسم المؤلف</label>
+                <label htmlFor="book-author" className={labelClass}>{tr("اسم المؤلف", "Author name")}</label>
                 <input id="book-author" type="text" value={authorName} onChange={(e) => setAuthorName(e.target.value)} className={fieldClass} />
               </div>
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="book-lang" className={labelClass}>لغة الكتاب</label>
+                <label htmlFor="book-lang" className={labelClass}>{tr("لغة الكتاب", "Book language")}</label>
                 <select id="book-lang" value={language} onChange={(e) => setLanguage(e.target.value)} className={`${fieldClass} cursor-pointer`}>
                   {LANGUAGES.map((l) => (
                     <option key={l.value} value={l.value}>{l.label}</option>
@@ -436,7 +438,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
               {isQuestionnaire && (
                 <>
                   <div className="flex flex-col gap-1.5">
-                    <label htmlFor="book-genre" className={labelClass}>التصنيف</label>
+                    <label htmlFor="book-genre" className={labelClass}>{tr("التصنيف", "Genre")}</label>
                     <select id="book-genre" value={genre} onChange={(e) => setGenre(e.target.value)} className={`${fieldClass} cursor-pointer`}>
                       {GENRES.map((g) => (
                         <option key={g} value={g}>{g}</option>
@@ -444,7 +446,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
                     </select>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <label htmlFor="book-tone" className={labelClass}>الأسلوب</label>
+                    <label htmlFor="book-tone" className={labelClass}>{tr("الأسلوب", "Tone")}</label>
                     <select id="book-tone" value={tone} onChange={(e) => setTone(e.target.value)} className={`${fieldClass} cursor-pointer`}>
                       {TONES.map((t) => (
                         <option key={t} value={t}>{t}</option>
@@ -457,7 +459,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
 
             {isQuestionnaire && (
               <div className="flex flex-col gap-2">
-                <span id="pages-label" className={labelClass}>الحجم التقريبي</span>
+                <span id="pages-label" className={labelClass}>{tr("الحجم التقريبي", "Approximate length")}</span>
                 <div role="radiogroup" aria-labelledby="pages-label" className="flex flex-wrap gap-2">
                   {PAGE_OPTIONS.map((pages) => (
                     <button key={pages} type="button" role="radio" aria-checked={targetPages === pages} onClick={() => setTargetPages(pages)} className={chipClass(targetPages === pages)}>
@@ -469,7 +471,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
             )}
 
             <div className="flex flex-col gap-2">
-              <span id="cover-label" className={labelClass}>طراز الغلاف</span>
+              <span id="cover-label" className={labelClass}>{tr("طراز الغلاف", "Cover style")}</span>
               <div role="radiogroup" aria-labelledby="cover-label" className="flex flex-wrap gap-2">
                 {COVER_STYLES.map((c) => (
                   <button key={c.value} type="button" role="radio" aria-checked={coverStyle === c.value} onClick={() => setCoverStyle(c.value)} className={chipClass(coverStyle === c.value)}>
@@ -492,19 +494,19 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
               className="min-h-[52px] rounded-xl bg-gradient-to-l from-brand to-indigo-500 hover:to-indigo-400 text-white font-bold text-base flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
             >
               <Sparkles className="w-5 h-5" />
-              ألّف الكتاب
+              {tr("ألّف الكتاب", "Write the book")}
             </button>
-            <p className="text-[13px] text-slate-500 text-center -mt-2">يستغرق عادةً بين دقيقة ودقيقتين.</p>
+            <p className="text-[13px] text-slate-500 text-center -mt-2">{tr("يستغرق عادةً بين دقيقة ودقيقتين.", "Usually takes one to two minutes.")}</p>
           </form>
 
           <aside className="bg-card border border-line rounded-[20px] p-5 flex flex-col gap-3">
-            <h3 className="font-display font-bold text-lg text-white">أفكار للبدء</h3>
+            <h3 className="font-display font-bold text-lg text-white">{tr("أفكار للبدء", "Ideas to start with")}</h3>
             {presets.map((preset) => (
               <button
                 key={preset.title}
                 type="button"
                 onClick={() => handleApplyPreset(preset)}
-                className="text-right p-3.5 rounded-xl border border-line hover:border-brand bg-ink flex flex-col gap-1 cursor-pointer"
+                className="text-start p-3.5 rounded-xl border border-line hover:border-brand bg-ink flex flex-col gap-1 cursor-pointer"
               >
                 <span className="text-[15px] font-semibold text-white leading-snug">{preset.title}</span>
                 <span className="text-[13px] text-slate-400">{preset.genre} · {pagesAr(preset.pages)}</span>
@@ -518,13 +520,13 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
         <div role="status" aria-live="polite" className="bg-card border border-line rounded-[20px] p-8 sm:p-12 flex flex-col items-center gap-6 text-center">
           <Loader2 className="w-10 h-10 text-brand-soft animate-spin" aria-hidden="true" />
           <div className="flex flex-col gap-1">
-            <h3 className="font-display font-extrabold text-2xl text-white">نؤلف كتابك الآن</h3>
-            <p className="text-slate-400">ابقَ في هذه الصفحة حتى ينتهي.</p>
+            <h3 className="font-display font-extrabold text-2xl text-white">{tr("نؤلف كتابك الآن", "Writing your book")}</h3>
+            <p className="text-slate-400">{tr("ابقَ في هذه الصفحة حتى ينتهي.", "Stay on this page until it finishes.")}</p>
           </div>
-          <ol className="flex flex-col gap-3 text-right min-w-[240px]">
+          <ol className="flex flex-col gap-3 text-start min-w-[240px]">
             {[
-              ['كتابة الفصول والمحتوى', !coverDone],
-              ['تصميم الغلاف', coverDone],
+              [tr('كتابة الفصول والمحتوى', 'Writing the chapters'), !coverDone],
+              [tr('تصميم الغلاف', 'Designing the cover'), coverDone],
             ].map(([label, active], i) => {
               const done = i === 0 && coverDone;
               return (
@@ -549,7 +551,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
           <div className="bg-card border border-line rounded-[20px] p-5 flex flex-col gap-4 lg:sticky lg:top-4">
             <div className="relative aspect-[2/3] w-full max-w-[240px] mx-auto rounded-xl overflow-hidden border border-line bg-ink">
               {coverImageUrl ? (
-                <img src={coverImageUrl} alt={`غلاف ${generatedBook.title}`} className="w-full h-full object-cover" />
+                <img src={coverImageUrl} alt={tr(`غلاف ${generatedBook.title}`, `Cover of ${generatedBook.title}`)} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-slate-600">
                   <BookOpen className="w-14 h-14" />
@@ -558,7 +560,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
               {isRegeneratingCover && (
                 <div className="absolute inset-0 bg-ink/85 flex flex-col items-center justify-center gap-2 text-sm text-slate-200">
                   <Loader2 className="w-7 h-7 animate-spin" />
-                  غلاف جديد...
+                  {tr("غلاف جديد...", "New cover...")}
                 </div>
               )}
             </div>
@@ -569,11 +571,11 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
               className="min-h-11 rounded-[10px] border border-line text-slate-300 hover:text-white hover:border-line-strong text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
               <RefreshCw className="w-4 h-4" />
-              غلاف آخر
+              {tr("غلاف آخر", "Another cover")}
             </button>
 
             <div className="flex flex-col gap-1.5 pt-2 border-t border-line">
-              <label htmlFor="narrator" className={labelClass}>صوت الراوي</label>
+              <label htmlFor="narrator" className={labelClass}>{tr("صوت الراوي", "Narrator voice")}</label>
               <select
                 id="narrator"
                 value={selectedVoice?.id || ''}
@@ -584,7 +586,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
                 className={`${fieldClass} cursor-pointer`}
               >
                 {availableVoices.map((v) => (
-                  <option key={v.id} value={v.id}>{v.name.split(' - ')[0]}</option>
+                  <option key={v.id} value={v.id}>{voiceLabel(v)}</option>
                 ))}
               </select>
             </div>
@@ -595,7 +597,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
               className="min-h-[52px] rounded-xl bg-gradient-to-l from-brand to-indigo-500 hover:to-indigo-400 text-white font-bold flex items-center justify-center gap-2 cursor-pointer"
             >
               <Headphones className="w-5 h-5" />
-              استمع للكتاب
+              {tr("استمع للكتاب", "Listen to the book")}
             </button>
             <button
               type="button"
@@ -603,11 +605,11 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
               className="min-h-12 rounded-xl border border-line-strong text-white hover:bg-raised font-semibold flex items-center justify-center gap-2 cursor-pointer"
             >
               <FileDown className="w-5 h-5" />
-              تحميل PDF
+              {tr("تحميل PDF", "Download PDF")}
             </button>
             {errorMsg && <p role="alert" className="text-sm text-rose-300 text-center">{errorMsg}</p>}
             <button type="button" onClick={() => setStep(1)} className="min-h-11 text-sm text-slate-400 hover:text-white cursor-pointer">
-              ألّف كتاباً آخر
+              {tr("ألّف كتاباً آخر", "Write another book")}
             </button>
           </div>
 
@@ -616,7 +618,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
               <span className="text-sm text-brand-soft">{generatedBook.genre}</span>
               <h3 className="font-display font-extrabold text-3xl text-white leading-tight">{generatedBook.title}</h3>
               {generatedBook.subtitle && <p className="text-slate-300">{generatedBook.subtitle}</p>}
-              <p className="text-sm text-slate-500">تأليف {generatedBook.author} · {chaptersAr(generatedBook.chapters.length)}</p>
+              <p className="text-sm text-slate-500">{tr('تأليف', 'By')} {generatedBook.author} · {chaptersAr(generatedBook.chapters.length)}</p>
             </header>
 
             {generatedBook.synopsis && (
@@ -625,7 +627,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
 
             {generatedBook.chapters.map((ch) => (
               <section key={ch.chapterNumber} className="flex flex-col gap-3 pt-5 border-t border-line">
-                <span className="text-sm text-slate-500">الفصل {ch.chapterNumber}</span>
+                <span className="text-sm text-slate-500">{tr('الفصل', 'Chapter')} {ch.chapterNumber}</span>
                 <h4 className="font-display font-bold text-xl text-white -mt-2">{ch.title}</h4>
                 {ch.subsections.map((sub, sIdx) => (
                   <div key={sIdx} className="flex flex-col gap-1.5">
@@ -633,7 +635,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
                     <p className="text-slate-300 leading-[1.9]">{sub.content}</p>
                     {sub.keyTakeaway && (
                       <p className="px-4 py-3 rounded-xl bg-brand-deep/50 border border-brand/30 text-indigo-100 text-[15px]">
-                        <strong className="text-white">الخلاصة: </strong>
+                        <strong className="text-white">{tr('الخلاصة: ', 'Takeaway: ')}</strong>
                         {sub.keyTakeaway}
                       </p>
                     )}

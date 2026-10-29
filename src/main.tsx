@@ -2,8 +2,11 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import { AuthProvider } from './lib/AuthContext.tsx';
-import { LanguageProvider } from './lib/LanguageContext.tsx';
+import { LANG, DIR } from './lib/i18n';
 import './index.css';
+
+document.documentElement.lang = LANG;
+document.documentElement.dir = DIR;
 
 // Gracefully handle expected fetch aborts and iframe communication drops
 if (typeof window !== 'undefined') {
@@ -38,9 +41,7 @@ if (typeof window !== 'undefined') {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
-      <LanguageProvider>
-        <App />
-      </LanguageProvider>
+      <App />
     </AuthProvider>
   </StrictMode>,
 );

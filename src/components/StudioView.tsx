@@ -35,6 +35,8 @@ import { toast } from '../lib/toast';
 import { createShare, shareUrl } from '../lib/shares';
 import { ChatPdfModal } from './ChatPdfModal';
 import { chaptersAr, minutesAr } from '../lib/arabicPlural';
+import { voiceLabel, voiceInitial, genderLabel } from '../lib/voiceLabel';
+import { tr, DIR } from '../lib/i18n';
 
 interface StudioViewProps {
   job: ConversionJob;
@@ -153,7 +155,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
       }
     }
     if (currentChunk) merged.push(currentChunk);
-    return merged.length > 0 ? merged : [fullText || 'نص الكتاب جاهز للاستماع.'];
+    return merged.length > 0 ? merged : [fullText || tr("نص الكتاب جاهز للاستماع.", "The book text is ready to listen to.")];
   }, [fullText]);
 
   // Duration calculations
@@ -343,7 +345,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
       }
     } catch (e) {
       console.warn('Panel transform error:', e);
-      toast(next === 'summary' ? 'تعذّر تجهيز الملخص، حاول مرة أخرى.' : 'تعذّر استخراج أهم النقاط، حاول مرة أخرى.', 'error');
+      toast(next === 'summary' ? tr('تعذّر تجهيز الملخص، حاول مرة أخرى.', 'Couldn’t prepare the summary. Please try again.') : tr('تعذّر استخراج أهم النقاط، حاول مرة أخرى.', 'Couldn’t extract the key points. Please try again.'), 'error');
     } finally {
       setPanelLoading(false);
     }
@@ -366,7 +368,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const [isSharing, setIsSharing] = useState(false);
   const handleShare = async () => {
     if (!isUserLoggedIn) {
-      toast('سجّل مجاناً لتشارك مقاطع من كتبك.', 'info');
+      toast(tr("سجّل مجاناً لتشارك مقاطع من كتبك.", "Sign up free to share clips from your books."), 'info');
       if (onRequestAuth) {
         audioEngine.pause();
         setIsPlaying(false);
@@ -386,16 +388,16 @@ export const StudioView: React.FC<StudioViewProps> = ({
       });
       const url = shareUrl(id);
       if (navigator.share) {
-        await navigator.share({ title: cleanTitle, text: 'استمع لهذا المقطع:', url }).catch(() => {});
+        await navigator.share({ title: cleanTitle, text: tr("استمع لهذا المقطع:", "Listen to this clip:"), url }).catch(() => {});
       } else {
         await navigator.clipboard.writeText(url);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-        toast('نسخنا رابط المقطع، الصقه حيث تريد.', 'success');
+        toast(tr("نسخنا رابط المقطع، الصقه حيث تريد.", "Clip link copied. Paste it anywhere."), 'success');
       }
     } catch (err) {
       console.warn('Share error:', err);
-      toast('تعذّر إنشاء رابط المشاركة، حاول مرة أخرى.', 'error');
+      toast(tr("تعذّر إنشاء رابط المشاركة، حاول مرة أخرى.", "Couldn’t create the share link. Please try again."), 'error');
     } finally {
       setIsSharing(false);
     }
@@ -435,9 +437,9 @@ export const StudioView: React.FC<StudioViewProps> = ({
     setShowDownloadModal(false);
     try {
       setIsGeneratingMp3(true);
-      setDownloadProgressMsg('جاري استخراج ودمج صوت الفصل الحالي...');
+      setDownloadProgressMsg(tr("جاري استخراج ودمج صوت الفصل الحالي...", "Preparing this chapter’s audio..."));
       const titleCleaned = cleanBookTitle(job.fileName);
-      const chapterLabel = currentChapter?.title || `الفصل_${activeChapterIndex + 1}`;
+      const chapterLabel = currentChapter?.title || tr(`الفصل_${activeChapterIndex + 1}`, `chapter_${activeChapterIndex + 1}`);
 
       // 1. FAST PATH: Instant assemble from listened/cached segments
       if (sentences.length > 0) {
@@ -476,7 +478,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
         }),
       });
 
-      if (!res.ok) throw new Error('فشل توليد ملف الصوت');
+      if (!res.ok) throw new Error(tr("فشل توليد ملف الصوت", "Audio generation failed"));
       const blob = await res.blob();
       const isWav = blob.type.includes('wav');
       const url = URL.createObjectURL(blob);
@@ -489,7 +491,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
       URL.revokeObjectURL(url);
     } catch (err) {
       console.warn('MP3 chapter download note:', err);
-      toast('تعذّر تجهيز ملف الصوت للتحميل، حاول مرة أخرى.', 'error');
+      toast(tr("تعذّر تجهيز ملف الصوت للتحميل، حاول مرة أخرى.", "Couldn’t prepare the audio file. Please try again."), 'error');
     } finally {
       setIsGeneratingMp3(false);
       setDownloadProgressMsg('');
@@ -501,10 +503,10 @@ export const StudioView: React.FC<StudioViewProps> = ({
     setShowDownloadModal(false);
     try {
       setIsGeneratingMp3(true);
-      setDownloadProgressMsg('جاري تجهيز وتوليد الكتاب الصوتي كاملاً...');
+      setDownloadProgressMsg(tr("جاري تجهيز وتوليد الكتاب الصوتي كاملاً...", "Preparing the full audiobook..."));
       const titleCleaned = cleanBookTitle(job.fileName);
 
-      const allChaptersList = chapters && chapters.length > 0 ? chapters : [{ text: fullText, title: 'كامل الكتاب' }];
+      const allChaptersList = chapters && chapters.length > 0 ? chapters : [{ text: fullText, title: tr("كامل الكتاب", "Whole book") }];
       const allSentences: string[] = [];
 
       for (const ch of allChaptersList) {
@@ -532,7 +534,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
           allSentences,
           selectedVoice,
           playbackRate,
-          (pct) => setDownloadProgressMsg(`جاري دمج الفصول بالكامل (${pct}%)...`)
+          (pct) => setDownloadProgressMsg(tr(`جاري دمج الفصول بالكامل (${pct}%)...`, `Merging chapters (${pct}%)...`))
         );
 
         if (assembled && assembled.blob && assembled.blob.size > 1000) {
@@ -564,7 +566,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
         }),
       });
 
-      if (!res.ok) throw new Error('فشل توليد ملف الصوت');
+      if (!res.ok) throw new Error(tr("فشل توليد ملف الصوت", "Audio generation failed"));
       {
         const blob = await res.blob();
         const isWav = blob.type.includes('wav');
@@ -579,7 +581,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
       }
     } catch (err) {
       console.warn('MP3 full book download note:', err);
-      toast('تعذّر تجهيز ملف الكتاب كاملاً، جرّب تحميل الفصول واحداً واحداً.', 'error');
+      toast(tr("تعذّر تجهيز ملف الكتاب كاملاً، جرّب تحميل الفصول واحداً واحداً.", "Couldn’t prepare the whole book. Try downloading chapters one at a time."), 'error');
     } finally {
       setIsGeneratingMp3(false);
       setDownloadProgressMsg('');
@@ -600,7 +602,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
   const chapterList = (
     <>
-      <div className="text-[13px] text-slate-400 px-2 pb-2">الفصول</div>
+      <div className="text-[13px] text-slate-400 px-2 pb-2">{tr("الفصول", "Chapters")}</div>
       {(chapters || []).map((chap, idx) => {
         const isActive = idx === activeChapterIndex;
         const status = chap.status || 'completed';
@@ -618,7 +620,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 setActiveSentenceIndex(0);
               }
             }}
-            className={`w-full min-h-[52px] flex items-center justify-between gap-2 px-3 rounded-[10px] text-right text-[15px] transition-colors ${
+            className={`w-full min-h-[52px] flex items-center justify-between gap-2 px-3 rounded-[10px] text-start text-[15px] transition-colors ${
               isActive ? 'bg-raised text-white' : ready ? 'text-slate-300 hover:bg-raised/60 cursor-pointer' : 'text-slate-500 cursor-default'
             }`}
           >
@@ -630,21 +632,21 @@ export const StudioView: React.FC<StudioViewProps> = ({
               <span className="truncate">{chap.title}</span>
             </span>
             <span className="text-[13px] text-slate-400 shrink-0">
-              {status === 'converting' ? `يُجهَّز ${chap.progress ?? 0}%` : status === 'pending' ? 'في الانتظار' : status === 'error' ? 'تعذّر' : `${chap.estimatedDurationMinutes} د`}
+              {status === 'converting' ? tr(`يُجهَّز ${chap.progress ?? 0}%`, `Preparing ${chap.progress ?? 0}%`) : status === 'pending' ? tr('في الانتظار', 'Queued') : status === 'error' ? tr('تعذّر', 'Failed') : `${chap.estimatedDurationMinutes} ${tr('د', 'min')}`}
             </span>
           </button>
         );
       })}
       {job.isStreamingBackground && (
         <div className="mt-3 p-3.5 rounded-xl bg-card text-[13px] text-slate-400">
-          {job.backgroundStatus || 'ابدأ الاستماع الآن، وتُجهَّز الفصول التالية في الخلفية.'}
+          {job.backgroundStatus || tr("ابدأ الاستماع الآن، وتُجهَّز الفصول التالية في الخلفية.", "Start listening now; the next chapters are prepared in the background.")}
         </div>
       )}
     </>
   );
 
   return (
-    <div className="fixed inset-0 z-50 bg-ink text-slate-200 flex flex-col h-[100dvh] w-screen overflow-hidden font-body" dir="rtl">
+    <div className="fixed inset-0 z-50 bg-ink text-slate-200 flex flex-col h-[100dvh] w-screen overflow-hidden font-body" dir={DIR}>
       {/* Top bar */}
       <header className="h-16 px-3 sm:px-6 border-b border-raised flex items-center justify-between gap-3 shrink-0">
         <button
@@ -655,34 +657,34 @@ export const StudioView: React.FC<StudioViewProps> = ({
           }}
           className="flex items-center gap-1.5 min-h-11 px-2 text-slate-300 hover:text-white cursor-pointer shrink-0"
         >
-          <ArrowRight className="w-[18px] h-[18px]" />
-          <span className="hidden sm:inline">{isUserLoggedIn ? 'مكتبتي' : 'رجوع'}</span>
+          <ArrowRight className="w-[18px] h-[18px] ltr:rotate-180" />
+          <span className="hidden sm:inline">{isUserLoggedIn ? tr('مكتبتي', 'My library') : tr('رجوع', 'Back')}</span>
         </button>
         <div className="flex items-center gap-3 min-w-0">
           <span aria-hidden="true" className="hidden sm:block w-9 h-12 rounded-md bg-gradient-to-br from-indigo-900 to-slate-900 border border-indigo-800 shrink-0" />
           <span className="flex flex-col leading-tight min-w-0">
             <span className="font-display font-extrabold text-base sm:text-lg text-white truncate">{cleanTitle}</span>
             <span className="text-[13px] text-slate-400 truncate">
-              {job.listeningMode === 'summary' ? 'ملخص · ' : job.listeningMode === 'key_points' ? 'أهم النقاط · ' : ''}
-              {chapters ? `${chaptersAr(chapters.length)} · ` : ''}حوالي {minutesAr(Math.max(1, totalBookMinutes))}
+              {job.listeningMode === 'summary' ? tr('ملخص · ', 'Summary · ') : job.listeningMode === 'key_points' ? tr('أهم النقاط · ', 'Key points · ') : ''}
+              {chapters ? `${chaptersAr(chapters.length)} · ` : ''}{tr('حوالي', 'about')} {minutesAr(Math.max(1, totalBookMinutes))}
             </span>
           </span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {chapters && chapters.length > 1 && (
             <button type="button" onClick={() => setChaptersOpen(true)} className="md:hidden min-h-11 px-3 text-sm text-brand-soft cursor-pointer">
-              الفصول
+              {tr("الفصول", "Chapters")}
             </button>
           )}
           <button
             type="button"
             onClick={handleShare}
             disabled={isSharing}
-            title="شارك الفقرة الحالية برابط"
+            title={tr("شارك الفقرة الحالية برابط", "Share the current paragraph as a link")}
             className="flex items-center gap-1.5 min-h-11 px-3 text-sm text-brand-soft hover:text-indigo-200 cursor-pointer disabled:opacity-60"
           >
             {isSharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
-            <span className="hidden sm:inline">{copied ? 'تم نسخ الرابط' : 'مشاركة المقطع'}</span>
+            <span className="hidden sm:inline">{copied ? tr("تم نسخ الرابط", "Link copied") : tr("مشاركة المقطع", "Share clip")}</span>
           </button>
         </div>
       </header>
@@ -690,7 +692,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
       {/* Guest banner */}
       {!isUserLoggedIn && (
         <div className="shrink-0 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 py-2 bg-brand-deep text-indigo-100 text-sm">
-          <span>تستمع كضيف. سجّل مجاناً لتحفظ الكتاب ومكان توقفك وتحصل على 30 دقيقة.</span>
+          <span>{tr("تستمع كضيف. سجّل مجاناً لتحفظ الكتاب ومكان توقفك وتحصل على 30 دقيقة.", "You’re listening as a guest. Sign up free to save the book and your place, and get 30 minutes.")}</span>
           {onRequestAuth && (
             <button
               type="button"
@@ -701,7 +703,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
               }}
               className="min-h-9 px-3.5 rounded-lg bg-brand text-white font-semibold cursor-pointer"
             >
-              سجّل مجاناً
+              {tr("سجّل مجاناً", "Sign up free")}
             </button>
           )}
         </div>
@@ -710,7 +712,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
       {/* Body */}
       <div className="flex-1 min-h-0 flex">
         {chapters && chapters.length > 1 && (
-          <aside aria-label="الفصول" className="hidden md:flex w-[300px] shrink-0 border-l border-raised p-4 flex-col gap-1 overflow-y-auto">
+          <aside aria-label={tr("الفصول", "Chapters")} className="hidden md:flex w-[300px] shrink-0 border-e border-raised p-4 flex-col gap-1 overflow-y-auto">
             {chapterList}
           </aside>
         )}
@@ -718,11 +720,11 @@ export const StudioView: React.FC<StudioViewProps> = ({
         <section className="flex-1 min-w-0 flex flex-col">
           {/* Tabs + reader tools */}
           <div className="flex flex-wrap items-end justify-between gap-2 px-3 sm:px-8 pt-3 border-b border-raised">
-            <div role="tablist" aria-label="أدوات الكتاب" className="flex gap-1 overflow-x-auto no-scrollbar">
+            <div role="tablist" aria-label={tr("أدوات الكتاب", "Book tools")} className="flex gap-1 overflow-x-auto no-scrollbar">
               {([
-                { id: 'listen', label: 'استماع' },
-                { id: 'summary', label: 'الملخص' },
-                { id: 'key_points', label: 'أهم النقاط' },
+                { id: 'listen', label: tr("استماع", "Listen") },
+                { id: 'summary', label: tr("الملخص", "Summary") },
+                { id: 'key_points', label: tr("أهم النقاط", "Key points") },
               ] as const).map((t) => (
                 <button
                   key={t.id}
@@ -746,26 +748,26 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 }}
                 className="min-h-12 px-4 -mb-px border-b-2 border-transparent text-[15px] font-semibold text-slate-400 hover:text-white whitespace-nowrap cursor-pointer"
               >
-                اسأل الكتاب
+                {tr("اسأل الكتاب", "Ask the book")}
               </button>
             </div>
             {panel === 'listen' && (
               <div className="flex items-center gap-1.5 pb-1.5 relative">
                 <button
                   type="button"
-                  aria-label="تصغير الخط"
+                  aria-label={tr("تصغير الخط", "Smaller text")}
                   onClick={() => setReaderFontSize(fontSteps[Math.max(0, fontSteps.indexOf(readerFontSize) - 1)])}
                   className="w-10 h-10 rounded-lg border border-line text-slate-300 text-sm cursor-pointer hover:bg-raised"
                 >
-                  أ-
+                  {tr('أ-', 'A-')}
                 </button>
                 <button
                   type="button"
-                  aria-label="تكبير الخط"
+                  aria-label={tr("تكبير الخط", "Larger text")}
                   onClick={() => setReaderFontSize(fontSteps[Math.min(fontSteps.length - 1, fontSteps.indexOf(readerFontSize) + 1)])}
                   className="w-10 h-10 rounded-lg border border-line text-slate-300 text-lg cursor-pointer hover:bg-raised"
                 >
-                  أ+
+                  {tr('أ+', 'A+')}
                 </button>
                 <button
                   type="button"
@@ -773,7 +775,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                   onClick={() => setHideText(!hideText)}
                   className="min-h-10 px-3 rounded-lg border border-line text-slate-300 text-sm cursor-pointer hover:bg-raised"
                 >
-                  {hideText ? 'إظهار النص' : 'إخفاء النص'}
+                  {hideText ? tr('إظهار النص', 'Show text') : tr('إخفاء النص', 'Hide text')}
                 </button>
                 <button
                   type="button"
@@ -788,10 +790,10 @@ export const StudioView: React.FC<StudioViewProps> = ({
                   }`}
                 >
                   <Moon className="w-4 h-4" />
-                  <span className="hidden sm:inline">{sleepTimerRemainingSec !== null ? formatTime(sleepTimerRemainingSec) : 'مؤقت النوم'}</span>
+                  <span className="hidden sm:inline">{sleepTimerRemainingSec !== null ? formatTime(sleepTimerRemainingSec) : tr(tr("مؤقت النوم", "Sleep timer"), 'Sleep timer')}</span>
                 </button>
                 {showSleepMenu && (
-                  <div className="absolute top-12 left-0 z-20 w-48 bg-card border border-line rounded-xl p-1.5 shadow-2xl shadow-black/50">
+                  <div className="absolute top-12 end-0 z-20 w-48 bg-card border border-line rounded-xl p-1.5 shadow-2xl shadow-black/50">
                     {[15, 30, 45, 60].map((mins) => (
                       <button
                         key={mins}
@@ -801,9 +803,9 @@ export const StudioView: React.FC<StudioViewProps> = ({
                           setSleepTimerRemainingSec(mins * 60);
                           setShowSleepMenu(false);
                         }}
-                        className="w-full min-h-10 px-3 rounded-lg text-right text-slate-200 hover:bg-raised flex items-center justify-between cursor-pointer"
+                        className="w-full min-h-10 px-3 rounded-lg text-start text-slate-200 hover:bg-raised flex items-center justify-between cursor-pointer"
                       >
-                        بعد {mins} دقيقة
+                        {tr(`بعد ${mins} دقيقة`, `In ${mins} minutes`)}
                         {sleepTimerMinutes === mins && <Check className="w-4 h-4 text-accent" />}
                       </button>
                     ))}
@@ -815,9 +817,9 @@ export const StudioView: React.FC<StudioViewProps> = ({
                           setSleepTimerRemainingSec(null);
                           setShowSleepMenu(false);
                         }}
-                        className="w-full min-h-10 px-3 rounded-lg text-right text-rose-300 hover:bg-raised cursor-pointer"
+                        className="w-full min-h-10 px-3 rounded-lg text-start text-rose-300 hover:bg-raised cursor-pointer"
                       >
-                        إيقاف المؤقت
+                        {tr("إيقاف المؤقت", "Turn off timer")}
                       </button>
                     )}
                   </div>
@@ -830,17 +832,17 @@ export const StudioView: React.FC<StudioViewProps> = ({
             {resumePoint && panel === 'listen' && (
               <div className="max-w-[760px] mb-5 flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-xl border border-line bg-card">
                 <span className="text-[15px]">
-                  أكمل من حيث توقفت:{' '}
+                  {tr('أكمل من حيث توقفت:', 'Continue where you left off:')}{' '}
                   <strong className="text-white">
-                    {chapters?.[resumePoint.chapter]?.title || 'الكتاب'} · فقرة {resumePoint.sentence + 1}
+                    {chapters?.[resumePoint.chapter]?.title || tr('الكتاب', 'Book')} · {tr('فقرة', 'paragraph')} {resumePoint.sentence + 1}
                   </strong>
                 </span>
                 <span className="flex gap-2">
                   <button type="button" onClick={handleResume} className="min-h-10 px-3.5 rounded-lg bg-brand text-white font-semibold cursor-pointer">
-                    أكمل
+                    {tr("أكمل", "Continue")}
                   </button>
                   <button type="button" onClick={() => setResumePoint(null)} className="min-h-10 px-3.5 rounded-lg border border-line-strong text-slate-300 cursor-pointer">
-                    من البداية
+                    {tr("من البداية", "From the start")}
                   </button>
                 </span>
               </div>
@@ -848,7 +850,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
             {panel === 'listen' && !hideText && (
               <div className="max-w-[760px] flex flex-col gap-1">
-                <p className="text-[13px] text-slate-400 mb-2">اضغط على أي فقرة لتبدأ الاستماع منها</p>
+                <p className="text-[13px] text-slate-400 mb-2">{tr("اضغط على أي فقرة لتبدأ الاستماع منها", "Tap any paragraph to start listening from there")}</p>
                 {sentences.map((sent, idx) => {
                   const isActive = idx === activeSentenceIndex;
                   return (
@@ -858,7 +860,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
                       ref={isActive ? activeSentenceRef : null}
                       aria-current={isActive}
                       onClick={() => handleSeekSentence(idx)}
-                      className={`block w-full text-right px-3 py-2 rounded-lg leading-[2] cursor-pointer transition-colors ${fontClass} ${
+                      dir="auto"
+                      className={`block w-full text-start px-3 py-2 rounded-lg leading-[2] cursor-pointer transition-colors ${fontClass} ${
                         isActive ? 'bg-accent/10 text-white' : 'text-slate-500 hover:text-slate-300'
                       }`}
                     >
@@ -874,33 +877,33 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 <span aria-hidden="true" className="w-[200px] h-[280px] rounded-xl bg-gradient-to-br from-indigo-900 to-slate-900 border border-indigo-800 flex items-end justify-center p-5 font-display font-extrabold text-xl text-indigo-100">
                   {cleanTitle}
                 </span>
-                <span className="text-slate-400">{currentChapter?.title || 'وضع الاستماع فقط'}</span>
+                <span className="text-slate-400">{currentChapter?.title || tr("وضع الاستماع فقط", "Listening mode")}</span>
               </div>
             )}
 
             {panel !== 'listen' && (
               <div className="max-w-[760px] flex flex-col gap-4">
                 <h2 className="font-display font-extrabold text-2xl text-white">
-                  {panel === 'summary' ? 'ملخص' : 'أهم النقاط'} {currentChapter ? `· ${currentChapter.title}` : ''}
+                  {panel === 'summary' ? tr('ملخص', 'Summary') : tr(tr("أهم النقاط", "Key points"), 'Key points')} {currentChapter ? `· ${currentChapter.title}` : ''}
                 </h2>
                 {panelLoading ? (
                   <p className="flex items-center gap-2 text-slate-400">
-                    <Loader2 className="w-4 h-4 animate-spin" /> جاري التلخيص بالذكاء الاصطناعي...
+                    <Loader2 className="w-4 h-4 animate-spin" /> {tr('جاري التلخيص بالذكاء الاصطناعي...', 'Summarizing with AI...')}
                   </p>
                 ) : panelText ? (
                   <>
-                    <p className="text-slate-300 text-lg leading-[2] whitespace-pre-line">{panelText}</p>
+                    <p dir="auto" className="text-slate-300 text-lg leading-[2] whitespace-pre-line">{panelText}</p>
                     <button
                       type="button"
                       onClick={handleListenPanel}
                       className="self-start flex items-center gap-2 min-h-11 px-4 rounded-[10px] border border-line-strong text-white hover:bg-raised cursor-pointer"
                     >
                       {panelPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
-                      {panelPlaying ? 'إيقاف' : 'استمع إليه'}
+                      {panelPlaying ? tr('إيقاف', 'Stop') : tr('استمع إليه', 'Listen to it')}
                     </button>
                   </>
                 ) : (
-                  <p className="text-slate-400">تعذّر إنشاء {panel === 'summary' ? 'الملخص' : 'النقاط'} الآن. حاول مرة أخرى.</p>
+                  <p className="text-slate-400">{panel === 'summary' ? tr('تعذّر إنشاء الملخص الآن. حاول مرة أخرى.', 'Couldn’t create the summary right now. Please try again.') : tr('تعذّر إنشاء النقاط الآن. حاول مرة أخرى.', 'Couldn’t create the key points right now. Please try again.')}</p>
                 )}
               </div>
             )}
@@ -915,8 +918,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
           <button
             type="button"
             onClick={() => setNowPlayingOpen(true)}
-            aria-label="فتح المشغّل"
-            className="flex-1 min-w-0 flex items-center gap-3 text-right cursor-pointer"
+            aria-label={tr("فتح المشغّل", "Open player")}
+            className="flex-1 min-w-0 flex items-center gap-3 text-start cursor-pointer"
           >
             <span aria-hidden="true" className="w-11 h-11 rounded-lg bg-gradient-to-br from-indigo-700 to-slate-900 border border-indigo-800 flex items-center justify-center shrink-0">
               <ChevronUp className="w-5 h-5 text-indigo-200" />
@@ -924,45 +927,45 @@ export const StudioView: React.FC<StudioViewProps> = ({
             <span className="flex flex-col leading-tight min-w-0">
               <span className="text-white text-[15px] font-semibold truncate">{currentChapter?.title || cleanTitle}</span>
               <span className="text-[13px] text-slate-400 tabular-nums">
-                {formatTime(elapsedSeconds)} / {formatTime(estimatedTotalSeconds)} · {selectedVoice.name.split(' - ')[0]}
+                {formatTime(elapsedSeconds)} / {formatTime(estimatedTotalSeconds)} · {voiceLabel(selectedVoice)}
               </span>
             </span>
           </button>
           <button
             type="button"
             onClick={handleTogglePlay}
-            aria-label={isPlaying ? 'إيقاف مؤقت' : 'تشغيل'}
+            aria-label={isPlaying ? tr("إيقاف مؤقت", "Pause") : tr("تشغيل", "Play")}
             className="w-12 h-12 rounded-full bg-gradient-to-l from-[#8b5cf6] to-[#3b82f6] text-white flex items-center justify-center shrink-0 cursor-pointer"
           >
             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
           </button>
           <span className="absolute top-0 inset-x-0 h-0.5 bg-line" aria-hidden="true">
-            <span className="absolute top-0 right-0 h-0.5 bg-accent" style={{ width: `${progressPercent}%` }} />
+            <span className="absolute top-0 start-0 h-0.5 bg-accent" style={{ width: `${progressPercent}%` }} />
           </span>
         </div>
 
         <div className="hidden md:flex items-center gap-1.5 order-1">
-          <button type="button" onClick={() => handleSkipSeconds(-10)} aria-label="الفقرة السابقة" className="w-11 h-11 rounded-full text-slate-300 hover:text-white flex items-center justify-center cursor-pointer">
-            <SkipForward className="w-5 h-5" />
+          <button type="button" onClick={() => handleSkipSeconds(-10)} aria-label={tr("الفقرة السابقة", "Previous paragraph")} className="w-11 h-11 rounded-full text-slate-300 hover:text-white flex items-center justify-center cursor-pointer">
+            <SkipForward className="w-5 h-5 ltr:rotate-180" />
           </button>
           <button
             type="button"
             onClick={handleTogglePlay}
-            aria-label={isPlaying ? 'إيقاف مؤقت' : 'تشغيل'}
+            aria-label={isPlaying ? tr("إيقاف مؤقت", "Pause") : tr("تشغيل", "Play")}
             className="w-14 h-14 rounded-full bg-gradient-to-l from-[#8b5cf6] to-[#3b82f6] text-white flex items-center justify-center cursor-pointer"
           >
             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
           </button>
-          <button type="button" onClick={() => handleSkipSeconds(10)} aria-label="الفقرة التالية" className="w-11 h-11 rounded-full text-slate-300 hover:text-white flex items-center justify-center cursor-pointer">
-            <SkipBack className="w-5 h-5" />
+          <button type="button" onClick={() => handleSkipSeconds(10)} aria-label={tr("الفقرة التالية", "Next paragraph")} className="w-11 h-11 rounded-full text-slate-300 hover:text-white flex items-center justify-center cursor-pointer">
+            <SkipBack className="w-5 h-5 ltr:rotate-180" />
           </button>
         </div>
 
         <div className="hidden md:flex order-2 flex-1 items-center gap-3 min-w-[200px]">
           <span className="text-[13px] text-slate-400 tabular-nums">{formatTime(elapsedSeconds)}</span>
           <div className="relative flex-1 h-1.5 rounded-full bg-line">
-            <div className="absolute top-0 right-0 h-1.5 rounded-full bg-accent" style={{ width: `${progressPercent}%` }} />
-            <label className="sr-only" htmlFor="studio-seek">موضع الاستماع</label>
+            <div className="absolute top-0 start-0 h-1.5 rounded-full bg-accent" style={{ width: `${progressPercent}%` }} />
+            <label className="sr-only" htmlFor="studio-seek">{tr("موضع الاستماع", "Listening position")}</label>
             <input
               id="studio-seek"
               type="range"
@@ -974,7 +977,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 handleSeekSentence(Math.min(sentences.length - 1, Math.floor((pct / 100) * sentences.length)));
               }}
               className="absolute inset-x-0 -top-2 h-6 w-full opacity-0 cursor-pointer"
-              style={{ direction: 'rtl' }}
+              style={{ direction: DIR }}
             />
           </div>
           <span className="text-[13px] text-slate-400 tabular-nums">{formatTime(estimatedTotalSeconds)}</span>
@@ -992,13 +995,13 @@ export const StudioView: React.FC<StudioViewProps> = ({
             className="min-h-11 flex items-center gap-2 px-3 rounded-[10px] border border-line-strong text-white text-sm cursor-pointer hover:bg-raised"
           >
             <span className="w-[26px] h-[26px] rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center text-[13px] font-bold">
-              {selectedVoice.name.charAt(0)}
+              {voiceInitial(selectedVoice)}
             </span>
-            <span className="hidden sm:inline">{selectedVoice.name.split(' - ')[0]}</span>
+            <span className="hidden sm:inline">{voiceLabel(selectedVoice)}</span>
           </button>
           <button
             type="button"
-            aria-label="سرعة التشغيل"
+            aria-label={tr("سرعة التشغيل", "Playback speed")}
             onClick={cycleSpeed}
             className="min-w-14 min-h-11 rounded-[10px] border border-line-strong text-white font-semibold text-sm cursor-pointer hover:bg-raised"
           >
@@ -1016,13 +1019,13 @@ export const StudioView: React.FC<StudioViewProps> = ({
             className="min-h-11 flex items-center gap-2 px-4 rounded-[10px] bg-brand text-white font-semibold text-sm cursor-pointer hover:bg-indigo-500 disabled:opacity-60"
           >
             {isGeneratingMp3 ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Download className="w-[18px] h-[18px]" />}
-            <span className="hidden sm:inline">{isGeneratingMp3 ? 'جاري التجهيز' : 'تحميل'}</span>
+            <span className="hidden sm:inline">{isGeneratingMp3 ? tr('جاري التجهيز', 'Preparing') : tr(tr("تحميل", "Download"), 'Download')}</span>
           </button>
         </div>
 
         {showVoicePicker && (
-          <div className="absolute bottom-full mb-2 left-3 sm:left-40 z-30 w-[300px] max-h-[60vh] overflow-y-auto bg-card border border-line rounded-[14px] p-2 shadow-2xl shadow-black/50">
-            <div className="text-[13px] text-slate-400 px-2.5 py-1.5">غيّر الصوت دون إعادة التحويل</div>
+          <div className="absolute bottom-full mb-2 end-3 sm:end-40 z-30 w-[300px] max-h-[60vh] overflow-y-auto bg-card border border-line rounded-[14px] p-2 shadow-2xl shadow-black/50">
+            <div className="text-[13px] text-slate-400 px-2.5 py-1.5">{tr("غيّر الصوت دون إعادة التحويل", "Change the voice without converting again")}</div>
             {voicesPool.map((v) => (
               <button
                 key={v.id}
@@ -1037,26 +1040,26 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 }`}
               >
                 <span className="flex items-center gap-2.5">
-                  <span className="w-[30px] h-[30px] rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-bold">{v.name.charAt(0)}</span>
-                  {v.name.split(' - ')[0]}
+                  <span className="w-[30px] h-[30px] rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-bold">{voiceInitial(v)}</span>
+                  {voiceLabel(v)}
                 </span>
-                <span className="text-[13px] text-slate-400">{v.gender === 'female' ? 'امرأة' : 'رجل'}</span>
+                <span className="text-[13px] text-slate-400">{genderLabel(v)}</span>
               </button>
             ))}
           </div>
         )}
 
         {showDownloadModal && (
-          <div className="absolute bottom-full mb-2 left-3 z-30 w-[280px] bg-card border border-line rounded-[14px] p-2 shadow-2xl shadow-black/50">
-            <button type="button" onClick={handleDownloadSingleChapter} className="w-full min-h-[52px] px-3 rounded-[10px] text-right text-white hover:bg-raised flex flex-col justify-center leading-snug cursor-pointer">
-              <span>هذا الفصل</span>
-              <span className="text-xs text-slate-400">{currentChapter?.title || 'الفصل الحالي'}</span>
+          <div className="absolute bottom-full mb-2 end-3 z-30 w-[280px] bg-card border border-line rounded-[14px] p-2 shadow-2xl shadow-black/50">
+            <button type="button" onClick={handleDownloadSingleChapter} className="w-full min-h-[52px] px-3 rounded-[10px] text-start text-white hover:bg-raised flex flex-col justify-center leading-snug cursor-pointer">
+              <span>{tr("هذا الفصل", "This chapter")}</span>
+              <span className="text-xs text-slate-400">{currentChapter?.title || tr("الفصل الحالي", "Current chapter")}</span>
             </button>
-            <button type="button" onClick={handleDownloadFullBook} className="w-full min-h-[52px] px-3 rounded-[10px] text-right text-white hover:bg-raised flex flex-col justify-center leading-snug cursor-pointer">
-              <span>الكتاب كاملاً</span>
-              <span className="text-xs text-slate-400">كل الفصول في ملف واحد</span>
+            <button type="button" onClick={handleDownloadFullBook} className="w-full min-h-[52px] px-3 rounded-[10px] text-start text-white hover:bg-raised flex flex-col justify-center leading-snug cursor-pointer">
+              <span>{tr("الكتاب كاملاً", "Whole book")}</span>
+              <span className="text-xs text-slate-400">{tr("كل الفصول في ملف واحد", "All chapters in one file")}</span>
             </button>
-            <p className="px-3 pt-1 pb-1.5 text-[11px] text-slate-500">بصوت {selectedVoice.name.split(' - ')[0]} وسرعة {playbackRate}x</p>
+            <p className="px-3 pt-1 pb-1.5 text-[11px] text-slate-500">{tr('بصوت', 'Voice:')} {voiceLabel(selectedVoice)} · {tr(tr("السرعة", "Speed"), 'speed')} {playbackRate}x</p>
           </div>
         )}
       </footer>
@@ -1071,12 +1074,12 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
       {/* Phone: full-screen now playing */}
       {nowPlayingOpen && (
-        <div role="dialog" aria-modal="true" aria-label="المشغّل" className="md:hidden fixed inset-0 z-[55] bg-ink flex flex-col px-5 pt-3 pb-6 overflow-y-auto">
+        <div role="dialog" aria-modal="true" aria-label={tr("المشغّل", "Player")} className="md:hidden fixed inset-0 z-[55] bg-ink flex flex-col px-5 pt-3 pb-6 overflow-y-auto">
           <div className="flex items-center justify-between shrink-0">
-            <button type="button" onClick={() => setNowPlayingOpen(false)} aria-label="إغلاق المشغّل" className="w-11 h-11 -mr-2 rounded-full text-slate-300 flex items-center justify-center cursor-pointer">
+            <button type="button" onClick={() => setNowPlayingOpen(false)} aria-label={tr("إغلاق المشغّل", "Close player")} className="w-11 h-11 -ms-2 rounded-full text-slate-300 flex items-center justify-center cursor-pointer">
               <ChevronDown className="w-6 h-6" />
             </button>
-            <span className="text-sm text-slate-400">يُشغَّل الآن</span>
+            <span className="text-sm text-slate-400">{tr("يُشغَّل الآن", "Now playing")}</span>
             {chapters && chapters.length > 1 ? (
               <button
                 type="button"
@@ -1086,7 +1089,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 }}
                 className="min-h-11 px-2 text-sm text-brand-soft cursor-pointer"
               >
-                الفصول
+                {tr("الفصول", "Chapters")}
               </button>
             ) : (
               <span className="w-11" />
@@ -1104,17 +1107,17 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
             <div className="flex flex-col gap-1 text-center">
               <span className="font-display font-extrabold text-xl text-white truncate">{currentChapter?.title || cleanTitle}</span>
-              <span className="text-sm text-slate-400">{selectedVoice.name.split(' - ')[0]}</span>
+              <span className="text-sm text-slate-400">{voiceLabel(selectedVoice)}</span>
             </div>
 
             {!hideText && sentences[activeSentenceIndex] && (
-              <p className="text-slate-300 text-[17px] leading-[1.9] text-center line-clamp-4">{sentences[activeSentenceIndex]}</p>
+              <p dir="auto" className="text-slate-300 text-[17px] leading-[1.9] text-center line-clamp-4">{sentences[activeSentenceIndex]}</p>
             )}
 
             <div className="flex flex-col gap-1.5">
               <div className="relative h-1.5 rounded-full bg-line">
-                <div className="absolute top-0 right-0 h-1.5 rounded-full bg-accent" style={{ width: `${progressPercent}%` }} />
-                <label className="sr-only" htmlFor="np-seek">موضع الاستماع</label>
+                <div className="absolute top-0 start-0 h-1.5 rounded-full bg-accent" style={{ width: `${progressPercent}%` }} />
+                <label className="sr-only" htmlFor="np-seek">{tr("موضع الاستماع", "Listening position")}</label>
                 <input
                   id="np-seek"
                   type="range"
@@ -1126,7 +1129,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                     handleSeekSentence(Math.min(sentences.length - 1, Math.floor((pct / 100) * sentences.length)));
                   }}
                   className="absolute inset-x-0 -top-3 h-8 w-full opacity-0 cursor-pointer"
-                  style={{ direction: 'rtl' }}
+                  style={{ direction: DIR }}
                 />
               </div>
               <div className="flex justify-between text-[13px] text-slate-400 tabular-nums">
@@ -1136,65 +1139,65 @@ export const StudioView: React.FC<StudioViewProps> = ({
             </div>
 
             <div className="flex items-center justify-center gap-6">
-              <button type="button" onClick={() => handleSkipSeconds(-10)} aria-label="الفقرة السابقة" className="w-14 h-14 rounded-full text-slate-200 flex items-center justify-center cursor-pointer">
-                <SkipForward className="w-7 h-7" />
+              <button type="button" onClick={() => handleSkipSeconds(-10)} aria-label={tr("الفقرة السابقة", "Previous paragraph")} className="w-14 h-14 rounded-full text-slate-200 flex items-center justify-center cursor-pointer">
+                <SkipForward className="w-7 h-7 ltr:rotate-180" />
               </button>
               <button
                 type="button"
                 onClick={handleTogglePlay}
-                aria-label={isPlaying ? 'إيقاف مؤقت' : 'تشغيل'}
+                aria-label={isPlaying ? tr("إيقاف مؤقت", "Pause") : tr("تشغيل", "Play")}
                 className="w-20 h-20 rounded-full bg-white text-ink flex items-center justify-center cursor-pointer"
               >
                 {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current" />}
               </button>
-              <button type="button" onClick={() => handleSkipSeconds(10)} aria-label="الفقرة التالية" className="w-14 h-14 rounded-full text-slate-200 flex items-center justify-center cursor-pointer">
-                <SkipBack className="w-7 h-7" />
+              <button type="button" onClick={() => handleSkipSeconds(10)} aria-label={tr("الفقرة التالية", "Next paragraph")} className="w-14 h-14 rounded-full text-slate-200 flex items-center justify-center cursor-pointer">
+                <SkipBack className="w-7 h-7 ltr:rotate-180" />
               </button>
             </div>
           </div>
 
           <div className="shrink-0 grid grid-cols-4 gap-2">
             <label className="relative min-h-14 rounded-xl bg-card border border-line flex flex-col items-center justify-center text-[12px] text-slate-400 cursor-pointer">
-              <span className="w-6 h-6 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center text-[12px] font-bold">{selectedVoice.name.charAt(0)}</span>
-              الصوت
+              <span className="w-6 h-6 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center text-[12px] font-bold">{voiceInitial(selectedVoice)}</span>
+              {tr("الصوت", "Voice")}
               <select
                 value={selectedVoice.id}
                 onChange={(e) => {
                   const v = voicesPool.find((x) => x.id === e.target.value);
                   if (v) setSelectedVoice(v);
                 }}
-                aria-label="الصوت"
+                aria-label={tr("الصوت", "Voice")}
                 className="absolute inset-0 opacity-0 cursor-pointer"
               >
                 {voicesPool.map((v) => (
-                  <option key={v.id} value={v.id}>{v.name.split(' - ')[0]}</option>
+                  <option key={v.id} value={v.id}>{voiceLabel(v)}</option>
                 ))}
               </select>
             </label>
-            <button type="button" onClick={cycleSpeed} aria-label="سرعة التشغيل" className="min-h-14 rounded-xl bg-card border border-line flex flex-col items-center justify-center text-[12px] text-slate-400 cursor-pointer">
+            <button type="button" onClick={cycleSpeed} aria-label={tr("سرعة التشغيل", "Playback speed")} className="min-h-14 rounded-xl bg-card border border-line flex flex-col items-center justify-center text-[12px] text-slate-400 cursor-pointer">
               <span className="text-white font-semibold text-[15px]">{playbackRate}x</span>
-              السرعة
+              {tr("السرعة", "Speed")}
             </button>
             <button
               type="button"
               onClick={cycleSleep}
-              aria-label="مؤقت النوم"
+              aria-label={tr("مؤقت النوم", "Sleep timer")}
               className={`min-h-14 rounded-xl bg-card border flex flex-col items-center justify-center text-[12px] cursor-pointer ${
                 sleepTimerRemainingSec !== null ? 'border-accent text-accent' : 'border-line text-slate-400'
               }`}
             >
               <Moon className="w-5 h-5" />
-              {sleepTimerRemainingSec !== null ? formatTime(sleepTimerRemainingSec) : 'النوم'}
+              {sleepTimerRemainingSec !== null ? formatTime(sleepTimerRemainingSec) : tr("النوم", "Sleep")}
             </button>
             <button
               type="button"
               onClick={handleDownloadSingleChapter}
               disabled={isGeneratingMp3}
-              aria-label="تحميل هذا الفصل"
+              aria-label={tr("تحميل هذا الفصل", "Download this chapter")}
               className="min-h-14 rounded-xl bg-card border border-line flex flex-col items-center justify-center text-[12px] text-slate-400 cursor-pointer disabled:opacity-60"
             >
               {isGeneratingMp3 ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-              تحميل
+              {tr("تحميل", "Download")}
             </button>
           </div>
         </div>

@@ -48,6 +48,8 @@ import { ChatPdfModal } from './ChatPdfModal';
 import { QuickResult } from './QuickResult';
 import { toast } from '../lib/toast';
 import { chaptersAr, minutesAr, pagesAr, wordsAr } from '../lib/arabicPlural';
+import { voiceLabel, voiceInitial, dialectLabel, genderLabel } from '../lib/voiceLabel';
+import { tr, DIR } from '../lib/i18n';
 
 interface ConversionToolProps {
   onConversionStart: (job: ConversionJob) => void;
@@ -154,7 +156,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   // Keep detected chapters in sync
   useEffect(() => {
     if (extractedText && extractedText.trim().length > 60) {
-      const bookName = selectedFile ? selectedFile.name : selectedSampleBook ? selectedSampleBook.title : 'الكتاب';
+      const bookName = selectedFile ? selectedFile.name : selectedSampleBook ? selectedSampleBook.title : tr('الكتاب', 'Book');
       const localChaps = detectArabicChapters(extractedText, bookName);
       setDetectedChapters(localChaps);
     }
@@ -185,12 +187,12 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     const isEpub = file.name.toLowerCase().endsWith('.epub') || file.type === 'application/epub+zip';
 
     if (!isPdf && !isEpub) {
-      setConversionError('يرجى رفع ملف بصيغة PDF أو ePub.');
+      setConversionError(tr("يرجى رفع ملف بصيغة PDF أو ePub.", "Please upload a PDF or ePub file."));
       return;
     }
 
     if (file.size > 50 * 1024 * 1024) {
-      setConversionError('حجم الملف يتجاوز الحد الأقصى المسموح به (50 ميجابايت).');
+      setConversionError(tr("حجم الملف يتجاوز الحد الأقصى المسموح به (50 ميجابايت).", "The file is larger than the 50 MB limit."));
       return;
     }
 
@@ -200,12 +202,12 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     setConversionError(null);
     setIsExtracting(true);
     setExtractionProgress(5);
-    setExtractionStatusText('جاري فحص وتجهيز الملف...');
+    setExtractionStatusText(tr("جاري فحص وتجهيز الملف...", "Checking the file..."));
     extractionCancelledRef.current = false;
 
     try {
       if (isEpub) {
-        setExtractionStatusText('جاري استخراج نصوص وفصول كتاب ePub...');
+        setExtractionStatusText(tr("جاري استخراج نصوص وفصول كتاب ePub...", "Extracting the ePub text and chapters..."));
         const epubRes = await extractTextFromEpubFile(file);
         if (epubRes.text && epubRes.text.trim().length > 20) {
           setExtractedText(epubRes.text);
@@ -214,7 +216,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
           setDetectedChapters(chaps);
           setExtractionProgress(100);
         } else {
-          throw new Error('لم يتم العثور على نصوص قابلة للقراءة في كتاب ePub.');
+          throw new Error(tr("لم يتم العثور على نصوص قابلة للقراءة في كتاب ePub.", "No readable text was found in this ePub."));
         }
       } else {
         // Fast progressive reader for PDF
@@ -227,7 +229,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
       }
     } catch (err: any) {
       console.warn('File extraction note:', err);
-      setConversionError(err.message || 'حدث خطأ أثناء قراءة الملف.');
+      setConversionError(err.message || tr("حدث خطأ أثناء قراءة الملف.", "Something went wrong while reading the file."));
     } finally {
       setIsExtracting(false);
     }
@@ -257,7 +259,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
       const purified = await purifyTextWithAI(extractedText);
       if (purified && purified.length > 20) {
         setExtractedText(purified);
-        setPurifiedNotification('تمت تنقية وتصفية النص بنجاح!');
+        setPurifiedNotification(tr("تمت تنقية وتصفية النص بنجاح!", "Text cleaned up."));
       }
     } catch (e: any) {
       console.warn('Purify error:', e);
@@ -283,7 +285,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     if (!selectedFile || isExtracting) return;
     setIsExtracting(true);
     setExtractionProgress(10);
-    setExtractionStatusText('جاري المسح الضوئي العميق عبر Gemini 3.8 OCR...');
+    setExtractionStatusText(tr('جاري المسح الضوئي العميق (OCR)...', 'Running a deep scan (OCR)...'));
     try {
       const ocrRes = await extractTextFromPDFFile(selectedFile, (pct) => setExtractionProgress(pct), true);
       if (ocrRes.text) {
@@ -292,7 +294,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         setExtractionProgress(100);
       }
     } catch (e: any) {
-      setConversionError(e.message || 'تعذر استكمال المسح الضوئي.');
+      setConversionError(e.message || tr("تعذر استكمال المسح الضوئي.", "The scan could not be completed."));
     } finally {
       setIsExtracting(false);
     }
@@ -334,9 +336,9 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     try {
       const url = await audioEngine.generateSpeechUrl(text, selectedVoice, 1);
       if (!url) throw new Error('tts failed');
-      setQuickResult({ url, blob: audioEngine.getCachedBlob(text, selectedVoice, 1), voiceName: selectedVoice.name.split(' - ')[0] });
+      setQuickResult({ url, blob: audioEngine.getCachedBlob(text, selectedVoice, 1), voiceName: voiceLabel(selectedVoice) });
     } catch {
-      setConversionError('تعذّر توليد الصوت الآن. حاول مرة أخرى بعد قليل.');
+      setConversionError(tr("تعذّر توليد الصوت الآن. حاول مرة أخرى بعد قليل.", "Couldn’t generate the audio right now. Please try again shortly."));
     } finally {
       setIsQuickLoading(false);
     }
@@ -345,7 +347,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   // Start conversion & Build audiobook
   const handleStartConversion = async (forceStudio = false) => {
     if (!extractedText.trim()) {
-      setConversionError('يرجى رفع ملف PDF أو كتابة نص أولاً.');
+      setConversionError(tr("يرجى رفع ملف PDF أو كتابة نص أولاً.", "Upload a PDF or type some text first."));
       return;
     }
 
@@ -361,12 +363,12 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
 
     let processedText = extractedText;
     const baseFileName = inputMode === 'text'
-      ? (customTitle.trim() || 'نص عربي مخصص')
-      : (selectedFile ? selectedFile.name : selectedSampleBook ? selectedSampleBook.title : 'كتاب PDF عربي');
+      ? (customTitle.trim() || tr("نص عربي مخصص", "Custom Arabic text"))
+      : (selectedFile ? selectedFile.name : selectedSampleBook ? selectedSampleBook.title : tr("كتاب PDF عربي", "Arabic PDF book"));
 
     // If summary mode, transform to executive summary first
     if (listeningMode === 'summary') {
-      setConvertingChapterStatus('جاري صياغة التلخيص التنفيذي والبودكاست بذكاء اصطناعي...');
+      setConvertingChapterStatus(tr("جاري صياغة التلخيص التنفيذي والبودكاست بذكاء اصطناعي...", "Writing the summary..."));
       try {
         const res = await fetch('/api/ai/transform-book', {
           method: 'POST',
@@ -385,11 +387,11 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         setIsConverting(false);
         setConversionProgress(0);
         setConvertingChapterStatus('');
-        setConversionError('تعذّر تجهيز الملخص الآن. حاول مرة أخرى أو اختر «الكتاب كاملاً».');
+        setConversionError(tr("تعذّر تجهيز الملخص الآن. حاول مرة أخرى أو اختر «الكتاب كاملاً».", "Couldn’t prepare the summary right now. Try again or choose “Whole book”."));
         return;
       }
     } else if (listeningMode === 'key_points') {
-      setConvertingChapterStatus('جاري استخراج أهم 5 إلى 7 نقاط محورية من الكتاب...');
+      setConvertingChapterStatus(tr("جاري استخراج أهم 5 إلى 7 نقاط محورية من الكتاب...", "Extracting the 5–7 key points..."));
       try {
         const res = await fetch('/api/ai/transform-book', {
           method: 'POST',
@@ -408,7 +410,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         setIsConverting(false);
         setConversionProgress(0);
         setConvertingChapterStatus('');
-        setConversionError('تعذّر استخراج أهم النقاط الآن. حاول مرة أخرى أو اختر «الكتاب كاملاً».');
+        setConversionError(tr("تعذّر استخراج أهم النقاط الآن. حاول مرة أخرى أو اختر «الكتاب كاملاً».", "Couldn’t extract the key points right now. Try again or choose “Whole book”."));
         return;
       }
     }
@@ -429,14 +431,14 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
               : null;
 
             const activeText = targetChapter ? targetChapter.text : processedText;
-            const prefix = listeningMode === 'summary' ? 'ملخص: ' : listeningMode === 'key_points' ? 'النقاط الجوهرية: ' : '';
+            const prefix = listeningMode === 'summary' ? tr("ملخص: ", "Summary: ") : listeningMode === 'key_points' ? tr("النقاط الجوهرية: ", "Key points: ") : '';
             const fileName = targetChapter 
               ? `${prefix}${baseFileName} - (${targetChapter.title})` 
               : `${prefix}${baseFileName}`;
 
             const fileSize = inputMode === 'text'
-              ? `${activeText.length} حرف`
-              : (selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} ميجابايت` : '');
+              ? tr(`${activeText.length} حرف`, `${activeText.length} characters`)
+              : (selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : '');
             
             const calculatedPages = inputMode === 'text'
               ? Math.max(1, Math.ceil(activeText.split(/\s+/).length / 250))
@@ -449,7 +451,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                 {
                   id: `chap_${Date.now()}_1`,
                   chapterNumber: 1,
-                  title: 'الفصل الأول: البداية',
+                  title: tr("الفصل الأول: البداية", "Chapter 1"),
                   wordCount: activeText.split(/\s+/).filter(Boolean).length,
                   estimatedDurationMinutes: estimateDurationMinutes(activeText.split(/\s+/).filter(Boolean).length),
                   text: activeText,
@@ -457,12 +459,12 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                 }
               ];
             } else if (listeningMode === 'key_points') {
-              const pointsChaps = detectArabicChapters(processedText, 'النقاط الجوهرية');
+              const pointsChaps = detectArabicChapters(processedText, tr('النقاط الجوهرية', 'Key points'));
               finalChapters = pointsChaps.length >= 2 ? pointsChaps : [
                 {
                   id: `chap_${Date.now()}_1`,
                   chapterNumber: 1,
-                  title: 'أهم النقاط المستفادة',
+                  title: tr("أهم النقاط المستفادة", "Key takeaways"),
                   wordCount: activeText.split(/\s+/).filter(Boolean).length,
                   estimatedDurationMinutes: estimateDurationMinutes(activeText.split(/\s+/).filter(Boolean).length),
                   text: activeText,
@@ -475,7 +477,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                 {
                   id: `chap_${Date.now()}_summary`,
                   chapterNumber: 1,
-                  title: `الملخص التنفيذي لـ ${baseFileName}`,
+                  title: tr(`الملخص التنفيذي لـ ${baseFileName}`, `Summary of ${baseFileName}`),
                   wordCount: activeText.split(/\s+/).filter(Boolean).length,
                   estimatedDurationMinutes: Math.max(2, Math.round(activeText.split(/\s+/).filter(Boolean).length / 130)),
                   text: activeText,
@@ -534,7 +536,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                   createdAtStr: newJob.createdAt,
                 }).catch((err) => {
                   console.warn('Firestore audiobook save note:', err);
-                  toast('لم نتمكن من حفظ الكتاب في مكتبتك على السحابة، لكنه محفوظ في هذا المتصفح.', 'error');
+                  toast(tr("لم نتمكن من حفظ الكتاب في مكتبتك على السحابة، لكنه محفوظ في هذا المتصفح.", "We couldn’t save the book to your cloud library, but it is saved in this browser."), 'error');
                 });
               } catch (cloudErr) {}
             }
@@ -547,11 +549,11 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
 
         const nextVal = prev + 12;
         if (nextVal < 35) {
-          setConvertingChapterStatus('جاري مواءمة النبرة الصوتية وقواعد النطق...');
+          setConvertingChapterStatus(tr("جاري مواءمة النبرة الصوتية وقواعد النطق...", "Tuning tone and pronunciation..."));
         } else if (nextVal < 70) {
-          setConvertingChapterStatus(`جاري توليد الصوت بصوت ${selectedVoice.name.split(' - ')[0]}...`);
+          setConvertingChapterStatus(tr(`جاري توليد الصوت بصوت ${voiceLabel(selectedVoice)}...`, `Generating audio with ${voiceLabel(selectedVoice)}...`));
         } else {
-          setConvertingChapterStatus('جاري بناء الملف الصوتي وتجهيز مسار الاستماع...');
+          setConvertingChapterStatus(tr("جاري بناء الملف الصوتي وتجهيز مسار الاستماع...", "Preparing your listening session..."));
         }
         return nextVal;
       });
@@ -562,19 +564,19 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   const totalDetectedMinutes = detectedChapters.reduce((acc, c) => acc + (c.estimatedDurationMinutes || 0), 0);
   const hasInput = inputMode === 'text' ? extractedText.trim().length > 0 : Boolean(selectedFile || selectedSampleBook);
   const modeOptions: { id: ListeningMode; label: string }[] = [
-    { id: 'full', label: 'الكتاب كاملاً' },
-    { id: 'summary', label: 'ملخص 10 دقائق' },
-    { id: 'key_points', label: 'أهم النقاط' },
+    { id: 'full', label: tr("الكتاب كاملاً", "Whole book") },
+    { id: 'summary', label: tr("ملخص 10 دقائق", "10-minute summary") },
+    { id: 'key_points', label: tr("أهم النقاط", "Key points") },
   ];
 
   return (
-    <div className="w-full font-body" dir="rtl">
+    <div className="w-full font-body" dir={DIR}>
       <div className="w-full bg-card border border-line rounded-[20px] overflow-hidden">
         {/* Input type tabs */}
-        <div role="tablist" aria-label="نوع الإدخال" className="flex gap-1.5 p-3 pb-0">
+        <div role="tablist" aria-label={tr("نوع الإدخال", "Input type")} className="flex gap-1.5 p-3 pb-0">
           {([
-            { id: 'pdf', label: 'ملف PDF' },
-            { id: 'text', label: 'نص' },
+            { id: 'pdf', label: tr("ملف PDF", "PDF file") },
+            { id: 'text', label: tr("نص", "Text") },
           ] as const).map((tab) => (
             <button
               key={tab.id}
@@ -605,7 +607,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                 <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
                 {conversionError}
               </span>
-              <button type="button" onClick={() => setConversionError(null)} aria-label="إغلاق الرسالة" className="p-1 rounded-lg text-rose-300 hover:bg-rose-900/50 cursor-pointer">
+              <button type="button" onClick={() => setConversionError(null)} aria-label={tr("إغلاق الرسالة", "Dismiss message")} className="p-1 rounded-lg text-rose-300 hover:bg-rose-900/50 cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -630,7 +632,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
               {isExtracting ? (
                 <p className="flex items-center gap-2 text-brand-soft text-sm font-semibold">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  {extractionStatusText || 'جاري قراءة الكتاب...'}
+                  {extractionStatusText || tr("جاري قراءة الكتاب...", "Reading the book...")}
                 </p>
               ) : selectedFile ? (
                 <>
@@ -639,41 +641,41 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                   <p className="text-sm text-slate-400">
                     <bdi dir="ltr">{(selectedFile.size / (1024 * 1024)).toFixed(1)} MB</bdi> · {pagesAr(pageCount)} ·{' '}
                     <button type="button" onClick={() => fileInputRef.current?.click()} className="text-brand-soft hover:underline cursor-pointer">
-                      تغيير الملف
+                      {tr("تغيير الملف", "Change file")}
                     </button>
                   </p>
                   <button type="button" onClick={handleForceOcr} className="text-xs text-slate-400 hover:text-white cursor-pointer">
-                    النص غير واضح؟ جرّب المسح العميق
+                    {tr("النص غير واضح؟ جرّب المسح العميق", "Text looks wrong? Try a deep scan")}
                   </button>
                 </>
               ) : (
                 <>
                   <Upload className="w-8 h-8 text-accent" />
-                  <p className="text-[17px] font-semibold text-white">اسحب ملف PDF هنا</p>
+                  <p className="text-[17px] font-semibold text-white">{tr("اسحب ملف PDF هنا", "Drop a PDF here")}</p>
                   <p className="text-sm text-slate-400">
-                    أو{' '}
+                    {tr('أو', 'or')}{' '}
                     <button type="button" onClick={() => fileInputRef.current?.click()} className="text-brand-soft hover:underline cursor-pointer">
-                      اختر ملفاً من جهازك
+                      {tr("اختر ملفاً من جهازك", "choose a file")}
                     </button>{' '}
-                    · PDF و ePub حتى 50MB
+                    {tr("· PDF و ePub حتى 50MB", "· PDF and ePub up to 50 MB")}
                   </p>
                 </>
               )}
             </div>
           ) : (
             <div className="space-y-2">
-              <label htmlFor="tts-text" className="block text-sm text-slate-400">الصق النص الذي تريد سماعه</label>
+              <label htmlFor="tts-text" className="block text-sm text-slate-400">{tr("الصق النص الذي تريد سماعه", "Paste the text you want to hear")}</label>
               <textarea
                 id="tts-text"
                 value={extractedText}
                 onChange={(e) => setExtractedText(e.target.value)}
                 rows={5}
-                dir="rtl"
-                placeholder="اكتب أو الصق نصك العربي هنا..."
+                dir="auto"
+                placeholder={tr("اكتب أو الصق نصك العربي هنا...", "Type or paste your Arabic text here...")}
                 className="w-full rounded-xl bg-ink border border-line p-3.5 text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand resize-y leading-relaxed"
               />
               <div className="flex items-center justify-between text-[13px] text-slate-400">
-                <span>{wordCount === 0 ? '0 كلمة' : wordsAr(wordCount)} · حوالي {minutesAr(Math.max(1, Math.round(wordCount / 130)))}</span>
+                <span>{wordCount === 0 ? tr('0 كلمة', '0 words') : wordsAr(wordCount)} · {tr('حوالي', 'about')} {minutesAr(Math.max(1, Math.round(wordCount / 130)))}</span>
                 <button
                   type="button"
                   onClick={handlePurifyText}
@@ -681,7 +683,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                   className="flex items-center gap-1 hover:text-white disabled:opacity-50 cursor-pointer"
                 >
                   <Wand2 className="w-3.5 h-3.5" />
-                  {isPurifying ? 'جاري التنقية...' : 'تنقية النص'}
+                  {isPurifying ? tr("جاري التنقية...", "Cleaning...") : tr("تنقية النص", "Clean up text")}
                 </button>
               </div>
               {purifiedNotification && <p role="status" className="text-[13px] text-accent">{purifiedNotification}</p>}
@@ -700,7 +702,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
 
           {/* Listening mode */}
           <div>
-            <div id="mode-label" className="text-sm text-slate-400 mb-2.5">ماذا تريد أن تسمع؟</div>
+            <div id="mode-label" className="text-sm text-slate-400 mb-2.5">{tr("ماذا تريد أن تسمع؟", "What do you want to hear?")}</div>
             <div role="radiogroup" aria-labelledby="mode-label" className="flex flex-wrap gap-2">
               {modeOptions.map((m) => {
                 const active = listeningMode === m.id;
@@ -727,7 +729,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
           {inputMode === 'pdf' && selectedFile && !isExtracting && listeningMode === 'full' && detectedChapters.length > 1 && (
             <div className="flex flex-col gap-2">
               <label htmlFor="chapter-pick" className="text-sm text-slate-400">
-                وجدنا {chaptersAr(detectedChapters.length)} · حوالي {minutesAr(totalDetectedMinutes)}
+                {tr('وجدنا', 'Found')} {chaptersAr(detectedChapters.length)} · {tr('حوالي', 'about')} {minutesAr(totalDetectedMinutes)}
               </label>
               <select
                 id="chapter-pick"
@@ -735,10 +737,10 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                 onChange={(e) => setSelectedChapterMode(e.target.value)}
                 className="w-full min-h-12 bg-ink border border-line rounded-[10px] px-3.5 text-[15px] text-white cursor-pointer focus:outline-none focus:border-brand"
               >
-                <option value="all">الكتاب كاملاً</option>
+                <option value="all">{tr(tr("الكتاب كاملاً", "Whole book"), 'Whole book')}</option>
                 {detectedChapters.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.title} · {c.estimatedDurationMinutes} د
+                    {c.title} · {c.estimatedDurationMinutes} {tr('د', 'min')}
                   </option>
                 ))}
               </select>
@@ -750,10 +752,10 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         <div className="border-t border-line px-4 sm:px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <span className="w-10 h-10 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-display font-extrabold shrink-0">
-              {selectedVoice.name.charAt(0)}
+              {voiceInitial(selectedVoice)}
             </span>
             <label className="flex flex-col leading-tight min-w-0">
-              <span className="sr-only">الصوت</span>
+              <span className="sr-only">{tr('الصوت', 'Voice')}</span>
               <select
                 value={selectedVoice.id}
                 onChange={(e) => {
@@ -768,18 +770,18 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
               >
                 {voicesPool.map((v) => (
                   <option key={v.id} value={v.id} className="bg-card">
-                    {v.name.split(' - ')[0]}
+                    {voiceLabel(v)}
                   </option>
                 ))}
               </select>
               <span className="text-[13px] text-slate-400">
-                {selectedDialect?.name} · {selectedVoice.gender === 'female' ? 'امرأة' : 'رجل'}
+                {dialectLabel(selectedDialect)} · {genderLabel(selectedVoice)}
               </span>
             </label>
             <button
               type="button"
               onClick={handleToggleVoicePreview}
-              aria-label={isPlayingPreview ? 'إيقاف العينة' : 'استمع لعينة الصوت'}
+              aria-label={isPlayingPreview ? tr("إيقاف العينة", "Stop sample") : tr("استمع لعينة الصوت", "Play voice sample")}
               className="w-11 h-11 rounded-full border border-line-strong text-accent flex items-center justify-center shrink-0 cursor-pointer hover:bg-raised"
             >
               {isPlayingPreview ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
@@ -792,7 +794,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
             className="flex items-center justify-center gap-2.5 min-h-[52px] px-7 rounded-2xl bg-gradient-to-l from-[#8b5cf6] to-[#3b82f6] text-white font-bold text-[17px] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
           >
             {isConverting || isQuickLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5 fill-current" />}
-            {isConverting || isQuickLoading ? 'جاري التحويل...' : 'حوّل واستمع'}
+            {isConverting || isQuickLoading ? tr("جاري التحويل...", "Converting...") : tr("حوّل واستمع", "Convert & listen")}
           </button>
         </div>
       </div>
@@ -805,22 +807,22 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
           className="flex items-center gap-2.5 min-h-12 px-5 rounded-xl border border-line text-slate-200 text-[15px] hover:border-line-strong hover:text-white cursor-pointer"
         >
           <Headphones className="w-[18px] h-[18px] text-accent" />
-          ليس لديك ملف الآن؟ اسمع مثالاً جاهزاً: {SAMPLE_BOOKS[0].title}
+          {tr('ليس لديك ملف الآن؟ اسمع مثالاً جاهزاً:', 'No file handy? Hear a ready example:')} {tr(SAMPLE_BOOKS[0].title, 'Ibn Khaldun’s Muqaddimah')}
         </button>
-        <p className="text-sm text-slate-400">جرّب مجاناً: 30 دقيقة عند التسجيل، بدون بطاقة دفع.</p>
+        <p className="text-sm text-slate-400">{tr("جرّب مجاناً: 30 دقيقة عند التسجيل، بدون بطاقة دفع.", "Try it free: 30 minutes when you sign up, no card needed.")}</p>
       </div>
 
       {/* Book Processing Modal */}
       <BookProcessingModal
         isOpen={isConverting || isExtracting}
         mode={isExtracting ? 'extracting' : 'converting'}
-        fileName={selectedFile ? selectedFile.name : selectedSampleBook ? selectedSampleBook.title : 'كتابك الصوتي'}
+        fileName={selectedFile ? selectedFile.name : selectedSampleBook ? selectedSampleBook.title : tr("كتابك الصوتي", "Your audiobook")}
         fileSize={selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : undefined}
         pageCount={selectedFile ? pageCount : undefined}
         progress={isExtracting ? extractionProgress : conversionProgress}
         currentStatusText={isExtracting ? extractionStatusText : convertingChapterStatus}
-        voiceName={selectedVoice?.name}
-        dialectName={selectedDialect?.name}
+        voiceName={voiceLabel(selectedVoice)}
+        dialectName={dialectLabel(selectedDialect)}
         styleName={selectedStyle?.name}
         previewSnippet={extractedText}
         chapters={detectedChapters}

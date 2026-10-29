@@ -1,6 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
 // @ts-ignore
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { tr } from './i18n';
 
 // Configure pdfjs worker locally from bundle, with unpkg fallback
 try {
@@ -264,7 +265,10 @@ export async function extractTextFromPDFFile(
     success: false,
     text: '',
     pagesCount: numPages || 1,
-    error: 'تعذر استخراج النص العربي من هذا الملف. قد يكون الكتاب عبارة عن صور ممسوحة ذات جودة منخفضة جداً أو نص مشفر. يمكنك نسخ النص ولصقه مباشرة في خانة "كتابة نص مباشر".'
+    error: tr(
+      'تعذّر استخراج النص العربي من هذا الملف. قد تكون صفحاته صوراً منخفضة الجودة أو نصاً محمياً. جرّب المسح العميق، أو انسخ النص والصقه في تبويب "نص".',
+      'Couldn’t extract Arabic text from this file. Its pages may be low-quality images or protected text. Try the deep scan, or copy the text and paste it in the "Text" tab.'
+    )
   };
 }
 

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Download, Maximize2, Pause, Play, X } from 'lucide-react';
+import { tr, DIR } from '../lib/i18n';
 
 interface QuickResultProps {
   url: string;
@@ -65,13 +66,13 @@ export const QuickResult: React.FC<QuickResultProps> = ({ url, blob, voiceName, 
   };
 
   return (
-    <div role="region" aria-label="نتيجة التحويل" className="rounded-[14px] border border-brand/50 bg-brand-deep/30 p-4 flex flex-col gap-3">
+    <div role="region" aria-label={tr("نتيجة التحويل", "Conversion result")} className="rounded-[14px] border border-brand/50 bg-brand-deep/30 p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm text-slate-300">
-          جاهز بصوت <strong className="text-white">{voiceName}</strong>
+          {tr('جاهز بصوت', 'Ready, voiced by')} <strong className="text-white">{voiceName}</strong>
         </span>
         {onClose && (
-          <button type="button" onClick={onClose} aria-label="إغلاق النتيجة" className="-m-2 w-10 h-10 rounded-full text-slate-400 hover:text-white flex items-center justify-center cursor-pointer">
+          <button type="button" onClick={onClose} aria-label={tr("إغلاق النتيجة", "Close result")} className="-m-2 w-10 h-10 rounded-full text-slate-400 hover:text-white flex items-center justify-center cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         )}
@@ -80,7 +81,7 @@ export const QuickResult: React.FC<QuickResultProps> = ({ url, blob, voiceName, 
         <button
           type="button"
           onClick={toggle}
-          aria-label={playing ? 'إيقاف مؤقت' : 'تشغيل'}
+          aria-label={playing ? tr("إيقاف مؤقت", "Pause") : tr("تشغيل", "Play")}
           className="w-12 h-12 rounded-full bg-white text-ink flex items-center justify-center shrink-0 cursor-pointer"
         >
           {playing ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
@@ -93,7 +94,7 @@ export const QuickResult: React.FC<QuickResultProps> = ({ url, blob, voiceName, 
           step={0.1}
           value={time}
           onChange={seek}
-          aria-label="موضع التشغيل"
+          aria-label={tr("موضع التشغيل", "Playback position")}
           dir="ltr"
           className="flex-1 accent-accent cursor-pointer"
         />
@@ -102,12 +103,12 @@ export const QuickResult: React.FC<QuickResultProps> = ({ url, blob, voiceName, 
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={download} className="min-h-11 px-4 rounded-[10px] bg-raised hover:bg-line-strong text-white text-sm font-semibold flex items-center gap-2 cursor-pointer">
           <Download className="w-4 h-4" />
-          تحميل الصوت
+          {tr("تحميل الصوت", "Download audio")}
         </button>
         {onOpenStudio && (
           <button type="button" onClick={onOpenStudio} className="min-h-11 px-4 rounded-[10px] border border-line text-slate-300 hover:text-white text-sm flex items-center gap-2 cursor-pointer">
             <Maximize2 className="w-4 h-4" />
-            فتح في الاستوديو
+            {tr("فتح في الاستوديو", "Open in studio")}
           </button>
         )}
       </div>

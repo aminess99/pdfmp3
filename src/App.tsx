@@ -23,12 +23,13 @@ import { ConversionJob, Voice } from './types';
 import { audioEngine } from './lib/audioEngine';
 import { useVoices } from './lib/useVoices';
 import { useAuth } from './lib/AuthContext';
+import { tr, HOME_PATH } from './lib/i18n';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState<boolean>(true);
   const [landingPage] = useState(() => findLandingPage(window.location.pathname));
   const [shareId] = useState(() => window.location.pathname.match(SHARE_PATH_RE)?.[1] || null);
-  const [isNotFound] = useState(() => !landingPage && !shareId && !['/', '/index.html'].includes(window.location.pathname));
+  const [isNotFound] = useState(() => !landingPage && !shareId && !['/', '/index.html', '/en', '/en/'].includes(window.location.pathname));
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({
     isOpen: false,
     mode: 'login',
@@ -84,13 +85,13 @@ export default function App() {
 
   // Select plan handler from Pricing Section
   const handleSelectPlan = (planId: string, minutes: number, price: number) => {
-    let planName = 'باقة القارئ (Starter)';
+    let planName = tr("باقة القارئ (Starter)", "Reader");
     let unitRate = 0.03;
     if (planId === 'popular') {
-      planName = 'باقة الشغوف (Pro Pack)';
+      planName = tr("باقة الشغوف (Pro Pack)", "Book lover");
       unitRate = 0.03;
     } else if (planId === 'master') {
-      planName = 'باقة النخبة (Master Pack)';
+      planName = tr("باقة النخبة (Master Pack)", "Pro");
       unitRate = 0.02;
     }
 
@@ -144,7 +145,7 @@ export default function App() {
         el.scrollIntoView({ behavior: 'smooth' });
       } else {
         // Section lives on the home page (e.g. navigating from the 404 page)
-        window.location.href = `/#${sectionId}`;
+        window.location.href = `${HOME_PATH}#${sectionId}`;
       }
     }
   };
