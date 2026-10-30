@@ -81,15 +81,55 @@ setInterval(() => {
   }
 }, 5 * 60_000).unref();
 
-// Persistent Disk-based Audio Cache Directory
-const AUDIO_CACHE_DIR = path.join(process.cwd(), ".cache", "audio");
-try {
-  if (!fs.existsSync(AUDIO_CACHE_DIR)) {
-    fs.mkdirSync(AUDIO_CACHE_DIR, { recursive: true });
+// Generated audio is cached on disk. On Render that must be the persistent disk mounted at
+// /var/data (DATA_DIR overrides it): the app directory is wiped on every deploy.
+function pickAudioCacheDir(): string {
+  const dataDir = process.env.DATA_DIR || "/var/data";
+  // The mount point exists only when the disk is attached; never create it ourselves
+  const candidates = fs.existsSync(dataDir) ? [path.join(dataDir, "audio")] : [];
+  for (const dir of [...candidates, path.join(process.cwd(), ".cache", "audio")]) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.accessSync(dir, fs.constants.W_OK);
+      return dir;
+    } catch {
+      // not mounted or not writable: try the next one
+    }
   }
-} catch (e) {
-  console.warn("Audio cache dir creation warning:", e);
+  return path.join(process.cwd(), ".cache", "audio");
 }
+const AUDIO_CACHE_DIR = pickAudioCacheDir();
+const AUDIO_CACHE_PERSISTENT = !AUDIO_CACHE_DIR.startsWith(process.cwd());
+console.log(
+  `[audio-cache] ${AUDIO_CACHE_DIR} (${AUDIO_CACHE_PERSISTENT ? "persistent disk" : "temporary: cleared on every deploy"})`
+);
+
+// Keep the cache under a size budget by deleting the least recently used files
+const AUDIO_CACHE_MAX_BYTES = Number(process.env.AUDIO_CACHE_MAX_GB || 4) * 1024 ** 3;
+function pruneAudioCache(): void {
+  try {
+    const files = fs
+      .readdirSync(AUDIO_CACHE_DIR)
+      .map((name) => {
+        const full = path.join(AUDIO_CACHE_DIR, name);
+        const st = fs.statSync(full);
+        return { full, size: st.size, used: Math.max(st.atimeMs, st.mtimeMs) };
+      })
+      .sort((a, b) => a.used - b.used);
+    let total = files.reduce((n, f) => n + f.size, 0);
+    const before = total;
+    for (const f of files) {
+      if (total <= AUDIO_CACHE_MAX_BYTES * 0.9) break;
+      fs.unlinkSync(f.full);
+      total -= f.size;
+    }
+    console.log(`[audio-cache] ${files.length} files, ${(before / 1024 ** 2).toFixed(0)} MB` + (before !== total ? `, pruned to ${(total / 1024 ** 2).toFixed(0)} MB` : ""));
+  } catch (err: any) {
+    console.warn("[audio-cache] prune failed:", err?.message || err);
+  }
+}
+setTimeout(pruneAudioCache, 30_000).unref();
+setInterval(pruneAudioCache, 6 * 60 * 60_000).unref();
 
 function getAudioDiskCachePath(key: string): string {
   const hash = crypto.createHash("sha256").update(key).digest("hex");
@@ -1105,6 +1145,9 @@ app.post("/api/tts/speak", async (req, res) => {
     try {
       if (fs.existsSync(diskPath)) {
         const diskBuffer = fs.readFileSync(diskPath);
+        // Mark it as recently used for pruneAudioCache (reads don't reliably update atime)
+        const now = new Date();
+        fs.utimes(diskPath, now, now, () => {});
         if (diskBuffer && diskBuffer.length > 500) {
           const contentType = diskBuffer.subarray(0, 4).toString() === "RIFF" ? "audio/wav" : "audio/mpeg";
           serverTtsCache.set(cacheKey, { buffer: diskBuffer, contentType, engine: "disk-cached-gemini-tts" });
