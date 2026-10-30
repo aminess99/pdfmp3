@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   BookOpen, 
+  LayoutGrid, 
   Plus, 
   Library, 
   Mic, 
@@ -40,6 +41,10 @@ import { ChatPdfModal } from './ChatPdfModal';
 import { minutesAr } from '../lib/arabicPlural';
 import { BOOK_SUMMARIES, SUMMARIES_HUB_PATH, summaryPath } from '../data/summaries';
 import { SummaryCover } from './SummaryPage';
+import { ToolsPanel, ToolId } from './ToolsPanel';
+import { VoiceSamplesSection } from './VoiceSamplesSection';
+import { PricingSection } from './PricingSection';
+import { SUBSCRIBE_EVENT } from '../lib/apiFetch';
 import { listServerBooks, getServerBook, deleteServerBook, saveBookToServer, needsText } from '../lib/library';
 import { apiFetch, fetchAccount, CREDITS_CHANGED_EVENT } from '../lib/apiFetch';
 import { isEn, tr, DIR } from '../lib/i18n';
@@ -62,7 +67,11 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   availableVoices,
   onOpenCheckout,
 }) => {
-  const [activeTab, setActiveTab] = useState<'library' | 'new_book' | 'ai_creator'>('library');
+  const [activeTab, setActiveTab] = useState<'library' | 'new_book' | 'ai_creator' | 'tools' | 'voices' | 'plans'>('library');
+  // "Text to speech" and "PDF" open the same converter in a different mode
+  const [convertMode, setConvertMode] = useState<'pdf' | 'text'>('pdf');
+  // Tools that work on one of the user's books ask which book first
+  const [toolPick, setToolPick] = useState<'ask' | 'summary' | 'download' | null>(null);
   // Listening minutes from the server (null: not enforced / not loaded yet)
   const [balanceSeconds, setBalanceSeconds] = useState<number | null>(null);
   const [isSubscriber, setIsSubscriber] = useState(false);
@@ -191,17 +200,79 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 
   // Books listed from the server come without their text: fetch it before opening
   const [openingId, setOpeningId] = useState<string | null>(null);
-  const openBook = async (book: ConversionJob) => {
-    if (!needsText(book)) return onStartJob(book);
+  const loadFullBook = async (book: ConversionJob): Promise<ConversionJob | null> => {
+    if (!needsText(book)) return book;
     setOpeningId(book.id);
     const full = await getServerBook(book.id);
     setOpeningId(null);
     if (!full || needsText(full)) {
       toast(tr("تعذّر تحميل نص الكتاب الآن، حاول بعد قليل.", "Couldn’t load the book’s text right now. Please try again shortly."), 'error');
-      return;
+      return null;
     }
     setSavedBooks((prev) => prev.map((b) => (b.id === full.id ? full : b)));
-    onStartJob(full);
+    return full;
+  };
+  const openBook = async (book: ConversionJob) => {
+    const full = await loadFullBook(book);
+    if (full) onStartJob(full);
+  };
+
+  const openTool = (tool: ToolId) => {
+    setShowMobileDrawer(false);
+    switch (tool) {
+      case 'pdf':
+      case 'ocr':
+        setConvertMode('pdf');
+        setActiveTab('new_book');
+        if (tool === 'ocr') toast(tr('ارفع الكتاب المصوّر، ثم اضغط «جرّب المسح العميق» إن لم يظهر النص بوضوح.', 'Upload the scanned book, then press “Try a deep scan” if the text doesn’t come out clearly.'), 'info');
+        return;
+      case 'text':
+        setConvertMode('text');
+        setActiveTab('new_book');
+        return;
+      case 'summaries':
+        window.location.href = SUMMARIES_HUB_PATH;
+        return;
+      case 'voices':
+      case 'plans':
+        setActiveTab(tool);
+        return;
+      case 'writer':
+        if (!isSubscriber) {
+          window.dispatchEvent(new CustomEvent(SUBSCRIBE_EVENT));
+          return;
+        }
+        setActiveTab('ai_creator');
+        return;
+      case 'download':
+        if (!isSubscriber) {
+          window.dispatchEvent(new CustomEvent(SUBSCRIBE_EVENT));
+          return;
+        }
+      // fall through: subscribers pick a book
+      case 'ask':
+      case 'summary':
+        if (savedBooks.length === 0) {
+          toast(tr('حوّل كتاباً أولاً، ثم استخدم هذه الأداة عليه.', 'Convert a book first, then use this tool on it.'), 'info');
+          setConvertMode('pdf');
+          setActiveTab('new_book');
+          return;
+        }
+        setToolPick(tool);
+    }
+  };
+
+  const applyToolToBook = async (book: ConversionJob) => {
+    const tool = toolPick;
+    setToolPick(null);
+    const full = await loadFullBook(book);
+    if (!full) return;
+    if (tool === 'ask') setChatBook(full);
+    else if (tool === 'summary') onStartJob({ ...full, initialPanel: 'summary' });
+    else if (tool === 'download') {
+      toast(tr('اضغط زر التحميل في الاستوديو لتحميل الفصل أو الكتاب كاملاً.', 'Press the download button in the studio to save a chapter or the whole book.'), 'info');
+      onStartJob(full);
+    }
   };
 
   const [filter, setFilter] = useState<'all' | 'progress' | 'new'>('all');
@@ -270,6 +341,9 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       <button type="button" aria-current={activeTab === 'library'} onClick={() => { setActiveTab('library'); setShowMobileDrawer(false); }} className={navItem(activeTab === 'library')}>
         <Library className="w-[18px] h-[18px]" /> {tr(tr("مكتبتي", "My library"), 'My library')}
         <span className="ms-auto text-xs text-slate-400">{savedBooks.length}</span>
+      </button>
+      <button type="button" aria-current={activeTab === 'tools'} onClick={() => { setActiveTab('tools'); setShowMobileDrawer(false); }} className={navItem(['tools', 'voices', 'plans'].includes(activeTab))}>
+        <LayoutGrid className="w-[18px] h-[18px]" /> {tr('الأدوات', 'Tools')}
       </button>
       <button type="button" aria-current={activeTab === 'ai_creator'} onClick={() => { setActiveTab('ai_creator'); setShowMobileDrawer(false); }} className={navItem(activeTab === 'ai_creator')}>
         <Wand2 className="w-[18px] h-[18px]" /> {tr('تأليف كتاب', 'Write a book')}
@@ -501,6 +575,31 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
             </div>
           )}
 
+          {activeTab === 'tools' && <ToolsPanel isSubscriber={isSubscriber} onOpen={openTool} />}
+
+          {activeTab === 'voices' && (
+            <div className="flex flex-col gap-4">
+              <button type="button" onClick={() => setActiveTab('tools')} className="self-start text-sm text-brand-soft hover:text-indigo-200 cursor-pointer">← {tr('الأدوات', 'Tools')}</button>
+              <div className="-mx-4 sm:-mx-6">
+                <VoiceSamplesSection availableVoicesList={availableVoices} />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'plans' && (
+            <div className="flex flex-col gap-4">
+              <button type="button" onClick={() => setActiveTab('tools')} className="self-start text-sm text-brand-soft hover:text-indigo-200 cursor-pointer">← {tr('الأدوات', 'Tools')}</button>
+              <div className="-mx-4 sm:-mx-6">
+                <PricingSection
+                  onSelectPlan={(id, minutes, price) => {
+                    const names: Record<string, string> = { starter: tr('باقة القارئ', 'Reader'), popular: tr('باقة الشغوف', 'Book lover'), master: tr('باقة النخبة', 'Pro') };
+                    onOpenCheckout?.({ id, name: names[id] || id, priceUsd: price, minutes, unitRateUsd: price / minutes });
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           {activeTab === 'new_book' && (
             <div className="flex flex-col gap-6 items-center">
               <div className="text-center flex flex-col gap-2">
@@ -509,6 +608,8 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
               </div>
               <div className="w-full max-w-[760px]">
                 <ConversionTool
+                  key={convertMode}
+                  initialInputMode={convertMode}
                   onConversionStart={(job) => {
                     onStartJob(job);
                     loadBooks();
@@ -538,19 +639,20 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         {([
           ['library', tr("مكتبتي", "My library"), Library],
           ['new_book', tr("تحويل", "Convert"), Plus],
-          ['ai_creator', tr("تأليف", "Write"), Wand2],
+          ['tools', tr("الأدوات", "Tools"), LayoutGrid],
         ] as const).map(([tab, label, Icon]) => (
           <button
             key={tab}
             type="button"
             aria-current={activeTab === tab ? 'page' : undefined}
             onClick={() => {
+              if (tab === 'new_book') setConvertMode('pdf');
               setActiveTab(tab);
               window.scrollTo({ top: 0 });
             }}
-            className={`min-h-16 flex flex-col items-center justify-center gap-1 text-[12px] cursor-pointer ${activeTab === tab ? 'text-white' : 'text-slate-400'}`}
+            className={`min-h-16 flex flex-col items-center justify-center gap-1 text-[12px] cursor-pointer ${activeTab === tab || (tab === 'tools' && ['voices', 'plans', 'ai_creator'].includes(activeTab)) ? 'text-white' : 'text-slate-400'}`}
           >
-            <Icon className={`w-[22px] h-[22px] ${activeTab === tab ? 'text-accent' : ''}`} />
+            <Icon className={`w-[22px] h-[22px] ${activeTab === tab || (tab === 'tools' && ['voices', 'plans', 'ai_creator'].includes(activeTab)) ? 'text-accent' : ''}`} />
             {label}
           </button>
         ))}
@@ -566,6 +668,23 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 
       {showSettingsModal && <UserSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} user={user} />}
 
+      {toolPick && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/85" dir={DIR} onClick={() => setToolPick(null)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="pick-title" onClick={(e) => e.stopPropagation()} className="w-full max-w-[440px] max-h-[80vh] bg-card border border-line rounded-[20px] p-6 flex flex-col gap-4">
+            <h2 id="pick-title" className="font-display font-extrabold text-xl text-white">{tr('اختر كتاباً', 'Choose a book')}</h2>
+            <ul className="flex flex-col gap-2 overflow-y-auto">
+              {savedBooks.map((b) => (
+                <li key={b.id}>
+                  <button type="button" onClick={() => applyToolToBook(b)} className="w-full min-h-12 px-4 rounded-xl bg-raised hover:bg-line-strong text-start text-white cursor-pointer truncate">
+                    {cleanBookTitle(b.fileName)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button type="button" onClick={() => setToolPick(null)} className="min-h-11 rounded-xl border border-line text-slate-300 hover:text-white cursor-pointer">{tr('إلغاء', 'Cancel')}</button>
+          </div>
+        </div>
+      )}
       {chatBook && <ChatPdfModal isOpen={Boolean(chatBook)} onClose={() => setChatBook(null)} job={chatBook} availableVoices={availableVoices} />}
     </div>
   );

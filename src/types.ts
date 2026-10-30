@@ -80,6 +80,8 @@ export interface ConversionJob {
   backgroundStatus?: string;
   totalExpectedChapters?: number;
   createdAt: string;
+  // Open the studio straight on this panel (from the dashboard's tools page)
+  initialPanel?: 'summary' | 'key_points';
 }
 
 export interface Testimonial {

@@ -354,6 +354,14 @@ export const StudioView: React.FC<StudioViewProps> = ({
     }
   };
 
+  // Opened from the tools page on "summary" / "key points": show that panel right away
+  const initialPanelDone = useRef(false);
+  useEffect(() => {
+    if (initialPanelDone.current || !job.initialPanel || !fullText) return;
+    initialPanelDone.current = true;
+    openPanel(job.initialPanel);
+  }, [fullText]);
+
   const handleListenPanel = () => {
     if (panelPlaying) {
       audioEngine.stop();
