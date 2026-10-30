@@ -40,18 +40,20 @@ function db(): Firestore {
   return getFirestore(getAdminApp()!, firebaseConfig.firestoreDatabaseId || '(default)');
 }
 
-// Firebase ID token from "Authorization: Bearer <token>" -> uid, or null
-export async function uidFromRequest(req: Request): Promise<string | null> {
+// Firebase ID token from "Authorization: Bearer <token>" -> the user, or null
+export async function userFromRequest(req: Request): Promise<{ uid: string; email?: string } | null> {
   const app = getAdminApp();
   const header = req.headers.authorization || '';
   if (!app || !header.startsWith('Bearer ')) return null;
   try {
     const decoded = await getAuth(app).verifyIdToken(header.slice(7));
-    return decoded.uid;
+    return { uid: decoded.uid, email: decoded.email };
   } catch {
     return null;
   }
 }
+
+export const uidFromRequest = async (req: Request): Promise<string | null> => (await userFromRequest(req))?.uid ?? null;
 
 // ~130 words per minute of Arabic narration, like the rest of the site
 export const secondsForText = (text: string): number =>
@@ -117,3 +119,31 @@ export const rememberCharge = (uid: string, key: string): void => {
 export const forgetCharge = (uid: string, key: string): void => {
   recentlyCharged.delete(`${uid}|${key}`);
 };
+
+// Adds purchased minutes once per payment: payments/{paymentId} records it, so a webhook
+// delivered twice (Dodo retries until it gets a 2xx) never credits twice.
+export async function addPurchasedSeconds(
+  uid: string,
+  seconds: number,
+  paymentId: string,
+  info: Record<string, unknown>
+): Promise<'added' | 'duplicate'> {
+  const creditRef = db().collection('credits').doc(uid);
+  const paymentRef = db().collection('payments').doc(paymentId);
+  return db().runTransaction(async (tx) => {
+    const [paid, credit] = await Promise.all([tx.get(paymentRef), tx.get(creditRef)]);
+    if (paid.exists) return 'duplicate';
+    const current = credit.exists ? Number(credit.get('secondsRemaining')) || 0 : FREE_SECONDS;
+    tx.set(
+      creditRef,
+      {
+        secondsRemaining: current + seconds,
+        updatedAt: FieldValue.serverTimestamp(),
+        ...(credit.exists ? {} : { freeGrantedAt: FieldValue.serverTimestamp() }),
+      },
+      { merge: true }
+    );
+    tx.set(paymentRef, { uid, seconds, ...info, creditedAt: FieldValue.serverTimestamp() });
+    return 'added';
+  });
+}

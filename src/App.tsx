@@ -20,7 +20,8 @@ import { SummaryPage } from './components/SummaryPage';
 import { SummariesHub, SummariesShowcase } from './components/SummariesHub';
 import { findSummary, isSummariesHub } from './data/summaries';
 import { SHARE_PATH_RE } from './lib/shares';
-import { REQUIRE_AUTH_EVENT, OUT_OF_CREDITS_EVENT } from './lib/apiFetch';
+import { REQUIRE_AUTH_EVENT, OUT_OF_CREDITS_EVENT, CREDITS_CHANGED_EVENT, fetchCredits } from './lib/apiFetch';
+import { toast } from './lib/toast';
 import { findLandingPage } from './data/landingPages';
 import { HOME_SECTIONS } from './data/homeContent';
 import { ConversionJob, Voice } from './types';
@@ -115,6 +116,26 @@ export default function App() {
 
   // Minutes are only ever added by the server (payment webhook), never by the client
   const handleSuccessPayment = () => {};
+
+  // Back from Dodo's checkout (?payment=success): the webhook usually lands within seconds,
+  // so poll the balance briefly and let the dashboard show the new minutes
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('payment') !== 'success') return;
+    params.delete('payment');
+    const rest = params.toString();
+    window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
+    toast(tr('شكراً لك! تم الدفع، وستُضاف دقائقك خلال لحظات.', 'Thank you! Payment received; your minutes will be added in a moment.'), 'success');
+    let tries = 0;
+    let last: number | null = null;
+    const timer = setInterval(async () => {
+      const balance = await fetchCredits();
+      if (balance !== null) window.dispatchEvent(new CustomEvent(CREDITS_CHANGED_EVENT, { detail: balance }));
+      if ((last !== null && balance !== null && balance > last) || ++tries >= 8) clearInterval(timer);
+      last = balance;
+    }, 4000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Server answers "sign in first" / "out of minutes" (lib/apiFetch.ts) -> open the right dialog
   useEffect(() => {

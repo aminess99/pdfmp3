@@ -23,12 +23,53 @@ import {
   alreadyCharged,
   rememberCharge,
   forgetCharge,
+  userFromRequest,
+  addPurchasedSeconds,
 } from "./server/credits";
+import { PLANS, paymentsEnabled, planAvailable, createCheckout, verifyWebhook, paidPlan } from "./server/payments";
 
 dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+
+// Dodo Payments webhook: the signature covers the raw body, so this route must read it
+// before express.json() parses it. Minutes are added only here, never by the client.
+app.post("/api/webhooks/dodo", express.raw({ type: "*/*", limit: "1mb" }), async (req, res) => {
+  const raw = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
+  let event: any;
+  try {
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") headers[k] = v;
+    event = verifyWebhook(raw, headers);
+  } catch (err: any) {
+    console.warn("[payments] rejected webhook:", err?.message || err);
+    return res.status(401).json({ error: "invalid signature" });
+  }
+  try {
+    if (event.type === "payment.succeeded") {
+      const payment = event.data;
+      const uid = payment.metadata?.uid;
+      const plan = paidPlan(payment);
+      if (!uid || !plan) {
+        console.error("[payments] paid but cannot credit (missing uid/plan):", payment.payment_id, payment.metadata);
+        return res.json({ ok: true });
+      }
+      const result = await addPurchasedSeconds(uid, PLANS[plan].minutes * 60, payment.payment_id, {
+        plan,
+        amount: payment.total_amount,
+        currency: payment.currency,
+        email: payment.customer?.email || null,
+      });
+      console.log(`[payments] ${payment.payment_id}: ${plan} for ${uid} -> ${result}`);
+    }
+    res.json({ ok: true });
+  } catch (err: any) {
+    // 5xx makes Dodo retry; the payments/{id} record keeps the retry from double-crediting
+    console.error("[payments] webhook handling failed:", err?.message || err);
+    res.status(500).json({ error: "retry" });
+  }
+});
 
 app.use(express.json({ limit: "50mb" }));
 
@@ -1164,6 +1205,22 @@ app.delete("/api/library/:id", async (req, res) => {
   } catch (err: any) {
     console.error("[library] delete", err?.message || err);
     res.status(500).json({ error: "تعذّر حذف الكتاب." });
+  }
+});
+
+// Starts a hosted Dodo checkout for one of the plans and returns its URL
+app.post("/api/checkout", async (req, res) => {
+  const plan = String(req.body?.plan || "");
+  if (!paymentsEnabled() || !planAvailable(plan) || !creditsEnabled()) {
+    return res.status(503).json({ code: "payments_unavailable" });
+  }
+  const user = await userFromRequest(req);
+  if (!user) return res.status(401).json({ code: "auth_required" });
+  try {
+    res.json({ url: await createCheckout(plan, user.uid, user.email, SITE_URL) });
+  } catch (err: any) {
+    console.error("[payments] checkout failed:", err?.message || err);
+    res.status(502).json({ error: "تعذّر بدء الدفع الآن، حاول بعد قليل." });
   }
 });
 
@@ -2353,8 +2410,9 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
-    // Report at startup whether listening minutes are enforced (logs the reason if not)
+    // Report at startup whether listening minutes and payments work (logs the reason if not)
     creditsEnabled();
+    paymentsEnabled();
   });
 }
 

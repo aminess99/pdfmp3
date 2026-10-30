@@ -14,6 +14,7 @@
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
+    "dodopayments": "^2.59.0",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^12.19.0",
@@ -26,6 +27,7 @@
     "pdfjs-dist": "^6.3.289",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "standardwebhooks": "^1.1.1",
     "vite": "^8.3.0"
   },
   "devDependencies": {
