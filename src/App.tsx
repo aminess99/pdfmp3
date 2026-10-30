@@ -140,7 +140,7 @@ export default function App() {
   // Server answers "sign in first" / "out of minutes" (lib/apiFetch.ts) -> open the right dialog
   useEffect(() => {
     const onRequireAuth = () => setAuthModal({ isOpen: true, mode: 'register' });
-    const onOutOfCredits = () => handleSelectPlan('popular', 666, 19.99);
+    const onOutOfCredits = () => handleSelectPlan('popular', 900, 19.99);
     window.addEventListener(REQUIRE_AUTH_EVENT, onRequireAuth);
     window.addEventListener(OUT_OF_CREDITS_EVENT, onOutOfCredits);
     window.addEventListener(SUBSCRIBE_EVENT, onOutOfCredits);

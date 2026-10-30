@@ -318,7 +318,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   };
 
   const openCheckout = () =>
-    onOpenCheckout?.({ id: 'popular', name: tr("باقة الشغوف", "Book lover"), priceUsd: 19.99, minutes: 666, unitRateUsd: 0.03 });
+    onOpenCheckout?.({ id: 'popular', name: tr("باقة الشغوف", "Book lover"), priceUsd: 19.99, minutes: 900, unitRateUsd: 0.022 });
 
   const navItem = (active: boolean) =>
     `w-full min-h-11 flex items-center gap-2.5 px-3 rounded-[10px] text-[15px] text-start cursor-pointer transition-colors ${
