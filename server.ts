@@ -2071,6 +2071,7 @@ function renderHomeHtml(template: string, lang: "ar" | "en"): string {
     `<nav>`,
     `<a href="${en ? "/" : "/en"}">${en ? "العربية" : "English"}</a> `,
     ...(en ? [] : LANDING_PAGES.map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `)),
+    ...(en ? [] : [`<a href="${SUMMARIES_HUB_PATH}">${escapeHtml(SUMMARIES_HUB.h1)}</a> `]),
     `</nav></main>`,
   ].join("");
 

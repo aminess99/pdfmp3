@@ -6,6 +6,11 @@ import myFatherWhomIHate from './summary-texts/my-father-whom-i-hate';
 import lawsOfPower from './summary-texts/48-laws-of-power';
 import subtleArt from './summary-texts/subtle-art';
 import richDadPoorDad from './summary-texts/rich-dad-poor-dad';
+import sevenHabits from './summary-texts/seven-habits';
+import missedPrayer from './summary-texts/missed-prayer';
+import thePrince from './summary-texts/the-prince';
+import emotionalIntelligence from './summary-texts/emotional-intelligence';
+import goodToGreat from './summary-texts/good-to-great';
 
 export const SUMMARY_TEXTS: Record<string, SummaryText> = {
   'atomic-habits': atomicHabits,
@@ -13,6 +18,11 @@ export const SUMMARY_TEXTS: Record<string, SummaryText> = {
   '48-laws-of-power': lawsOfPower,
   'subtle-art': subtleArt,
   'rich-dad-poor-dad': richDadPoorDad,
+  'seven-habits': sevenHabits,
+  'missed-prayer': missedPrayer,
+  'the-prince': thePrince,
+  'emotional-intelligence': emotionalIntelligence,
+  'good-to-great': goodToGreat,
 };
 
 export const summaryText = (s: BookSummary): SummaryText => {

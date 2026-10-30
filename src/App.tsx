@@ -17,7 +17,7 @@ import { NotFound } from './components/NotFound';
 import { Toaster } from './components/Toaster';
 import { SharePage } from './components/SharePage';
 import { SummaryPage } from './components/SummaryPage';
-import { SummariesHub } from './components/SummariesHub';
+import { SummariesHub, SummariesShowcase } from './components/SummariesHub';
 import { findSummary, isSummariesHub } from './data/summaries';
 import { SHARE_PATH_RE } from './lib/shares';
 import { REQUIRE_AUTH_EVENT, OUT_OF_CREDITS_EVENT } from './lib/apiFetch';
@@ -27,7 +27,7 @@ import { ConversionJob, Voice } from './types';
 import { audioEngine } from './lib/audioEngine';
 import { useVoices } from './lib/useVoices';
 import { useAuth } from './lib/AuthContext';
-import { tr, HOME_PATH } from './lib/i18n';
+import { tr, HOME_PATH, isEn } from './lib/i18n';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState<boolean>(true);
@@ -269,6 +269,8 @@ export default function App() {
         )}
 
         <VoiceSamplesSection availableVoicesList={allVoices} />
+        {/* The summaries are Arabic only */}
+        {!isEn && <SummariesShowcase />}
         <HowItWorks />
         <UseCasesSection />
         <PricingSection onSelectPlan={handleSelectPlan} />
