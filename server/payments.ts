@@ -8,10 +8,10 @@
 import DodoPayments from 'dodopayments';
 
 // Same plans as the pricing section (src/components/PricingSection.tsx)
-export const PLANS: Record<string, { minutes: number; productEnv: string }> = {
-  starter: { minutes: 400, productEnv: 'DODO_PRODUCT_STARTER' },
-  popular: { minutes: 900, productEnv: 'DODO_PRODUCT_POPULAR' },
-  master: { minutes: 2000, productEnv: 'DODO_PRODUCT_MASTER' },
+export const PLANS: Record<string, { minutes: number; priceUsd: number; productEnv: string }> = {
+  starter: { minutes: 400, priceUsd: 9.99, productEnv: 'DODO_PRODUCT_STARTER' },
+  popular: { minutes: 900, priceUsd: 19.99, productEnv: 'DODO_PRODUCT_POPULAR' },
+  master: { minutes: 2000, priceUsd: 29.99, productEnv: 'DODO_PRODUCT_MASTER' },
 };
 
 const productId = (plan: string): string | undefined => process.env[PLANS[plan]?.productEnv || '']?.trim() || undefined;

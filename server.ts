@@ -7,6 +7,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { VOICES } from "./src/data/voices";
 import { LANDING_PAGES, LandingPage, findLandingPage, landingPath } from "./src/data/landingPages";
+import { isAdminUser, overview as adminOverview, usersTable as adminUsersTable, recentPayments as adminRecentPayments, giftMinutes as adminGiftMinutes } from "./server/admin";
 import { libraryEnabled, listBooks, getBook, saveBook, deleteBook, isValidBookId } from "./server/library";
 import { summaryText } from "./src/data/summaryTexts";
 import { BOOK_SUMMARIES, BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, UPCOMING_SUMMARIES, findSummary, isSummariesHub, summaryAudioUrl, summaryCoverUrl, summaryPath } from "./src/data/summaries";
@@ -33,6 +34,7 @@ import {
   subscriberUntil,
   forgetSubscriber,
   useDailyQuota,
+  recordTtsUsage,
 } from "./server/credits";
 import { PLANS, paymentsEnabled, planAvailable, createCheckout, verifyWebhook, planOfPayment, billingPortalUrl } from "./server/payments";
 
@@ -1312,6 +1314,67 @@ async function useFreeDaily(req: express.Request, res: express.Response, feature
   return false;
 }
 
+// ---- Admin dashboard (server/admin.ts): verified admin emails only
+async function adminUser(req: express.Request, res: express.Response): Promise<{ uid: string; email?: string } | null> {
+  if (!creditsEnabled()) {
+    res.status(503).json({ error: "admin needs FIREBASE_SERVICE_ACCOUNT" });
+    return null;
+  }
+  const user = await userFromRequest(req);
+  if (!isAdminUser(user)) {
+    res.status(403).json({ error: "forbidden" });
+    return null;
+  }
+  return user;
+}
+
+app.get("/api/admin/overview", async (req, res) => {
+  if (!(await adminUser(req, res))) return;
+  try {
+    res.json(await adminOverview());
+  } catch (err: any) {
+    console.error("[admin] overview", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+app.get("/api/admin/users", async (req, res) => {
+  if (!(await adminUser(req, res))) return;
+  try {
+    res.json({ users: await adminUsersTable(String(req.query.q || "")) });
+  } catch (err: any) {
+    console.error("[admin] users", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+app.get("/api/admin/payments", async (req, res) => {
+  if (!(await adminUser(req, res))) return;
+  try {
+    res.json({ payments: await adminRecentPayments() });
+  } catch (err: any) {
+    console.error("[admin] payments", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+app.post("/api/admin/users/:uid/gift", async (req, res) => {
+  const admin = await adminUser(req, res);
+  if (!admin) return;
+  const minutes = Number(req.body?.minutes);
+  if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 100_000 || !/^[A-Za-z0-9_-]{1,128}$/.test(req.params.uid)) {
+    return res.status(400).json({ error: "bad request" });
+  }
+  try {
+    await adminGiftMinutes(admin.email || "", req.params.uid, minutes, String(req.body?.note || ""));
+    console.log(`[admin] ${admin.email} gifted ${minutes} min to ${req.params.uid}`);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[admin] gift", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
 app.get("/api/credits", async (req, res) => {
   if (!creditsEnabled()) return res.json({ enabled: false });
   const uid = await uidFromRequest(req);
@@ -1349,6 +1412,7 @@ app.post("/api/tts/speak", async (req, res) => {
       res.setHeader("Content-Length", cached.buffer.length);
       res.setHeader("X-Voice-Engine", cached.engine);
       res.setHeader("X-TTS-Cache", "MEMORY-HIT");
+      recordTtsUsage("cached", secondsForText(text));
       return res.send(cached.buffer);
     }
 
@@ -1366,6 +1430,7 @@ app.post("/api/tts/speak", async (req, res) => {
           res.setHeader("Content-Length", diskBuffer.length);
           res.setHeader("X-Voice-Engine", "disk-cached-gemini-tts");
           res.setHeader("X-TTS-Cache", "DISK-HIT");
+          recordTtsUsage("cached", secondsForText(text));
           return res.send(diskBuffer);
         }
       }
@@ -1398,6 +1463,7 @@ app.post("/api/tts/speak", async (req, res) => {
       res.setHeader("Content-Length", openRouterResult.buffer.length);
       res.setHeader("X-Voice-Engine", openRouterResult.engine);
       res.setHeader("X-TTS-Cache", "GENERATED-AND-SAVED");
+      recordTtsUsage("generated", secondsForText(text));
       return res.send(openRouterResult.buffer);
     }
 
@@ -1444,6 +1510,7 @@ app.post("/api/tts/speak", async (req, res) => {
           res.setHeader("Content-Length", audioBuffer.length);
           res.setHeader("X-Voice-Engine", geminiResult.engine);
           res.setHeader("X-TTS-Cache", "GENERATED-AND-SAVED");
+          recordTtsUsage("generated", secondsForText(text));
           return res.send(audioBuffer);
         }
       } catch (geminiErr: any) {

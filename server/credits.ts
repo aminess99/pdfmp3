@@ -41,13 +41,13 @@ function db(): Firestore {
 }
 
 // Firebase ID token from "Authorization: Bearer <token>" -> the user, or null
-export async function userFromRequest(req: Request): Promise<{ uid: string; email?: string } | null> {
+export async function userFromRequest(req: Request): Promise<{ uid: string; email?: string; emailVerified?: boolean } | null> {
   const app = getAdminApp();
   const header = req.headers.authorization || '';
   if (!app || !header.startsWith('Bearer ')) return null;
   try {
     const decoded = await getAuth(app).verifyIdToken(header.slice(7));
-    return { uid: decoded.uid, email: decoded.email };
+    return { uid: decoded.uid, email: decoded.email, emailVerified: decoded.email_verified };
   } catch {
     return null;
   }
@@ -87,7 +87,12 @@ export async function charge(uid: string, seconds: number): Promise<{ ok: boolea
     const snap = await tx.get(ref);
     const current = snap.exists ? Number(snap.get('secondsRemaining')) || 0 : FREE_SECONDS;
     if (current < seconds) return { ok: false, remaining: current };
-    const data: Record<string, unknown> = { secondsRemaining: current - seconds, updatedAt: FieldValue.serverTimestamp() };
+    const data: Record<string, unknown> = {
+      secondsRemaining: current - seconds,
+      // Lifetime listening, for the admin's usage-per-plan figures
+      usedSeconds: FieldValue.increment(seconds),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
     if (!snap.exists) data.freeGrantedAt = FieldValue.serverTimestamp();
     tx.set(ref, data, { merge: true });
     return { ok: true, remaining: current - seconds };
@@ -96,7 +101,10 @@ export async function charge(uid: string, seconds: number): Promise<{ ok: boolea
 
 export async function refund(uid: string, seconds: number): Promise<void> {
   try {
-    await db().collection('credits').doc(uid).update({ secondsRemaining: FieldValue.increment(seconds), updatedAt: FieldValue.serverTimestamp() });
+    await db()
+      .collection('credits')
+      .doc(uid)
+      .update({ secondsRemaining: FieldValue.increment(seconds), usedSeconds: FieldValue.increment(-seconds), updatedAt: FieldValue.serverTimestamp() });
   } catch (err: any) {
     console.error('[credits] refund failed', uid, seconds, err?.message || err);
   }
@@ -145,6 +153,9 @@ export async function addPurchasedSeconds(
       {
         secondsRemaining: current + seconds,
         subscriberUntil: Timestamp.fromMillis(Math.max(previous, until)),
+        purchasedSeconds: FieldValue.increment(seconds),
+        ...(typeof info.plan === 'string' ? { plan: info.plan } : {}),
+        lastPaymentAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
         ...(credit.exists ? {} : { freeGrantedAt: FieldValue.serverTimestamp() }),
       },
@@ -209,3 +220,34 @@ export async function useDailyQuota(uid: string, feature: string, limit: number)
     return { ok: true, used: used + 1 };
   });
 }
+
+// ---- Admin dashboard data access (server/admin.ts)
+export const adminDb = (): Firestore => db();
+export const adminAuthClient = () => getAuth(getAdminApp()!);
+
+// Monthly audio totals for the admin dashboard: seconds generated (what OpenRouter bills)
+// and seconds served from the cache (free). Batched in memory, written once a minute.
+const pendingUsage = { generated: 0, cached: 0 };
+
+export function recordTtsUsage(kind: 'generated' | 'cached', seconds: number): void {
+  if (!getAdminApp() || !(seconds > 0)) return;
+  pendingUsage[kind] += seconds;
+}
+
+setInterval(async () => {
+  if (!getAdminApp() || (!pendingUsage.generated && !pendingUsage.cached)) return;
+  const { generated, cached } = pendingUsage;
+  pendingUsage.generated = 0;
+  pendingUsage.cached = 0;
+  const month = new Date().toISOString().slice(0, 7);
+  try {
+    await db()
+      .collection('stats')
+      .doc(month)
+      .set({ generatedSeconds: FieldValue.increment(generated), cachedSeconds: FieldValue.increment(cached), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  } catch (err: any) {
+    pendingUsage.generated += generated;
+    pendingUsage.cached += cached;
+    console.warn('[stats] write failed:', err?.message || err);
+  }
+}, 60_000).unref();

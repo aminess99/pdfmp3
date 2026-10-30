@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { 
   BookOpen, 
   LayoutGrid, 
@@ -42,6 +42,8 @@ import { minutesAr } from '../lib/arabicPlural';
 import { BOOK_SUMMARIES, SUMMARIES_HUB_PATH, summaryPath } from '../data/summaries';
 import { SummaryCover } from './SummaryPage';
 import { ToolsPanel, ToolId } from './ToolsPanel';
+// Admin only: loaded on demand so regular users never download it
+const AdminPanel = lazy(() => import('./AdminPanel').then((m) => ({ default: m.AdminPanel })));
 import { VoiceSamplesSection } from './VoiceSamplesSection';
 import { PricingSection } from './PricingSection';
 import { SUBSCRIBE_EVENT } from '../lib/apiFetch';
@@ -67,7 +69,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   availableVoices,
   onOpenCheckout,
 }) => {
-  const [activeTab, setActiveTab] = useState<'library' | 'new_book' | 'ai_creator' | 'tools' | 'voices' | 'plans'>('library');
+  const [activeTab, setActiveTab] = useState<'library' | 'new_book' | 'ai_creator' | 'tools' | 'voices' | 'plans' | 'admin'>('library');
   // "Text to speech" and "PDF" open the same converter in a different mode
   const [convertMode, setConvertMode] = useState<'pdf' | 'text'>('pdf');
   // Tools that work on one of the user's books ask which book first
@@ -354,6 +356,11 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           <span className="ms-auto text-[11px] px-1.5 py-0.5 rounded-md bg-accent/15 text-accent font-semibold">مجاناً</span>
         </a>
       )}
+      {isAdmin && (
+        <button type="button" aria-current={activeTab === 'admin'} onClick={() => { setActiveTab('admin'); setShowMobileDrawer(false); }} className={navItem(activeTab === 'admin')}>
+          <ShieldCheck className="w-[18px] h-[18px]" /> {tr('لوحة الأدمن', 'Admin')}
+        </button>
+      )}
       <button type="button" onClick={() => { setShowSettingsModal(true); setShowMobileDrawer(false); }} className={navItem(false)}>
         <Settings className="w-[18px] h-[18px]" /> {tr(tr("الإعدادات", "Settings"), 'Settings')}
       </button>
@@ -573,6 +580,12 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                 </section>
               )}
             </div>
+          )}
+
+          {activeTab === 'admin' && isAdmin && (
+            <Suspense fallback={<div className="py-24 text-center text-slate-400">…</div>}>
+              <AdminPanel />
+            </Suspense>
           )}
 
           {activeTab === 'tools' && <ToolsPanel isSubscriber={isSubscriber} onOpen={openTool} />}
