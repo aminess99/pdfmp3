@@ -1,0 +1,61 @@
+{
+  "atomic-habits": [
+    {
+      "file": "01.jpg",
+      "label": "openlibrary-Atomic Habits",
+      "url": "https://covers.openlibrary.org/b/id/12539702-L.jpg"
+    },
+    {
+      "file": "02.jpg",
+      "label": "openlibrary-Atomic Habits, I Will Teach You To Be Ri",
+      "url": "https://covers.openlibrary.org/b/id/15105773-L.jpg"
+    }
+  ],
+  "my-father-whom-i-hate": [],
+  "48-laws-of-power": [
+    {
+      "file": "01.jpg",
+      "label": "openlibrary-The 48 Laws of Power",
+      "url": "https://covers.openlibrary.org/b/id/6424160-L.jpg"
+    }
+  ],
+  "subtle-art": [
+    {
+      "file": "01.jpg",
+      "label": "openlibrary-The Subtle Art of Not Giving a F*ck",
+      "url": "https://covers.openlibrary.org/b/id/8231990-L.jpg"
+    },
+    {
+      "file": "02.jpg",
+      "label": "openlibrary-The Subtle Art of Not Giving A F*ck [Har",
+      "url": "https://covers.openlibrary.org/b/id/13181701-L.jpg"
+    },
+    {
+      "file": "03.jpg",
+      "label": "openlibrary-Everything Is Fcked [Hardcover], The Sub",
+      "url": "https://covers.openlibrary.org/b/id/12376957-L.jpg"
+    }
+  ],
+  "rich-dad-poor-dad": [
+    {
+      "file": "01.jpg",
+      "label": "openlibrary-Rich Dad, Poor Dad",
+      "url": "https://covers.openlibrary.org/b/id/8315603-L.jpg"
+    },
+    {
+      "file": "02.jpg",
+      "label": "openlibrary-Rich Dad, Poor Dad for Teens",
+      "url": "https://covers.openlibrary.org/b/id/1174758-L.jpg"
+    },
+    {
+      "file": "03.jpg",
+      "label": "openlibrary-Rich Dad, Poor Dad 2",
+      "url": "https://covers.openlibrary.org/b/id/496856-L.jpg"
+    },
+    {
+      "file": "04.jpg",
+      "label": "openlibrary-Wisdom from Rich Dad, Poor Dad for Teens",
+      "url": "https://covers.openlibrary.org/b/id/10224170-L.jpg"
+    }
+  ]
+}
