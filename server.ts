@@ -1138,68 +1138,7 @@ app.post("/api/tts/speak", async (req, res) => {
       }
     }
 
-    // 4. QUATERNARY RELIABLE FALLBACK: Free High-Quality Google Arabic Audio Synthesizer
-    try {
-      // Split into safe sub-chunks if text is long, concatenate audio buffers
-      const maxSubLength = 200;
-      const subTexts: string[] = [];
-      if (trimmedText.length <= maxSubLength) {
-        subTexts.push(trimmedText);
-      } else {
-        const sentences = trimmedText.split(/(?<=[.!?؟\n])\s+/);
-        let cur = "";
-        for (const s of sentences) {
-          if (!cur) cur = s;
-          else if ((cur + " " + s).length <= maxSubLength) cur += " " + s;
-          else {
-            subTexts.push(cur);
-            cur = s;
-          }
-        }
-        if (cur) subTexts.push(cur);
-      }
-
-      const audioParts: Buffer[] = [];
-      for (const part of subTexts.slice(0, 4)) {
-        const encodedText = encodeURIComponent(part.trim());
-        const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=ar&client=tw-ob&ttsspeed=${speed || 1.0}`;
-        const gRes = await fetch(googleTtsUrl, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://translate.google.com/",
-          },
-        });
-        if (gRes.ok) {
-          const ab = await gRes.arrayBuffer();
-          audioParts.push(Buffer.from(ab));
-        }
-      }
-
-      if (audioParts.length > 0) {
-        const buffer = Buffer.concat(audioParts);
-        if (buffer.length > 500) {
-          const engine = "google-arabic-neural-tts";
-          try {
-            fs.writeFileSync(diskPath, buffer);
-          } catch (e) {}
-
-          if (serverTtsCache.size > 250) {
-            const firstKey = serverTtsCache.keys().next().value;
-            if (firstKey) serverTtsCache.delete(firstKey);
-          }
-          serverTtsCache.set(cacheKey, { buffer, contentType: "audio/mpeg", engine });
-
-          res.setHeader("Content-Type", "audio/mpeg");
-          res.setHeader("Content-Length", buffer.length);
-          res.setHeader("X-Voice-Engine", engine);
-          res.setHeader("X-TTS-Cache", "GENERATED-AND-SAVED");
-          return res.send(buffer);
-        }
-      }
-    } catch (gErr) {
-      console.warn("Google TTS fallback note:", gErr);
-    }
-
+    // No robotic fallback (e.g. Google Translate TTS): if the AI voice fails, the client shows an error
     return res.status(503).json({ error: "لا يمكن توليد الصوت بالذكاء الاصطناعي حالياً." });
   } catch (error: any) {
     console.error("Speak Exception:", error);
@@ -1350,32 +1289,6 @@ app.post("/api/tts/generate-audio", async (req, res) => {
         res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.mp3"`);
         return res.send(buffer);
       }
-    }
-
-    // 4. Free Google Arabic Audio Synthesizer fallback for instant download
-    try {
-      const encodedText = encodeURIComponent(trimmedText.slice(0, 300));
-      const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=ar&client=tw-ob&ttsspeed=${speed || 1.0}`;
-      const gRes = await fetch(googleTtsUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Referer": "https://translate.google.com/",
-        },
-      });
-
-      if (gRes.ok) {
-        const arrayBuf = await gRes.arrayBuffer();
-        const buffer = Buffer.from(arrayBuf);
-        if (buffer.length > 500) {
-          const safeTitle = encodeURIComponent((title || "audiobook").replace(/[\/\\?%*:|"<>]/g, "_"));
-          res.setHeader("Content-Type", "audio/mpeg");
-          res.setHeader("Content-Length", buffer.length);
-          res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.mp3"`);
-          return res.send(buffer);
-        }
-      }
-    } catch (gErr) {
-      console.warn("Google TTS download fallback note:", gErr);
     }
 
     return res.status(503).json({ error: "تعذر توليد ملف التحميل الصوتي." });
