@@ -38,10 +38,24 @@ jobs:
 
       - run: npm ci
 
+      # Paragraphs already narrated by an earlier (failed) run
+      - uses: actions/cache/restore@v4
+        with:
+          path: .summary-cache
+          key: summary-pieces-${{ github.run_id }}
+          restore-keys: summary-pieces-
+
       - name: Generate audio
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: npx tsx scripts/generate-summary-audio.ts ${{ inputs.force && '--force' || '' }}
+
+      # Saved even when generation failed, so the next run resumes where this one stopped
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .summary-cache
+          key: summary-pieces-${{ github.run_id }}
 
       - name: Commit audio
         if: always()

@@ -20,7 +20,11 @@ const MODEL = process.env.TTS_MODEL || 'google/gemini-3.8-flash-lite-tts';
 const OUT_DIR = path.join(process.cwd(), 'public', 'summaries');
 const SAMPLE_RATE = 24000;
 const BYTES_PER_SECOND = SAMPLE_RATE * 2;
-const PARALLEL = 3;
+// One request at a time: a low OpenRouter balance refuses parallel requests (402 in-flight budget)
+const PARALLEL = 1;
+// Finished paragraphs are kept here (restored between workflow runs by actions/cache),
+// so a run that fails halfway never pays for the same paragraph twice
+const PIECE_CACHE = path.join(process.cwd(), '.summary-cache');
 
 const args = process.argv.slice(2);
 const force = args.includes('--force');
@@ -85,9 +89,9 @@ async function synthesize(text: string, voiceName: string, instructions: string,
       if (pcm.length < BYTES_PER_SECOND) throw new Error(`audio too short (${pcm.length} bytes)`);
       return trimSilence(pcm);
     } catch (err) {
-      if (attempt >= 4) throw err;
-      console.warn(`  retry (attempt ${attempt}): ${(err as Error).message}`);
-      await new Promise((r) => setTimeout(r, 5000 * attempt));
+      if (attempt >= 6) throw err;
+      console.warn(`  retry (attempt ${attempt}): ${(err as Error).message.slice(0, 160)}`);
+      await new Promise((r) => setTimeout(r, 10_000 * attempt));
     }
   }
 }
@@ -127,7 +131,14 @@ async function generate(summary: BookSummary, apiKey: string): Promise<void> {
     Array.from({ length: PARALLEL }, async () => {
       while (next < pieces.length) {
         const i = next++;
-        audio[i] = await synthesize(pieces[i].text, voice.geminiVoiceName!, instructions, apiKey);
+        const key = crypto.createHash('sha256').update(JSON.stringify([MODEL, voice.geminiVoiceName, instructions, pieces[i].text])).digest('hex').slice(0, 24);
+        const cached = path.join(PIECE_CACHE, `${key}.pcm`);
+        if (fs.existsSync(cached)) {
+          audio[i] = fs.readFileSync(cached);
+        } else {
+          audio[i] = await synthesize(pieces[i].text, voice.geminiVoiceName!, instructions, apiKey);
+          fs.writeFileSync(cached, audio[i]);
+        }
         console.log(`  ${i + 1}/${pieces.length} ${(audio[i].length / BYTES_PER_SECOND).toFixed(1)}s`);
       }
     })
@@ -178,6 +189,7 @@ async function main() {
     process.exit(1);
   }
   fs.mkdirSync(OUT_DIR, { recursive: true });
+  fs.mkdirSync(PIECE_CACHE, { recursive: true });
 
   let failed = 0;
   for (const summary of BOOK_SUMMARIES) {
