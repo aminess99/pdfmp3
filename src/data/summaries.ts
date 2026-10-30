@@ -145,6 +145,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'العادات التي تبني شخصية فعالة من الداخل إلى الخارج: من المبادرة وتحديد الوجهة وإدارة الوقت، إلى التعاون والاستماع وتجديد النفس.',
     publishedAt: '2026-10-30',
     textId: 'seven-habits',
+    hasCover: true,
   },
   {
     slug: 'فاتتني-صلاة',
@@ -161,6 +162,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'رحلة مع الصلاة خطوة خطوة، من الأذان إلى التسليم، لتكتشف معنى ما تقوله وتفعله، وتجد فيها راحة لا عبئاً.',
     publishedAt: '2026-10-30',
     textId: 'missed-prayer',
+    hasCover: true,
   },
   {
     slug: 'الأمير-مكيافيلي',
@@ -177,6 +179,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'أشهر كتاب في الفكر السياسي: كيف تُكتسب السلطة وكيف تضيع، كما رآها مكيافيلي في إيطاليا القرن السادس عشر، مع قراءة نقدية.',
     publishedAt: '2026-10-30',
     textId: 'the-prince',
+    hasCover: true,
   },
   {
     slug: 'الذكاء-العاطفي',
@@ -193,6 +196,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'لماذا لا يكفي الذكاء وحده للنجاح؟ القدرات الخمس التي تساعدك على فهم مشاعرك وإدارتها وفهم الآخرين، وكيف تنميها.',
     publishedAt: '2026-10-30',
     textId: 'emotional-intelligence',
+    hasCover: true,
   },
   {
     slug: 'من-جيد-إلى-عظيم',
@@ -209,6 +213,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'كيف تتحول شركة عادية إلى شركة عظيمة؟ ما وجده بحث استمر سنوات عن الشركات التي حققت هذا التحول، وما يميزها عن غيرها.',
     publishedAt: '2026-10-30',
     textId: 'good-to-great',
+    hasCover: true,
   },
 ];
 
