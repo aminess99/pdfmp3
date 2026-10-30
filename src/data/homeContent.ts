@@ -2,6 +2,7 @@
 // so what search engines read in the raw HTML matches what visitors see.
 import { FAQS } from './sampleBooks';
 import { LANG, Lang } from '../lib/i18n';
+import { VOICE_COUNT, DIALECT_COUNT } from './voices';
 
 interface HomeContent {
   h1: string;
@@ -15,7 +16,7 @@ interface HomeContent {
 export const HOME_CONTENT: Record<Lang, HomeContent> = {
   ar: {
     h1: 'حوّل أي نص أو كتاب إلى صوت طبيعي',
-    subtitle: '30 صوتاً · 14 لهجة عربية · جرّب مجاناً',
+    subtitle: `${VOICE_COUNT} صوتاً · ${DIALECT_COUNT} لهجة عربية · جرّب مجاناً`,
     steps: [
       { title: 'ارفع الكتاب أو الصق النص', text: 'PDF أو ePub أو أي نص عربي.' },
       { title: 'اختر الصوت واللهجة', text: 'اسمع العينة قبل أن تقرر.' },
@@ -35,9 +36,9 @@ export const HOME_CONTENT: Record<Lang, HomeContent> = {
         ],
       },
       {
-        heading: '30 صوتاً و14 لهجة عربية',
+        heading: `${VOICE_COUNT} صوتاً و${DIALECT_COUNT} لهجة عربية`,
         paragraphs: [
-          'لكل لهجة قارئ وقارئة بصوت مختلف: الفصحى، والسعودية، والمصرية، والمغربية، والإماراتية، والشامية، والجزائرية، والتونسية، والعراقية، والأردنية، والعمانية، والكويتية، والقطرية، والسودانية، إضافة إلى صوتين متخصصين في الأدب العربي والوثائقيات.',
+          'لكل لهجة أربعة أصوات مختلفة، قارئان وقارئتان: الفصحى، والسعودية، والحجازية، والإماراتية، والكويتية، والقطرية، والبحرينية، والعمانية، والسورية، واللبنانية، والفلسطينية، والأردنية، والعراقية، واليمنية، والمصرية، والسودانية، والمغربية (الدارجة)، والجزائرية، والتونسية، والليبية، والحسانية الموريتانية، إضافة إلى صوتين متخصصين في الأدب العربي والوثائقيات.',
           'يمكنك سماع عينة قصيرة لكل صوت قبل التحويل، واختيار الصوت الأقرب لنوع الكتاب: نبرة رصينة للكتب الفكرية والتاريخية، أو نبرة دافئة للروايات وقصص الأطفال، أو إلقاء حيوي للمحتوى التسويقي.',
         ],
       },
@@ -61,7 +62,7 @@ export const HOME_CONTENT: Record<Lang, HomeContent> = {
   },
   en: {
     h1: 'Turn Arabic text and books into natural speech',
-    subtitle: '30 voices · 14 Arabic dialects · Try it free',
+    subtitle: `${VOICE_COUNT} voices · ${DIALECT_COUNT} Arabic dialects · Try it free`,
     steps: [
       { title: 'Upload a book or paste text', text: 'PDF, ePub or any Arabic text.' },
       { title: 'Pick a voice and dialect', text: 'Hear a sample before you decide.' },
@@ -81,9 +82,9 @@ export const HOME_CONTENT: Record<Lang, HomeContent> = {
         ],
       },
       {
-        heading: '30 voices in 14 Arabic dialects',
+        heading: `${VOICE_COUNT} voices in ${DIALECT_COUNT} Arabic dialects`,
         paragraphs: [
-          'Each dialect has a male and a female narrator: Modern Standard Arabic, Saudi, Egyptian, Moroccan Darija, Emirati, Levantine, Algerian, Tunisian, Iraqi, Jordanian, Omani, Kuwaiti, Qatari and Sudanese, plus two voices specialised in Arabic literature and documentaries.',
+          'Each dialect has four different voices, two male and two female: Modern Standard Arabic, Saudi, Hijazi, Emirati, Kuwaiti, Qatari, Bahraini, Omani, Syrian, Lebanese, Palestinian, Jordanian, Iraqi, Yemeni, Egyptian, Sudanese, Moroccan Darija, Algerian, Tunisian, Libyan and Hassaniya (Mauritania), plus two voices specialised in Arabic literature and documentaries.',
           'Play a short sample of any voice before converting, and choose the one that fits the book: a measured tone for history and ideas, a warm one for novels and children’s stories, or a lively delivery for marketing content.',
         ],
       },
@@ -110,7 +111,7 @@ export const HOME_CONTENT: Record<Lang, HomeContent> = {
       },
       {
         question: 'Can I get Saudi, Egyptian or Moroccan Arabic, not just standard Arabic?',
-        answer: 'Yes. Besides Modern Standard Arabic there are 13 dialects: Saudi, Egyptian, Moroccan (Darija), Emirati, Levantine, Algerian, Tunisian, Iraqi, Jordanian, Omani, Kuwaiti, Qatari and Sudanese, each with a male and a female narrator.',
+        answer: `Yes. Besides Modern Standard Arabic there are ${DIALECT_COUNT - 1} dialects: Saudi, Hijazi, Emirati, Kuwaiti, Qatari, Bahraini, Omani, Syrian, Lebanese, Palestinian, Jordanian, Iraqi, Yemeni, Egyptian, Sudanese, Moroccan Darija, Algerian, Tunisian, Libyan and Hassaniya (Mauritania), each with four voices.`,
       },
       {
         question: 'Does it read English text too?',
@@ -146,7 +147,7 @@ export const HOME_SEO: Record<Lang, { title: string; description: string; keywor
   ar: {
     title: 'تحويل النص وكتب PDF إلى صوت بالذكاء الاصطناعي | Hakawati AI',
     description:
-      'تحويل النص والكتابة وملفات PDF إلى صوت بالذكاء الاصطناعي. أنشئ كتباً صوتية مسموعة بـ30 صوتاً طبيعياً و14 لهجة عربية (سعودي، مصري، مغربي...) وجرّب مجاناً.',
+      `تحويل النص والكتابة وملفات PDF إلى صوت بالذكاء الاصطناعي. أنشئ كتباً صوتية مسموعة بـ${VOICE_COUNT} صوتاً طبيعياً و${DIALECT_COUNT} لهجة عربية (سعودي، مصري، مغربي، لبناني...) وجرّب مجاناً.`,
     keywords:
       'تحويل النص الى صوت, تحويل الكتابة الى صوت, تحويل النص الى صوت بالذكاء الاصطناعي, تحويل النص الى صوت مجانا, تحويل pdf الى صوت, كتب صوتية, كتب صوتية مجانية, ملخصات كتب صوتية, تحويل النص الى صوت سعودي, تحويل النص الى صوت عربي, قارئ كتب صوتية',
     ogLocale: 'ar_AR',
@@ -154,7 +155,7 @@ export const HOME_SEO: Record<Lang, { title: string; description: string; keywor
   en: {
     title: 'Arabic Text to Speech & PDF to Audiobook AI | Hakawati AI',
     description:
-      'Turn Arabic text, PDFs and e-books into natural speech with AI. 30 voices in 14 Arabic dialects, including Saudi, Egyptian, Moroccan and MSA. Listen online or download, free to try.',
+      `Turn Arabic text, PDFs and e-books into natural speech with AI. ${VOICE_COUNT} voices in ${DIALECT_COUNT} Arabic dialects, including Saudi, Egyptian, Moroccan, Lebanese and MSA. Listen online or download, free to try.`,
     keywords:
       'arabic text to speech, arabic tts, arabic pdf to audio, arabic audiobook, arabic voice generator, egyptian arabic text to speech, saudi arabic text to speech, moroccan darija text to speech',
     ogLocale: 'en_US',

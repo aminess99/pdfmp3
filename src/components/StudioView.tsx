@@ -35,8 +35,9 @@ import { toast } from '../lib/toast';
 import { createShare, shareUrl } from '../lib/shares';
 import { ChatPdfModal } from './ChatPdfModal';
 import { chaptersAr, minutesAr } from '../lib/arabicPlural';
-import { voiceLabel, voiceInitial, genderLabel } from '../lib/voiceLabel';
+import { voiceLabel, voiceInitial, genderLabel, dialectLabel } from '../lib/voiceLabel';
 import { tr, DIR } from '../lib/i18n';
+import { VoiceOptionGroups, groupVoicesByDialect } from './VoiceOptions';
 
 interface StudioViewProps {
   job: ConversionJob;
@@ -1039,7 +1040,12 @@ export const StudioView: React.FC<StudioViewProps> = ({
         {showVoicePicker && (
           <div className="absolute bottom-full mb-2 end-3 sm:end-40 z-30 w-[300px] max-h-[60vh] overflow-y-auto bg-card border border-line rounded-[14px] p-2 shadow-2xl shadow-black/50">
             <div className="text-[13px] text-slate-400 px-2.5 py-1.5">{tr("غيّر الصوت دون إعادة التحويل", "Change the voice without converting again")}</div>
-            {voicesPool.map((v) => (
+            {groupVoicesByDialect(voicesPool).map(({ dialect, voices: list }) => (
+              <div key={dialect.id} role="group" aria-label={dialectLabel(dialect)}>
+                <div className="sticky top-0 bg-card text-[12px] font-semibold text-slate-400 px-2.5 pt-2.5 pb-1">
+                  {dialect.flag} {dialectLabel(dialect)}
+                </div>
+                {list.map((v) => (
               <button
                 key={v.id}
                 type="button"
@@ -1058,6 +1064,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 </span>
                 <span className="text-[13px] text-slate-400">{genderLabel(v)}</span>
               </button>
+                ))}
+              </div>
             ))}
           </div>
         )}
@@ -1182,9 +1190,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 aria-label={tr("الصوت", "Voice")}
                 className="absolute inset-0 opacity-0 cursor-pointer"
               >
-                {voicesPool.map((v) => (
-                  <option key={v.id} value={v.id}>{voiceLabel(v)}</option>
-                ))}
+                <VoiceOptionGroups voices={voicesPool} />
               </select>
             </label>
             <button type="button" onClick={cycleSpeed} aria-label={tr("سرعة التشغيل", "Playback speed")} className="min-h-14 rounded-xl bg-card border border-line flex flex-col items-center justify-center text-[12px] text-slate-400 cursor-pointer">

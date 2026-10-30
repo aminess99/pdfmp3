@@ -7,6 +7,7 @@ import { QuickResult } from './QuickResult';
 import { NotFound } from './NotFound';
 import { voiceLabel } from '../lib/voiceLabel';
 import { tr, DIR, HOME_PATH } from '../lib/i18n';
+import { VOICE_COUNT, DIALECT_COUNT } from '../data/voices';
 
 interface SharePageProps {
   shareId: string;
@@ -98,7 +99,7 @@ export const SharePage: React.FC<SharePageProps> = ({ shareId }) => {
             <Headphones className="w-6 h-6 text-accent shrink-0 mt-0.5" />
             <span className="flex flex-col gap-1">
               <strong className="text-white text-lg">{tr("حوّل كتبك أنت أيضاً إلى صوت", "Turn your own books into audio")}</strong>
-              <span className="text-slate-400 text-sm">{tr("30 صوتاً بـ14 لهجة عربية، وجرّب مجاناً.", "30 voices in 14 Arabic dialects. Try it free.")}</span>
+              <span className="text-slate-400 text-sm">{tr(`${VOICE_COUNT} صوتاً بـ${DIALECT_COUNT} لهجة عربية، وجرّب مجاناً.`, `${VOICE_COUNT} voices in ${DIALECT_COUNT} Arabic dialects. Try it free.`)}</span>
             </span>
           </span>
           <a href={HOME_PATH} className="min-h-12 px-6 rounded-xl bg-brand hover:bg-indigo-500 text-white font-bold flex items-center justify-center shrink-0">

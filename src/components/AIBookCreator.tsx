@@ -4,8 +4,8 @@ import { GeneratedBookStructure, createProfessionalArabicPdf } from '../lib/book
 import { generateCrispBookCoverPng } from '../lib/bookCoverCanvas';
 import { ConversionJob, Voice } from '../types';
 import { chaptersAr, pagesAr } from '../lib/arabicPlural';
-import { voiceLabel } from '../lib/voiceLabel';
 import { tr, DIR } from '../lib/i18n';
+import { VoiceOptionGroups } from './VoiceOptions';
 
 interface AIBookCreatorProps {
   onStartAudioJob: (job: ConversionJob) => void;
@@ -585,9 +585,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
                 }}
                 className={`${fieldClass} cursor-pointer`}
               >
-                {availableVoices.map((v) => (
-                  <option key={v.id} value={v.id}>{voiceLabel(v)}</option>
-                ))}
+                <VoiceOptionGroups voices={availableVoices} />
               </select>
             </div>
 

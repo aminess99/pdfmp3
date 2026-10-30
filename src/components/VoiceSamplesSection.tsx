@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Play, Pause } from 'lucide-react';
-import { DIALECTS, VOICES } from '../data/voices';
+import { DIALECTS, DIALECT_REGIONS, VOICES } from '../data/voices';
 import { Voice } from '../types';
 import { audioEngine } from '../lib/audioEngine';
 import { voiceLabel, voiceRecommendedFor, dialectLabel, genderLabel } from '../lib/voiceLabel';
-import { tr, DIR } from '../lib/i18n';
+import { tr, DIR, isEn } from '../lib/i18n';
 
 interface VoiceSamplesSectionProps {
   availableVoicesList?: Voice[];
@@ -15,6 +15,7 @@ const COLLAPSED_COUNT = 8;
 
 export const VoiceSamplesSection: React.FC<VoiceSamplesSectionProps> = ({ availableVoicesList }) => {
   const voicesPool = availableVoicesList && availableVoicesList.length > 0 ? availableVoicesList : VOICES;
+  const [regionId, setRegionId] = useState<string>('all');
   const [dialectId, setDialectId] = useState<string>('all');
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -27,7 +28,16 @@ export const VoiceSamplesSection: React.FC<VoiceSamplesSectionProps> = ({ availa
     return () => window.removeEventListener('select_voice', onSelect);
   }, []);
 
-  const filtered = dialectId === 'all' ? voicesPool : voicesPool.filter((v) => v.dialectId === dialectId);
+  const regionOf = (dialect: string) => DIALECTS.find((d) => d.id === dialect)?.region;
+  const regionDialects = DIALECTS.filter((d) => d.region === regionId);
+  const filtered = voicesPool.filter(
+    (v) => (regionId === 'all' || regionOf(v.dialectId) === regionId) && (dialectId === 'all' || v.dialectId === dialectId)
+  );
+  const pickRegion = (id: string) => {
+    setRegionId(id);
+    setDialectId('all');
+    setShowAll(false);
+  };
   const shown = dialectId === 'all' && !showAll ? filtered.slice(0, COLLAPSED_COUNT) : filtered;
 
   const togglePlay = (voice: Voice) => {
@@ -51,6 +61,11 @@ export const VoiceSamplesSection: React.FC<VoiceSamplesSectionProps> = ({ availa
       active ? 'border-brand bg-brand-deep text-white' : 'border-line text-slate-300 hover:text-white'
     }`;
 
+  const subChipClass = (active: boolean) =>
+    `min-h-10 px-3.5 rounded-full text-sm border cursor-pointer transition-colors shrink-0 ${
+      active ? 'border-accent text-white bg-accent/10' : 'border-line text-slate-400 hover:text-white'
+    }`;
+
   return (
     <section id="voices" className="border-t border-raised py-[72px] px-4 sm:px-6" dir={DIR}>
       <div className="max-w-[1160px] mx-auto flex flex-col gap-7">
@@ -61,15 +76,29 @@ export const VoiceSamplesSection: React.FC<VoiceSamplesSectionProps> = ({ availa
           </p>
         </div>
 
-        <div role="tablist" aria-label={tr("تصفية حسب اللهجة", "Filter by dialect")} className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-          <button type="button" role="tab" aria-selected={dialectId === 'all'} onClick={() => setDialectId('all')} className={chipClass(dialectId === 'all')}>
-            {tr("الكل", "All")}
-          </button>
-          {DIALECTS.map((d) => (
-            <button key={d.id} type="button" role="tab" aria-selected={dialectId === d.id} onClick={() => setDialectId(d.id)} className={chipClass(dialectId === d.id)}>
-              {dialectLabel(d, true)}
+        <div className="flex flex-col gap-3">
+          <div role="tablist" aria-label={tr("تصفية حسب المنطقة", "Filter by region")} className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+            <button type="button" role="tab" aria-selected={regionId === 'all'} onClick={() => pickRegion('all')} className={chipClass(regionId === 'all')}>
+              {tr("الكل", "All")}
             </button>
-          ))}
+            {DIALECT_REGIONS.map((r) => (
+              <button key={r.id} type="button" role="tab" aria-selected={regionId === r.id} onClick={() => pickRegion(r.id)} className={chipClass(regionId === r.id)}>
+                {isEn ? r.nameEn : r.name}
+              </button>
+            ))}
+          </div>
+          {regionDialects.length > 1 && (
+            <div role="tablist" aria-label={tr("تصفية حسب اللهجة", "Filter by dialect")} className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+              <button type="button" role="tab" aria-selected={dialectId === 'all'} onClick={() => setDialectId('all')} className={subChipClass(dialectId === 'all')}>
+                {tr("كل اللهجات", "All dialects")}
+              </button>
+              {regionDialects.map((d) => (
+                <button key={d.id} type="button" role="tab" aria-selected={dialectId === d.id} onClick={() => setDialectId(d.id)} className={subChipClass(dialectId === d.id)}>
+                  {d.flag} {dialectLabel(d, true)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

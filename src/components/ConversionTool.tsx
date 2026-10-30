@@ -50,6 +50,7 @@ import { toast } from '../lib/toast';
 import { chaptersAr, minutesAr, pagesAr, wordsAr } from '../lib/arabicPlural';
 import { voiceLabel, voiceInitial, dialectLabel, genderLabel } from '../lib/voiceLabel';
 import { tr, DIR } from '../lib/i18n';
+import { VoiceOptionGroups } from './VoiceOptions';
 
 // "320 KB" under a megabyte, "2.4 MB" above it
 const formatFileSize = (bytes: number): string =>
@@ -772,11 +773,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                 }}
                 className="bg-transparent text-white font-semibold text-[15px] focus:outline-none cursor-pointer max-w-[220px]"
               >
-                {voicesPool.map((v) => (
-                  <option key={v.id} value={v.id} className="bg-card">
-                    {voiceLabel(v)}
-                  </option>
-                ))}
+                <VoiceOptionGroups voices={voicesPool} optionClassName="bg-card" />
               </select>
               <span className="text-[13px] text-slate-400">
                 {dialectLabel(selectedDialect)} · {genderLabel(selectedVoice)}

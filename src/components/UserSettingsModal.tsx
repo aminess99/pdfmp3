@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { X, Check } from 'lucide-react';
 import { VOICES } from '../data/voices';
-import { voiceLabel } from '../lib/voiceLabel';
 import { tr, DIR } from '../lib/i18n';
+import { VoiceOptionGroups } from './VoiceOptions';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
@@ -76,9 +76,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
             className="min-h-11 max-w-[200px] bg-ink border border-line rounded-[10px] px-3 text-[15px] text-white cursor-pointer"
           >
             <option value="">{tr("حسب اللهجة", "By dialect")}</option>
-            {VOICES.map((v) => (
-              <option key={v.id} value={v.id}>{voiceLabel(v)}</option>
-            ))}
+            <VoiceOptionGroups voices={VOICES} />
           </select>
         </div>
 

@@ -61,7 +61,7 @@ export default function App() {
     type: 'privacy',
   });
 
-  // All 30 authentic Arabic voices across 14 dialects
+  // All Arabic voices across every supported dialect
   const { allVoices } = useVoices();
 
   // Real Firebase Auth

@@ -1,6 +1,7 @@
 import React from 'react';
 import { LANDING_PAGES, landingPath } from '../data/landingPages';
 import { tr, DIR, HOME_PATH, OTHER_LANG_PATH, isEn } from '../lib/i18n';
+import { DIALECT_COUNT } from '../data/voices';
 
 interface FooterProps {
   onNavigate: (id: string) => void;
@@ -12,7 +13,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal }) => (
     <div className="max-w-[1160px] mx-auto flex flex-wrap gap-8 justify-between">
       <div className="flex flex-col gap-1.5 max-w-xs">
         <img src="/brand/logo.png" alt="Hakawati AI" width={151} height={32} className="h-8 w-auto self-start" />
-        <span className="text-slate-400 text-sm">{tr("حوّل النصوص والكتب العربية إلى صوت طبيعي بـ14 لهجة.", "Turn Arabic text and books into natural speech in 14 dialects.")}</span>
+        <span className="text-slate-400 text-sm">{tr(`حوّل النصوص والكتب العربية إلى صوت طبيعي بـ${DIALECT_COUNT} لهجة.`, `Turn Arabic text and books into natural speech in ${DIALECT_COUNT} dialects.`)}</span>
         <span className="text-slate-500 text-xs mt-2">© {new Date().getFullYear()} Hakawati AI</span>
       </div>
       <nav aria-label={tr("الأدوات", "Tools")} className="flex flex-col gap-1 text-sm">
