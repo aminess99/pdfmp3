@@ -1,5 +1,6 @@
-// Buying listening minutes with Dodo Payments (hosted checkout, so card details never
-// touch this site). Configuration, all on the server (Render → Environment):
+// Monthly listening-minute plans with Dodo Payments (hosted checkout, so card details never
+// touch this site). Every successful charge (the first one and each monthly renewal) adds the
+// plan's minutes. Configuration, all on the server (Render → Environment):
 //   DODO_PAYMENTS_API_KEY        API key (Dodo dashboard → Developer → API Keys)
 //   DODO_PAYMENTS_WEBHOOK_KEY    signing secret of the webhook pointing at /api/webhooks/dodo
 //   DODO_PAYMENTS_ENVIRONMENT    live_mode (default) or test_mode
@@ -56,10 +57,20 @@ export function verifyWebhook(rawBody: string, headers: Record<string, string>) 
   return api.webhooks.unwrap(rawBody, { headers });
 }
 
-// The plan a successful payment pays for, checked against the products actually bought
-export function paidPlan(payment: { metadata?: Record<string, string> | null; product_cart?: Array<{ product_id: string }> | null }): string | null {
-  const plan = payment.metadata?.plan;
-  if (!plan || !PLANS[plan]) return null;
+// The plan a payment pays for: the products actually bought decide; the checkout metadata
+// is used only when the payment lists no products (some renewals)
+export function planOfPayment(payment: { metadata?: Record<string, string> | null; product_cart?: Array<{ product_id: string }> | null }): string | null {
   const bought = (payment.product_cart || []).map((p) => p.product_id);
-  return bought.includes(productId(plan) || '') ? plan : null;
+  if (bought.length) {
+    return Object.keys(PLANS).find((plan) => productId(plan) && bought.includes(productId(plan)!)) || null;
+  }
+  const plan = payment.metadata?.plan;
+  return plan && PLANS[plan] ? plan : null;
+}
+
+// Dodo's customer portal, where subscribers update their card or cancel
+export async function billingPortalUrl(customerId: string, returnUrl: string): Promise<string> {
+  const api = dodo();
+  if (!api) throw new Error('payments not configured');
+  return (await api.customers.customerPortal.create(customerId, { return_url: returnUrl })).link;
 }

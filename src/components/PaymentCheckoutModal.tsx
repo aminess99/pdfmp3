@@ -72,10 +72,13 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({ isOp
             <h2 id="pay-title" className="font-display font-extrabold text-2xl text-white pe-10">{plan.name}</h2>
             <div className="rounded-[14px] bg-raised p-4 flex items-end justify-between gap-3">
               <span className="flex flex-col gap-1">
-                <span className="text-slate-300">{plan.minutes.toLocaleString('en-US')} {tr('دقيقة استماع', 'listening minutes')}</span>
-                <span className="text-xs text-slate-500">{tr('دفعة واحدة، بدون اشتراك، والدقائق لا تنتهي صلاحيتها', 'One payment, no subscription; minutes never expire')}</span>
+                <span className="text-slate-300">{plan.minutes.toLocaleString('en-US')} {tr('دقيقة استماع كل شهر', 'listening minutes a month')}</span>
+                <span className="text-xs text-slate-500">{tr('اشتراك شهري يتجدد تلقائياً، وتلغيه متى شئت من «مكتبتي». الدقائق غير المستخدمة تبقى في رصيدك.', 'Renews monthly; cancel anytime from your library. Unused minutes stay in your balance.')}</span>
               </span>
-              <span className="font-display font-extrabold text-3xl text-white" dir="ltr">${plan.priceUsd}</span>
+              <span className="flex flex-col items-end">
+                <span className="font-display font-extrabold text-3xl text-white" dir="ltr">${plan.priceUsd}</span>
+                <span className="text-xs text-slate-500">{tr('شهرياً', 'per month')}</span>
+              </span>
             </div>
             {state === 'error' && (
               <p role="alert" className="text-rose-300 text-sm">{tr('تعذّر بدء الدفع الآن، حاول بعد قليل.', 'Couldn’t start the payment right now. Please try again shortly.')}</p>
@@ -87,7 +90,7 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({ isOp
               className="min-h-12 rounded-xl bg-brand hover:bg-indigo-500 text-white font-bold cursor-pointer flex items-center justify-center gap-2 disabled:opacity-70"
             >
               {state === 'loading' && <Loader2 className="w-5 h-5 animate-spin" />}
-              {tr('ادفع الآن', 'Pay now')}
+              {tr('اشترك الآن', 'Subscribe now')}
             </button>
             <p className="flex items-center gap-2 text-xs text-slate-500">
               <ShieldCheck className="w-4 h-4 shrink-0" />

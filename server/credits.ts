@@ -147,3 +147,24 @@ export async function addPurchasedSeconds(
     return 'added';
   });
 }
+
+// Monthly plans: renewals are new payments on the same subscription, and may not carry the
+// checkout metadata, so the first payment records who owns the subscription.
+export async function findSubscription(subscriptionId: string): Promise<{ uid: string; plan: string } | null> {
+  const snap = await db().collection('subscriptions').doc(subscriptionId).get();
+  return snap.exists ? { uid: String(snap.get('uid')), plan: String(snap.get('plan')) } : null;
+}
+
+export async function recordSubscription(subscriptionId: string, data: { uid: string; plan: string; customerId?: string }): Promise<void> {
+  await db().collection('subscriptions').doc(subscriptionId).set({ ...data, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+}
+
+// The user's Dodo customer, for the billing portal (manage or cancel the subscription)
+export async function saveCustomerId(uid: string, customerId: string): Promise<void> {
+  await db().collection('customers').doc(uid).set({ dodoCustomerId: customerId, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+}
+
+export async function customerIdFor(uid: string): Promise<string | null> {
+  const snap = await db().collection('customers').doc(uid).get();
+  return snap.exists ? (snap.get('dodoCustomerId') as string) || null : null;
+}

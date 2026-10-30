@@ -8,7 +8,7 @@ interface PricingSectionProps {
 const PLANS = [
   { id: 'starter', name: tr("باقة القارئ", "Reader"), minutes: 333, priceUsd: 9.99, note: tr("لتجربة أول كتبك", "For your first books"), featured: false },
   { id: 'popular', name: tr("باقة الشغوف", "Book lover"), minutes: 666, priceUsd: 19.99, note: tr("5 إلى 7 كتب كاملة", "5 to 7 full books"), featured: true },
-  { id: 'master', name: tr("باقة النخبة", "Pro"), minutes: 1450, priceUsd: 29, note: tr("أقل سعر للدقيقة", "Lowest price per minute"), featured: false },
+  { id: 'master', name: tr("باقة النخبة", "Pro"), minutes: 1450, priceUsd: 29.99, note: tr("أقل سعر للدقيقة", "Lowest price per minute"), featured: false },
 ];
 
 export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) => (
@@ -16,7 +16,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) 
     <div className="max-w-[1160px] mx-auto flex flex-col gap-7">
       <div className="flex flex-col gap-2">
         <h2 className="font-display font-extrabold text-3xl sm:text-[34px] text-white">{tr("الأسعار", "Pricing")}</h2>
-        <p className="text-slate-400">{tr("ادفع مقابل الدقائق التي تستمع إليها، بدون اشتراك. الدقائق لا تنتهي صلاحيتها.", "Pay for the minutes you listen to, no subscription. Minutes never expire.")}</p>
+        <p className="text-slate-400">{tr("اشتراك شهري تلغيه متى شئت. تُضاف دقائق باقتك كل شهر، وما لم تستمع إليه يبقى في رصيدك.", "A monthly plan you can cancel anytime. Your plan’s minutes are added every month, and unused minutes stay in your balance.")}</p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
         <div className="p-7 rounded-[18px] bg-card border border-line flex flex-col gap-3.5">
@@ -36,9 +36,12 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) 
               {plan.name}
               {plan.featured && <span className="text-[13px] text-brand-soft">{tr("الأكثر اختياراً", "Most popular")}</span>}
             </span>
-            <span className="font-display text-[40px] font-extrabold text-white leading-none">${plan.priceUsd}</span>
+            <span className="flex items-baseline gap-1.5">
+              <span className="font-display text-[40px] font-extrabold text-white leading-none">${plan.priceUsd}</span>
+              <span className="text-slate-400 text-sm">{tr('/ شهرياً', '/ month')}</span>
+            </span>
             <span className="text-slate-400">
-              {plan.minutes.toLocaleString('en-US')} {tr('دقيقة', 'minutes')} · {plan.note}
+              {plan.minutes.toLocaleString('en-US')} {tr('دقيقة كل شهر', 'minutes a month')} · {plan.note}
             </span>
             <button
               type="button"

@@ -39,7 +39,7 @@ import { AIBookCreator } from './AIBookCreator';
 import { ChatPdfModal } from './ChatPdfModal';
 import { minutesAr } from '../lib/arabicPlural';
 import { listServerBooks, getServerBook, deleteServerBook, saveBookToServer, needsText } from '../lib/library';
-import { fetchCredits, CREDITS_CHANGED_EVENT } from '../lib/apiFetch';
+import { apiFetch, fetchCredits, CREDITS_CHANGED_EVENT } from '../lib/apiFetch';
 import { tr, DIR } from '../lib/i18n';
 import { voiceLabel } from '../lib/voiceLabel';
 
@@ -217,6 +217,29 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     .filter((b) => (filter === 'progress' ? progressOf(b) > 0 : filter === 'new' ? progressOf(b) === 0 : true));
   const continueBook = savedBooks.find((b) => progressOf(b) > 0);
   const COVER_HUES = ['#312e81', '#164e63', '#3b0764', '#1e3a8a', '#134e4a', '#4c1d95'];
+  // Dodo's customer portal: update the card or cancel the monthly plan
+  const [openingPortal, setOpeningPortal] = useState(false);
+  const openBillingPortal = async () => {
+    setOpeningPortal(true);
+    try {
+      const res = await apiFetch('/api/billing-portal', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      if (data.code === 'no_subscription') {
+        toast(tr("ليس لديك اشتراك بعد. اختر باقة لتبدأ.", "You don’t have a plan yet. Pick one to start."), 'info');
+        openCheckout();
+      } else {
+        toast(tr("تعذّر فتح إدارة الاشتراك الآن، حاول بعد قليل.", "Couldn’t open plan management right now. Please try again shortly."), 'error');
+      }
+    } catch {
+      toast(tr("تعذّر فتح إدارة الاشتراك الآن، حاول بعد قليل.", "Couldn’t open plan management right now. Please try again shortly."), 'error');
+    }
+    setOpeningPortal(false);
+  };
+
   const openCheckout = () =>
     onOpenCheckout?.({ id: 'popular', name: tr("باقة الشغوف", "Book lover"), priceUsd: 19.99, minutes: 666, unitRateUsd: 0.03 });
 
@@ -255,9 +278,14 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
             <span className="text-slate-400">{tr("رصيدك", "Your balance")}</span>
             <strong className="text-white">{balanceSeconds === null ? '—' : minutesAr(Math.floor(balanceSeconds / 60))}</strong>
           </span>
-          <button type="button" onClick={openCheckout} className="self-start text-sm text-brand-soft hover:text-indigo-200 cursor-pointer">
-            {tr("شحن الرصيد", "Top up")}
-          </button>
+          <span className="flex flex-wrap gap-x-4 gap-y-1">
+            <button type="button" onClick={openCheckout} className="text-sm text-brand-soft hover:text-indigo-200 cursor-pointer">
+              {tr("اشترك في باقة", "Get a plan")}
+            </button>
+            <button type="button" onClick={openBillingPortal} disabled={openingPortal} className="text-sm text-slate-400 hover:text-white cursor-pointer disabled:opacity-60">
+              {tr("إدارة الاشتراك", "Manage plan")}
+            </button>
+          </span>
         </div>
         <div className="flex items-center gap-2.5 px-2">
           <span className="w-9 h-9 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-bold shrink-0">

@@ -25,8 +25,12 @@ import {
   forgetCharge,
   userFromRequest,
   addPurchasedSeconds,
+  findSubscription,
+  recordSubscription,
+  saveCustomerId,
+  customerIdFor,
 } from "./server/credits";
-import { PLANS, paymentsEnabled, planAvailable, createCheckout, verifyWebhook, paidPlan } from "./server/payments";
+import { PLANS, paymentsEnabled, planAvailable, createCheckout, verifyWebhook, planOfPayment, billingPortalUrl } from "./server/payments";
 
 dotenv.config();
 
@@ -49,8 +53,21 @@ app.post("/api/webhooks/dodo", express.raw({ type: "*/*", limit: "1mb" }), async
   try {
     if (event.type === "payment.succeeded") {
       const payment = event.data;
-      const uid = payment.metadata?.uid;
-      const plan = paidPlan(payment);
+      let uid: string | undefined = payment.metadata?.uid;
+      let plan = planOfPayment(payment);
+      const customerId: string | undefined = payment.customer?.customer_id;
+      // Monthly renewals: find the owner recorded by the first payment of the subscription
+      const subscriptionId: string | undefined = payment.subscription_id || undefined;
+      if (subscriptionId) {
+        const sub = await findSubscription(subscriptionId);
+        if (sub) {
+          uid = uid || sub.uid;
+          plan = plan || sub.plan;
+        } else if (uid && plan) {
+          await recordSubscription(subscriptionId, { uid, plan, customerId });
+        }
+      }
+      if (uid && customerId) await saveCustomerId(uid, customerId);
       if (!uid || !plan) {
         console.error("[payments] paid but cannot credit (missing uid/plan):", payment.payment_id, payment.metadata);
         return res.json({ ok: true });
@@ -1221,6 +1238,21 @@ app.post("/api/checkout", async (req, res) => {
   } catch (err: any) {
     console.error("[payments] checkout failed:", err?.message || err);
     res.status(502).json({ error: "تعذّر بدء الدفع الآن، حاول بعد قليل." });
+  }
+});
+
+// Link to Dodo's customer portal to manage or cancel the monthly plan
+app.post("/api/billing-portal", async (req, res) => {
+  if (!paymentsEnabled() || !creditsEnabled()) return res.status(503).json({ code: "payments_unavailable" });
+  const user = await userFromRequest(req);
+  if (!user) return res.status(401).json({ code: "auth_required" });
+  try {
+    const customerId = await customerIdFor(user.uid);
+    if (!customerId) return res.status(404).json({ code: "no_subscription" });
+    res.json({ url: await billingPortalUrl(customerId, SITE_URL) });
+  } catch (err: any) {
+    console.error("[payments] portal failed:", err?.message || err);
+    res.status(502).json({ error: "تعذّر فتح إدارة الاشتراك الآن." });
   }
 });
 
