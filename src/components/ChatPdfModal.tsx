@@ -147,7 +147,7 @@ export const ChatPdfModal: React.FC<ChatPdfModalProps> = ({
       voice,
       job.selectedStyle || { id: 'normal', name: 'عادي', description: '', icon: '' },
       1.0,
-      () => setSpeakingMsgId(null),
+      undefined,
       () => setSpeakingMsgId(null)
     );
   };

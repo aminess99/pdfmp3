@@ -300,6 +300,11 @@ export const StudioView: React.FC<StudioViewProps> = ({
             setProgressPercent(100);
           }
         }
+      },
+      () => {
+        // The AI voice failed: stop here instead of skipping ahead through the text
+        if (activePlayIdRef.current !== playId) return;
+        setIsPlaying(false);
       }
     );
   };
