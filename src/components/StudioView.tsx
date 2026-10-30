@@ -38,7 +38,7 @@ import { chaptersAr, minutesAr } from '../lib/arabicPlural';
 import { voiceLabel, voiceInitial, genderLabel, dialectLabel } from '../lib/voiceLabel';
 import { tr, DIR } from '../lib/i18n';
 import { VoiceOptionGroups, groupVoicesByDialect } from './VoiceOptions';
-import { apiFetch } from '../lib/apiFetch';
+import { apiFetch, requireSubscription } from '../lib/apiFetch';
 
 interface StudioViewProps {
   job: ConversionJob;
@@ -438,6 +438,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
   // Download current active chapter
   const handleDownloadSingleChapter = async () => {
     setShowDownloadModal(false);
+    // Subscribers only, even when the audio is already in this browser
+    if (!(await requireSubscription(tr("تحميل الصوت كملف متاح للمشتركين. يمكنك الاستماع مجاناً من الموقع.", "Downloading audio files is for subscribers. You can keep listening on the site for free.")))) return;
     try {
       setIsGeneratingMp3(true);
       setDownloadProgressMsg(tr("جاري استخراج ودمج صوت الفصل الحالي...", "Preparing this chapter’s audio..."));
@@ -504,6 +506,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
   // Download entire audiobook (All chapters merged)
   const handleDownloadFullBook = async () => {
     setShowDownloadModal(false);
+    if (!(await requireSubscription(tr("تحميل الصوت كملف متاح للمشتركين. يمكنك الاستماع مجاناً من الموقع.", "Downloading audio files is for subscribers. You can keep listening on the site for free.")))) return;
     try {
       setIsGeneratingMp3(true);
       setDownloadProgressMsg(tr("جاري تجهيز وتوليد الكتاب الصوتي كاملاً...", "Preparing the full audiobook..."));

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Download, Maximize2, Pause, Play, X } from 'lucide-react';
 import { tr, DIR } from '../lib/i18n';
+import { requireSubscription } from '../lib/apiFetch';
 
 interface QuickResultProps {
   url: string;
@@ -53,7 +54,8 @@ export const QuickResult: React.FC<QuickResultProps> = ({ url, blob, voiceName, 
     setTime(audio.currentTime);
   };
 
-  const download = () => {
+  const download = async () => {
+    if (!(await requireSubscription(tr('تحميل الصوت كملف متاح للمشتركين. يمكنك الاستماع مجاناً من الموقع.', 'Downloading audio files is for subscribers. You can keep listening on the site for free.')))) return;
     const ext = blob?.type.includes('wav') ? 'wav' : 'mp3';
     const href = blob ? URL.createObjectURL(blob) : url;
     const a = document.createElement('a');

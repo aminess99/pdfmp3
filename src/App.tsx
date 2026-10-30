@@ -20,7 +20,7 @@ import { SummaryPage } from './components/SummaryPage';
 import { SummariesHub, SummariesShowcase } from './components/SummariesHub';
 import { findSummary, isSummariesHub } from './data/summaries';
 import { SHARE_PATH_RE } from './lib/shares';
-import { REQUIRE_AUTH_EVENT, OUT_OF_CREDITS_EVENT, CREDITS_CHANGED_EVENT, fetchCredits } from './lib/apiFetch';
+import { REQUIRE_AUTH_EVENT, OUT_OF_CREDITS_EVENT, SUBSCRIBE_EVENT, CREDITS_CHANGED_EVENT, fetchCredits } from './lib/apiFetch';
 import { toast } from './lib/toast';
 import { findLandingPage } from './data/landingPages';
 import { HOME_SECTIONS } from './data/homeContent';
@@ -143,7 +143,9 @@ export default function App() {
     const onOutOfCredits = () => handleSelectPlan('popular', 666, 19.99);
     window.addEventListener(REQUIRE_AUTH_EVENT, onRequireAuth);
     window.addEventListener(OUT_OF_CREDITS_EVENT, onOutOfCredits);
+    window.addEventListener(SUBSCRIBE_EVENT, onOutOfCredits);
     return () => {
+      window.removeEventListener(SUBSCRIBE_EVENT, onOutOfCredits);
       window.removeEventListener(REQUIRE_AUTH_EVENT, onRequireAuth);
       window.removeEventListener(OUT_OF_CREDITS_EVENT, onOutOfCredits);
     };

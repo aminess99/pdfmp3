@@ -4,16 +4,19 @@ import type { ConversionJob } from '../types';
 // The signed-in user's books on the server disk (server/library.ts). Every call returns
 // null/false instead of throwing, so callers can fall back to Firestore and localStorage.
 
-export async function saveBookToServer(book: ConversionJob): Promise<boolean> {
+// 'saved', 'limit' (the free library is full) or 'unavailable' (use the Firestore fallback)
+export async function saveBookToServer(book: ConversionJob): Promise<'saved' | 'limit' | 'unavailable'> {
   try {
     const res = await apiFetch(
       `/api/library/${encodeURIComponent(book.id)}`,
       { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ book }) },
       { silent: true }
     );
-    return res.ok;
+    if (res.ok) return 'saved';
+    if (res.status === 403) return 'limit';
+    return 'unavailable';
   } catch {
-    return false;
+    return 'unavailable';
   }
 }
 

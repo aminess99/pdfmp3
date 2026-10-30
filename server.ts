@@ -29,6 +29,10 @@ import {
   recordSubscription,
   saveCustomerId,
   customerIdFor,
+  isSubscriber,
+  subscriberUntil,
+  forgetSubscriber,
+  useDailyQuota,
 } from "./server/credits";
 import { PLANS, paymentsEnabled, planAvailable, createCheckout, verifyWebhook, planOfPayment, billingPortalUrl } from "./server/payments";
 
@@ -78,6 +82,7 @@ app.post("/api/webhooks/dodo", express.raw({ type: "*/*", limit: "1mb" }), async
         currency: payment.currency,
         email: payment.customer?.email || null,
       });
+      forgetSubscriber(uid);
       console.log(`[payments] ${payment.payment_id}: ${plan} for ${uid} -> ${result}`);
     }
     res.json({ ok: true });
@@ -414,6 +419,9 @@ app.post("/api/pdf/extract", async (req, res) => {
       }
     }
 
+    // Scanned books need the vision model, the costliest step: subscribers only
+    if (!(await requireSubscriber(req, res, "ocr"))) return;
+
     // 2. Multimodal AI Vision OCR with Retry and Fallback Models
     const prompt = `أنت خبير محترف في التعرف الضوئي على الحروف (OCR) ومحرر كتب صوتية متقدم.
 المهمة: اقرأ واستخرج بدقة متناهية كافة النصوص العربية المكتوبة داخل هذا المستند (سواء كانت نصوصاً رقمية مشفرة، أو صفحات مصورة وممسوحة ضوئياً Scanned Images، أو صوراً ورقية أو لقطات تحتوي على كتابة عربية).
@@ -610,6 +618,7 @@ app.post(["/api/book/transform-mode", "/api/ai/transform-book"], async (req, res
     if (!mode || mode === "full") {
       return res.json({ success: true, transformedText: text.trim(), mode: "full" });
     }
+    if (!(await useFreeDaily(req, res, "transform"))) return;
 
     const titleContext = bookTitle ? `عنوان الكتاب: "${bookTitle}"` : "";
 
@@ -1203,6 +1212,11 @@ app.put("/api/library/:id", async (req, res) => {
   const book = req.body?.book;
   if (!book || book.id !== req.params.id) return res.status(400).json({ error: "bad book" });
   try {
+    // Free accounts keep a few books on the server; subscribers keep as many as they like
+    const isNew = !listBooks(uid).some((b) => b.id === book.id);
+    if (isNew && listBooks(uid).length >= FREE_LIBRARY_BOOKS && !(await isSubscriber(uid))) {
+      return res.status(403).json({ code: "subscription_required", feature: "library", error: SUBSCRIBE_MESSAGES.library });
+    }
     const result = saveBook(uid, book);
     if (!result.ok) return res.status(result.status).json({ code: result.error });
     res.json({ ok: true });
@@ -1256,12 +1270,59 @@ app.post("/api/billing-portal", async (req, res) => {
   }
 });
 
+// ---- Subscriber features. Free accounts keep the summaries, the voice samples and their
+// minutes; the costly AI tools and the conveniences below are what a plan adds.
+const FREE_LIBRARY_BOOKS = 3;
+const FREE_DAILY = { chat: 5, transform: 2 } as const;
+
+const SUBSCRIBE_MESSAGES = {
+  ocr: "المسح العميق للكتب المصورة متاح للمشتركين. اشترك في باقة لتحويل الكتب الممسوحة ضوئياً.",
+  book: "مؤلف الكتب بالذكاء الاصطناعي متاح للمشتركين.",
+  download: "تحميل الصوت كملف متاح للمشتركين. يمكنك الاستماع مجاناً من الموقع.",
+  library: `المكتبة المجانية تتسع لـ${FREE_LIBRARY_BOOKS} كتب. اشترك لتحفظ عدداً غير محدود.`,
+  chat: `استخدمت أسئلتك المجانية اليوم (${FREE_DAILY.chat}). اشترك لتسأل بلا حد، أو عد غداً.`,
+  transform: `استخدمت ملخصاتك المجانية اليوم (${FREE_DAILY.transform}). اشترك للملخصات بلا حد، أو عد غداً.`,
+};
+
+// true = go ahead; otherwise the response (401 or 403) has been sent
+async function requireSubscriber(req: express.Request, res: express.Response, feature: keyof typeof SUBSCRIBE_MESSAGES): Promise<boolean> {
+  if (!creditsEnabled()) return true;
+  const uid = await uidFromRequest(req);
+  if (!uid) {
+    res.status(401).json({ code: "auth_required" });
+    return false;
+  }
+  if (await isSubscriber(uid)) return true;
+  res.status(403).json({ code: "subscription_required", feature, error: SUBSCRIBE_MESSAGES[feature] });
+  return false;
+}
+
+// Subscribers: unlimited. Free accounts: a few uses a day (429 when used up)
+async function useFreeDaily(req: express.Request, res: express.Response, feature: keyof typeof FREE_DAILY): Promise<boolean> {
+  if (!creditsEnabled()) return true;
+  const uid = await uidFromRequest(req);
+  if (!uid) {
+    res.status(401).json({ code: "auth_required" });
+    return false;
+  }
+  if (await isSubscriber(uid)) return true;
+  try {
+    if ((await useDailyQuota(uid, feature, FREE_DAILY[feature])).ok) return true;
+  } catch (err: any) {
+    console.error("[quota]", err?.message || err);
+    return true; // never block on a quota storage hiccup
+  }
+  res.status(429).json({ code: "daily_limit", feature, error: SUBSCRIBE_MESSAGES[feature] });
+  return false;
+}
+
 app.get("/api/credits", async (req, res) => {
   if (!creditsEnabled()) return res.json({ enabled: false });
   const uid = await uidFromRequest(req);
   if (!uid) return res.status(401).json({ code: "auth_required" });
   try {
-    res.json({ enabled: true, secondsRemaining: await getBalance(uid) });
+    const until = await subscriberUntil(uid);
+    res.json({ enabled: true, secondsRemaining: await getBalance(uid), subscriber: until > Date.now(), subscriberUntil: until || null });
   } catch (err: any) {
     console.error("[credits] balance error", err?.message || err);
     res.status(500).json({ error: "تعذّر قراءة الرصيد." });
@@ -1425,6 +1486,8 @@ app.post("/api/tts/speak", async (req, res) => {
 
 // Full audiobook chapter/text MP3 download synthesis endpoint
 app.post("/api/tts/generate-audio", async (req, res) => {
+  // Downloading the audio as a file is a subscriber feature; listening on the site is not
+  if (!(await requireSubscriber(req, res, "download"))) return;
   let refundCharge: () => Promise<void> = async () => {};
   try {
     const { text, speed = 1.0, title, voice: rawVoice, voiceId } = req.body;
@@ -1623,6 +1686,7 @@ app.post("/api/tts/fish-audio", async (req, res) => {
 
 // AI Professional Book Generator Engine from Scratch (Gemini 3.8 Flash)
 app.post("/api/ai/generate-book", async (req, res) => {
+  if (!(await requireSubscriber(req, res, "book"))) return;
   try {
     const { 
       topic, 
@@ -1763,6 +1827,7 @@ Task: Write and compose a complete, highly engaging, beautifully structured book
 
 // AI Realistic Book Cover Engine (Pollinations 8K Flux & OpenRouter Image Models)
 app.post("/api/ai/generate-cover", async (req, res) => {
+  if (!(await requireSubscriber(req, res, "book"))) return;
   try {
     const { 
       title, 
@@ -1946,6 +2011,7 @@ app.post("/api/ai/generate-cover", async (req, res) => {
 app.post("/api/ai/chat-pdf", async (req, res) => {
   try {
     const { question, bookText, bookTitle, history = [] } = req.body;
+    if (question && typeof question === "string" && question.trim() && !(await useFreeDaily(req, res, "chat"))) return;
     if (!question || typeof question !== "string" || !question.trim()) {
       return res.status(400).json({ error: "السؤال مطلوب." });
     }

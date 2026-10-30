@@ -6,7 +6,7 @@
 import type { Request } from 'express';
 import { initializeApp, cert, App } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, Firestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, Firestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import firebaseConfig from '../src/lib/firebaseConfig';
 import { SAMPLE_BOOKS } from '../src/data/sampleBooks';
 import { VOICES } from '../src/data/voices';
@@ -120,6 +120,8 @@ export const forgetCharge = (uid: string, key: string): void => {
   recentlyCharged.delete(`${uid}|${key}`);
 };
 
+const SUBSCRIPTION_PERIOD_MS = 33 * 24 * 60 * 60 * 1000;
+
 // Adds purchased minutes once per payment: payments/{paymentId} records it, so a webhook
 // delivered twice (Dodo retries until it gets a 2xx) never credits twice.
 export async function addPurchasedSeconds(
@@ -134,10 +136,15 @@ export async function addPurchasedSeconds(
     const [paid, credit] = await Promise.all([tx.get(paymentRef), tx.get(creditRef)]);
     if (paid.exists) return 'duplicate';
     const current = credit.exists ? Number(credit.get('secondsRemaining')) || 0 : FREE_SECONDS;
+    // Each monthly charge keeps the account a subscriber for one more period (plus a few
+    // days' grace for renewal retries); cancelling simply stops the next extension
+    const until = Date.now() + SUBSCRIPTION_PERIOD_MS;
+    const previous = credit.exists ? (credit.get('subscriberUntil') as Timestamp | undefined)?.toMillis() || 0 : 0;
     tx.set(
       creditRef,
       {
         secondsRemaining: current + seconds,
+        subscriberUntil: Timestamp.fromMillis(Math.max(previous, until)),
         updatedAt: FieldValue.serverTimestamp(),
         ...(credit.exists ? {} : { freeGrantedAt: FieldValue.serverTimestamp() }),
       },
@@ -167,4 +174,38 @@ export async function saveCustomerId(uid: string, customerId: string): Promise<v
 export async function customerIdFor(uid: string): Promise<string | null> {
   const snap = await db().collection('customers').doc(uid).get();
   return snap.exists ? (snap.get('dodoCustomerId') as string) || null : null;
+}
+
+// ---- What subscribers get: see SUBSCRIBER_FEATURES in server.ts
+const subscriberCache = new Map<string, { at: number; until: number }>();
+
+export async function subscriberUntil(uid: string): Promise<number> {
+  const hit = subscriberCache.get(uid);
+  if (hit && Date.now() - hit.at < 60_000) return hit.until;
+  const snap = await db().collection('credits').doc(uid).get();
+  const until = (snap.get('subscriberUntil') as Timestamp | undefined)?.toMillis() || 0;
+  if (subscriberCache.size > 10_000) subscriberCache.clear();
+  subscriberCache.set(uid, { at: Date.now(), until });
+  return until;
+}
+
+export const isSubscriber = async (uid: string): Promise<boolean> => (await subscriberUntil(uid)) > Date.now();
+
+// Forget the cached status after a payment so new subscribers get access at once
+export const forgetSubscriber = (uid: string): void => {
+  subscriberCache.delete(uid);
+};
+
+// Free accounts get a few uses a day of some AI tools: usage/{uid} = { day, counts }
+export async function useDailyQuota(uid: string, feature: string, limit: number): Promise<{ ok: boolean; used: number }> {
+  const ref = db().collection('usage').doc(uid);
+  const today = new Date().toISOString().slice(0, 10);
+  return db().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const counts: Record<string, number> = snap.exists && snap.get('day') === today ? snap.get('counts') || {} : {};
+    const used = counts[feature] || 0;
+    if (used >= limit) return { ok: false, used };
+    tx.set(ref, { day: today, counts: { ...counts, [feature]: used + 1 } });
+    return { ok: true, used: used + 1 };
+  });
 }

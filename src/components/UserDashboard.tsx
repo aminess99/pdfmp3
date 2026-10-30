@@ -39,7 +39,7 @@ import { AIBookCreator } from './AIBookCreator';
 import { ChatPdfModal } from './ChatPdfModal';
 import { minutesAr } from '../lib/arabicPlural';
 import { listServerBooks, getServerBook, deleteServerBook, saveBookToServer, needsText } from '../lib/library';
-import { apiFetch, fetchCredits, CREDITS_CHANGED_EVENT } from '../lib/apiFetch';
+import { apiFetch, fetchAccount, CREDITS_CHANGED_EVENT } from '../lib/apiFetch';
 import { tr, DIR } from '../lib/i18n';
 import { voiceLabel } from '../lib/voiceLabel';
 
@@ -63,8 +63,12 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'library' | 'new_book' | 'ai_creator'>('library');
   // Listening minutes from the server (null: not enforced / not loaded yet)
   const [balanceSeconds, setBalanceSeconds] = useState<number | null>(null);
+  const [isSubscriber, setIsSubscriber] = useState(false);
   useEffect(() => {
-    fetchCredits().then(setBalanceSeconds);
+    fetchAccount().then((a) => {
+      setBalanceSeconds(a ? a.secondsRemaining : null);
+      setIsSubscriber(Boolean(a?.subscriber));
+    });
     const onChange = (e: Event) => setBalanceSeconds((e as CustomEvent<number>).detail);
     window.addEventListener(CREDITS_CHANGED_EVENT, onChange);
     return () => window.removeEventListener(CREDITS_CHANGED_EVENT, onChange);
@@ -275,12 +279,15 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       <div className="mt-auto flex flex-col gap-3">
         <div className="p-4 rounded-[14px] bg-card border border-line flex flex-col gap-2.5">
           <span className="flex justify-between gap-2 text-sm">
-            <span className="text-slate-400">{tr("رصيدك", "Your balance")}</span>
+            <span className="text-slate-400 flex items-center gap-1.5">
+              {tr("رصيدك", "Your balance")}
+              {isSubscriber && <span className="px-1.5 py-0.5 rounded-md bg-brand/20 text-brand-soft text-[11px] font-semibold">{tr("مشترك", "Subscriber")}</span>}
+            </span>
             <strong className="text-white">{balanceSeconds === null ? '—' : minutesAr(Math.floor(balanceSeconds / 60))}</strong>
           </span>
           <span className="flex flex-wrap gap-x-4 gap-y-1">
             <button type="button" onClick={openCheckout} className="text-sm text-brand-soft hover:text-indigo-200 cursor-pointer">
-              {tr("اشترك في باقة", "Get a plan")}
+              {isSubscriber ? tr("تغيير الباقة", "Change plan") : tr("اشترك في باقة", "Get a plan")}
             </button>
             <button type="button" onClick={openBillingPortal} disabled={openingPortal} className="text-sm text-slate-400 hover:text-white cursor-pointer disabled:opacity-60">
               {tr("إدارة الاشتراك", "Manage plan")}

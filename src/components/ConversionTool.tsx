@@ -525,8 +525,12 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
             // Signed-in users: save to the server library (no size limit), or to Firestore
             // (1 MB per book) when the server library is unavailable
             if (user && user.uid) {
-              saveBookToServer(newJob).then((savedOnServer) => {
-              if (savedOnServer) return;
+              saveBookToServer(newJob).then((saved) => {
+              if (saved === 'saved') return;
+              if (saved === 'limit') {
+                toast(tr('مكتبتك المجانية ممتلئة (3 كتب)، فحُفظ هذا الكتاب في هذا المتصفح فقط. اشترك لتحفظ كتبك بلا حد ومن أي جهاز.', 'Your free library is full (3 books), so this book is saved in this browser only. Subscribe to keep unlimited books on every device.'), 'info');
+                return;
+              }
               try {
                 setDoc(doc(db, 'audiobooks', newJob.id), {
                   userId: user.uid,
