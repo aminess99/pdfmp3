@@ -41,7 +41,7 @@ async function synthesize(text: string, voiceName: string, apiKey: string): Prom
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': process.env.APP_URL || 'https://hakawatiai.com',
-      'X-Title': 'PDF to Audio Arabic Studio',
+      'X-Title': 'Hakawati AI',
     },
     // Same request shape as the server (Gemini TTS on OpenRouter returns raw 24kHz PCM)
     body: JSON.stringify({ model: MODEL, input: text, voice: voiceName, speed: 1.0, response_format: 'pcm' }),
@@ -77,7 +77,18 @@ async function main() {
       // Same "<instruction>: <text>" input the server builds in buildTtsInput()
       const style = process.env.TTS_STYLE_PROMPT === 'off' ? '' : voice.stylePrompt?.trim().replace(/[.:،\s]+$/, '');
       const input = style ? `${style}:\n${voice.sampleText.trim()}` : voice.sampleText.trim();
-      const pcm = await synthesize(input, voice.geminiVoiceName, apiKey);
+      // Retry transient failures (rate limits, timeouts) a couple of times
+      let pcm: Buffer | null = null;
+      for (let attempt = 1; attempt <= 3 && !pcm; attempt++) {
+        try {
+          pcm = await synthesize(input, voice.geminiVoiceName, apiKey);
+        } catch (err) {
+          if (attempt === 3) throw err;
+          console.warn(`retry ${voice.id} (attempt ${attempt}): ${(err as Error).message}`);
+          await new Promise((r) => setTimeout(r, 4000 * attempt));
+        }
+      }
+      if (!pcm) throw new Error('no audio');
       const wavFile = outFile.replace(/\.mp3$/, '.wav');
       fs.writeFileSync(wavFile, pcmToWav(pcm));
       execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', wavFile, '-ac', '1', '-codec:a', 'libmp3lame', '-b:a', '64k', outFile]);

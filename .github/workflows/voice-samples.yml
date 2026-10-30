@@ -1,7 +1,13 @@
 name: Generate voice samples
 
-# Run manually from the Actions tab. Needs the OPENROUTER_API_KEY repository secret.
+# Runs when the voice catalogue or this generator changes on a pushed branch (only missing
+# samples are generated), or manually from the Actions tab. Needs the OPENROUTER_API_KEY secret.
 on:
+  push:
+    paths:
+      - src/data/voices.ts
+      - scripts/generate-voice-samples.ts
+      - .github/workflows/voice-samples.yml
   workflow_dispatch:
     inputs:
       force:
@@ -11,6 +17,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: voice-samples-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   generate:
