@@ -8,7 +8,7 @@ import dotenv from "dotenv";
 import { VOICES } from "./src/data/voices";
 import { LANDING_PAGES, LandingPage, findLandingPage, landingPath } from "./src/data/landingPages";
 import { summaryText } from "./src/data/summaryTexts";
-import { BOOK_SUMMARIES, BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, UPCOMING_SUMMARIES, findSummary, isSummariesHub, summaryAudioUrl, summaryPath } from "./src/data/summaries";
+import { BOOK_SUMMARIES, BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, UPCOMING_SUMMARIES, findSummary, isSummariesHub, summaryAudioUrl, summaryCoverUrl, summaryPath } from "./src/data/summaries";
 import { HOME_CONTENT, HOME_SEO } from "./src/data/homeContent";
 import firebaseConfig from "./src/lib/firebaseConfig";
 import {
@@ -1946,7 +1946,13 @@ function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: 
         url,
         author: { "@type": "Organization", name: "Hakawati AI", url: `${SITE_URL}/` },
         publisher: { "@type": "Organization", name: "Hakawati AI", logo: { "@type": "ImageObject", url: `${SITE_URL}/brand/logo.png` } },
-        about: { "@type": "Book", name: s.bookTitle, author: { "@type": "Person", name: s.author } },
+        about: {
+          "@type": "Book",
+          name: s.bookTitle,
+          author: { "@type": "Person", name: s.author },
+          ...(s.hasCover ? { image: `${SITE_URL}${summaryCoverUrl(s, "jpg")}` } : {}),
+        },
+        ...(s.hasCover ? { image: `${SITE_URL}${summaryCoverUrl(s, "jpg")}` } : {}),
         ...(audio
           ? {
               audio: {
@@ -1989,7 +1995,16 @@ function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: 
     ...BOOK_SUMMARIES.filter((o) => o.slug !== s.slug).map((o) => `<a href="${summaryPath(o)}">ملخص كتاب ${escapeHtml(o.bookTitle)}</a> `),
     `<a href="/">تحويل PDF إلى صوت</a></nav></main>`,
   ].join("");
-  return withHead(template, { title: s.title, description: s.description, keywords: s.keywords, url, ogType: "article", jsonLd, content });
+  const html = withHead(template, { title: s.title, description: s.description, keywords: s.keywords, url, ogType: "article", jsonLd, content });
+  if (!s.hasCover) return html;
+  // Link previews (WhatsApp, Facebook, X) show the book cover instead of the site banner
+  const cover = `${SITE_URL}${summaryCoverUrl(s, "jpg")}`;
+  return html
+    .replace(/<meta property="og:image" content="[^"]*" \/>/, () => `<meta property="og:image" content="${cover}" />`)
+    .replace(/<meta property="og:image:width" content="[^"]*" \/>/, () => '<meta property="og:image:width" content="768" />')
+    .replace(/<meta property="og:image:height" content="[^"]*" \/>/, () => '<meta property="og:image:height" content="1280" />')
+    .replace(/<meta property="og:image:alt" content="[^"]*" \/>/, () => `<meta property="og:image:alt" content="${escapeHtml(`غلاف كتاب ${s.bookTitle}`)}" />`)
+    .replace(/<meta name="twitter:image" content="[^"]*" \/>/, () => `<meta name="twitter:image" content="${cover}" />`);
 }
 
 function renderSummariesHubHtml(template: string): string {

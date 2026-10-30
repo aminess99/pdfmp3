@@ -23,6 +23,8 @@ export interface BookSummary {
   publishedAt: string;
   // File name of the text in ./summary-texts/ (Latin, so it is safe everywhere)
   textId: string;
+  // public/covers/<textId>.webp (page) and .jpg (link previews) exist
+  hasCover?: boolean;
 }
 
 // The long part, kept out of the main bundle: server.ts and the generator import every
@@ -58,6 +60,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'كيف تصنع التغييرات الصغيرة جداً نتائج كبيرة؟ أهم أفكار الكتاب في أقل من عشرين دقيقة: من قاعدة الواحد بالمئة إلى القوانين الأربعة لبناء العادات الجيدة والتخلص من السيئة.',
     publishedAt: '2026-10-30',
     textId: 'atomic-habits',
+    hasCover: true,
   },
   {
     slug: 'أبي-الذي-أكره',
@@ -74,6 +77,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'حين يجتمع الحب والألم تجاه الوالدين: كيف تفهم جروح الطفولة دون أن تتهم أحداً، وكيف تبدأ رحلة التعافي وتضع حدوداً صحية.',
     publishedAt: '2026-10-30',
     textId: 'my-father-whom-i-hate',
+    hasCover: true,
   },
   {
     slug: '48-قانون-للقوة',
@@ -90,6 +94,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'أشهر قوانين السلطة والنفوذ من قصص التاريخ: ما الذي نتعلمه منها في الحذر والتوقيت وفهم الناس، وما الذي يجب أن نحذره.',
     publishedAt: '2026-10-30',
     textId: '48-laws-of-power',
+    hasCover: true,
   },
   {
     slug: 'فن-اللامبالاة',
@@ -106,6 +111,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'ليست دعوة إلى ألا تهتم بشيء، بل إلى أن تختار بحكمة ما يستحق اهتمامك، وتتقبل أن الألم والمشكلات جزء من الحياة.',
     publishedAt: '2026-10-30',
     textId: 'subtle-art',
+    hasCover: true,
   },
   {
     slug: 'الأب-الغني-والأب-الفقير',
@@ -122,11 +128,13 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'دروس الثقافة المالية التي غيّرت تفكير الملايين: لماذا لا يعمل الأغنياء من أجل المال، وما الفرق بين الأصل والالتزام، وكيف تبدأ.',
     publishedAt: '2026-10-30',
     textId: 'rich-dad-poor-dad',
+    hasCover: true,
   },
 ];
 
 export const summaryPath = (s: BookSummary): string => `/${encodeURIComponent(SUMMARY_PREFIX + s.slug)}`;
 
+export const summaryCoverUrl = (s: BookSummary, format: 'webp' | 'jpg' = 'webp'): string => `/covers/${s.textId}.${format}`;
 export const summaryAudioUrl = (s: BookSummary): string => `/summaries/${encodeURIComponent(s.slug)}.mp3`;
 export const summaryManifestUrl = (s: BookSummary): string => `/summaries/${encodeURIComponent(s.slug)}.json`;
 

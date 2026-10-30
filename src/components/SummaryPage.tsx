@@ -7,6 +7,7 @@ import {
   SummaryAudioManifest,
   SUMMARIES_HUB_PATH,
   summaryAudioUrl,
+  summaryCoverUrl,
   summaryManifestUrl,
   summaryPath,
 } from '../data/summaries';
@@ -21,13 +22,23 @@ const fmt = (sec: number) => {
 
 const SPEEDS = [1, 1.25, 1.5, 0.75];
 
-// A typographic cover, so summaries need no book-cover images (and no cover rights)
-export const SummaryCover: React.FC<{ summary: BookSummary; size?: 'sm' | 'lg' }> = ({ summary, size = 'sm' }) => (
+const COVER_SIZE = { lg: 'w-[148px] h-[247px] sm:w-[180px] sm:h-[300px]', sm: 'w-full aspect-[3/5]' };
+
+// The book's cover image when we have one, otherwise a typographic cover
+export const SummaryCover: React.FC<{ summary: BookSummary; size?: 'sm' | 'lg' }> = ({ summary, size = 'sm' }) =>
+  summary.textId && summary.hasCover ? (
+    <img
+      src={summaryCoverUrl(summary)}
+      alt={`غلاف كتاب ${summary.bookTitle}`}
+      width={480}
+      height={800}
+      loading={size === 'lg' ? 'eager' : 'lazy'}
+      className={`rounded-2xl object-cover shrink-0 bg-raised shadow-lg shadow-black/40 ${COVER_SIZE[size]}`}
+    />
+  ) : (
   <div
     aria-hidden="true"
-    className={`relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#312e81] via-[#4338ca] to-[#0e7490] flex flex-col justify-between shrink-0 ${
-      size === 'lg' ? 'w-[148px] h-[200px] sm:w-[180px] sm:h-[244px] p-4' : 'w-full aspect-[3/4] p-4'
-    }`}
+    className={`relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#312e81] via-[#4338ca] to-[#0e7490] flex flex-col justify-between shrink-0 p-4 ${COVER_SIZE[size]}`}
   >
     <span className="text-[11px] font-semibold text-cyan-100/80">ملخص صوتي</span>
     <span className={`font-display font-extrabold text-white leading-tight ${size === 'lg' ? 'text-2xl sm:text-[28px]' : 'text-xl'}`}>
