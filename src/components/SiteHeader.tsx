@@ -5,6 +5,7 @@ import { DIALECTS } from '../data/voices';
 import { dialectLabel } from '../lib/voiceLabel';
 import { tr, DIR, HOME_PATH, OTHER_LANG_PATH, isEn } from '../lib/i18n';
 import { SUMMARIES_HUB_PATH } from '../data/summaries';
+import { useAuth } from '../lib/AuthContext';
 
 interface SiteHeaderProps {
   onOpenAuth: (mode: 'login' | 'register') => void;
@@ -15,6 +16,8 @@ const textToSpeechPage = LANDING_PAGES.find((p) => p.inputMode === 'text' && !p.
 const dialectPages = LANDING_PAGES.filter((p) => p.dialectId);
 
 export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenAuth, onNavigate }) => {
+  // Public pages (summaries, shared clips) are shown to signed-in users too
+  const { user } = useAuth();
   const [toolsOpen, setToolsOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const toolsRef = useRef<HTMLDivElement>(null);
@@ -103,6 +106,14 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenAuth, onNavigate }
           >
             {isEn ? 'العربية' : 'EN'}
           </a>
+          {user ? (
+            <a
+              href={HOME_PATH}
+              className="hidden sm:flex items-center min-h-11 px-[18px] rounded-[10px] border border-line-strong text-white text-[15px] font-semibold hover:bg-raised"
+            >
+              {tr("مكتبتي", "My library")}
+            </a>
+          ) : (
           <button
             type="button"
             onClick={() => onOpenAuth('login')}
@@ -110,6 +121,7 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenAuth, onNavigate }
           >
             {tr("تسجيل الدخول", "Log in")}
           </button>
+          )}
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
@@ -156,6 +168,11 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenAuth, onNavigate }
             <div className="mt-auto pt-6 flex flex-col gap-2">
               <button type="button" onClick={() => go('voices')} className="min-h-11 px-2 text-start text-slate-300 cursor-pointer">{tr("الأصوات", "Voices")}</button>
               <button type="button" onClick={() => go('pricing')} className="min-h-11 px-2 text-start text-slate-300 cursor-pointer">{tr("الأسعار", "Pricing")}</button>
+              {user ? (
+                <a href={HOME_PATH} className="min-h-12 rounded-xl bg-brand text-white font-bold flex items-center justify-center">
+                  {tr("مكتبتي", "My library")}
+                </a>
+              ) : (
               <button
                 type="button"
                 onClick={() => {
@@ -166,6 +183,7 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenAuth, onNavigate }
               >
                 {tr("تسجيل الدخول", "Log in")}
               </button>
+              )}
             </div>
           </nav>
         </div>

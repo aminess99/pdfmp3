@@ -419,9 +419,6 @@ app.post("/api/pdf/extract", async (req, res) => {
       }
     }
 
-    // Scanned books need the vision model, the costliest step: subscribers only
-    if (!(await requireSubscriber(req, res, "ocr"))) return;
-
     // 2. Multimodal AI Vision OCR with Retry and Fallback Models
     const prompt = `أنت خبير محترف في التعرف الضوئي على الحروف (OCR) ومحرر كتب صوتية متقدم.
 المهمة: اقرأ واستخرج بدقة متناهية كافة النصوص العربية المكتوبة داخل هذا المستند (سواء كانت نصوصاً رقمية مشفرة، أو صفحات مصورة وممسوحة ضوئياً Scanned Images، أو صوراً ورقية أو لقطات تحتوي على كتابة عربية).
@@ -1276,7 +1273,6 @@ const FREE_LIBRARY_BOOKS = 3;
 const FREE_DAILY = { chat: 5, transform: 2 } as const;
 
 const SUBSCRIBE_MESSAGES = {
-  ocr: "المسح العميق للكتب المصورة متاح للمشتركين. اشترك في باقة لتحويل الكتب الممسوحة ضوئياً.",
   book: "مؤلف الكتب بالذكاء الاصطناعي متاح للمشتركين.",
   download: "تحميل الصوت كملف متاح للمشتركين. يمكنك الاستماع مجاناً من الموقع.",
   library: `المكتبة المجانية تتسع لـ${FREE_LIBRARY_BOOKS} كتب. اشترك لتحفظ عدداً غير محدود.`,

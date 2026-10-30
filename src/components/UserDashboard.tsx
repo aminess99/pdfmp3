@@ -38,9 +38,11 @@ import { UserSettingsModal } from './UserSettingsModal';
 import { AIBookCreator } from './AIBookCreator';
 import { ChatPdfModal } from './ChatPdfModal';
 import { minutesAr } from '../lib/arabicPlural';
+import { BOOK_SUMMARIES, SUMMARIES_HUB_PATH, summaryPath } from '../data/summaries';
+import { SummaryCover } from './SummaryPage';
 import { listServerBooks, getServerBook, deleteServerBook, saveBookToServer, needsText } from '../lib/library';
 import { apiFetch, fetchAccount, CREDITS_CHANGED_EVENT } from '../lib/apiFetch';
-import { tr, DIR } from '../lib/i18n';
+import { isEn, tr, DIR } from '../lib/i18n';
 import { voiceLabel } from '../lib/voiceLabel';
 
 interface UserDashboardProps {
@@ -272,6 +274,12 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       <button type="button" aria-current={activeTab === 'ai_creator'} onClick={() => { setActiveTab('ai_creator'); setShowMobileDrawer(false); }} className={navItem(activeTab === 'ai_creator')}>
         <Wand2 className="w-[18px] h-[18px]" /> {tr('تأليف كتاب', 'Write a book')}
       </button>
+      {!isEn && (
+        <a href={SUMMARIES_HUB_PATH} className={navItem(false)}>
+          <BookOpen className="w-[18px] h-[18px]" /> ملخصات الكتب
+          <span className="ms-auto text-[11px] px-1.5 py-0.5 rounded-md bg-accent/15 text-accent font-semibold">مجاناً</span>
+        </a>
+      )}
       <button type="button" onClick={() => { setShowSettingsModal(true); setShowMobileDrawer(false); }} className={navItem(false)}>
         <Settings className="w-[18px] h-[18px]" /> {tr(tr("الإعدادات", "Settings"), 'Settings')}
       </button>
@@ -469,6 +477,26 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                     </button>
                   )}
                 </div>
+              )}
+              {/* Free audio summaries, Arabic only */}
+              {!isEn && (
+                <section aria-labelledby="dash-summaries" className="flex flex-col gap-4 pt-4 border-t border-line">
+                  <div className="flex items-end justify-between gap-3">
+                    <span className="flex flex-col gap-1">
+                      <h2 id="dash-summaries" className="font-display font-extrabold text-xl text-white">ملخصات كتب صوتية مجانية</h2>
+                      <span className="text-sm text-slate-400">أهم أفكار أشهر الكتب في ربع ساعة، ولا تُخصم من رصيدك.</span>
+                    </span>
+                    <a href={SUMMARIES_HUB_PATH} className="shrink-0 text-sm text-brand-soft hover:text-indigo-200">كل الملخصات</a>
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+                    {BOOK_SUMMARIES.slice(-6).reverse().map((s) => (
+                      <a key={s.slug} href={summaryPath(s)} className="flex flex-col gap-2 group">
+                        <SummaryCover summary={s} />
+                        <span className="text-xs sm:text-sm text-slate-300 group-hover:text-white line-clamp-2">{s.bookTitle}</span>
+                      </a>
+                    ))}
+                  </div>
+                </section>
               )}
             </div>
           )}
