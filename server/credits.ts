@@ -26,6 +26,7 @@ function getAdminApp(): App | null {
   try {
     const json = JSON.parse(raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8'));
     adminApp = initializeApp({ credential: cert(json), projectId: firebaseConfig.projectId }, 'credits');
+    console.log(`[credits] enabled: listening minutes are enforced (service account ${json.client_email || 'unknown'})`);
   } catch (err: any) {
     console.error('[credits] invalid FIREBASE_SERVICE_ACCOUNT, minutes are NOT enforced:', err?.message || err);
     adminApp = null;
