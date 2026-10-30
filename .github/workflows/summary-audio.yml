@@ -1,0 +1,59 @@
+name: Generate summary audio
+
+# Narrates new or edited book summaries (src/data/summaries.ts) into public/summaries/,
+# on push or manually from the Actions tab. Needs the OPENROUTER_API_KEY secret.
+on:
+  push:
+    paths:
+      - src/data/summaries.ts
+      - scripts/generate-summary-audio.ts
+      - .github/workflows/summary-audio.yml
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Regenerate summaries that are already up to date"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: summary-audio-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - run: npm ci
+
+      - name: Generate audio
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: npx tsx scripts/generate-summary-audio.ts ${{ inputs.force && '--force' || '' }}
+
+      - name: Commit audio
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/summaries
+          if git diff --cached --quiet; then
+            echo "No new audio"
+          else
+            git commit -m "Add generated summary audio"
+            # Another workflow may have pushed meanwhile
+            git pull --rebase
+            git push
+          fi

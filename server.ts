@@ -7,6 +7,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { VOICES } from "./src/data/voices";
 import { LANDING_PAGES, LandingPage, findLandingPage, landingPath } from "./src/data/landingPages";
+import { BOOK_SUMMARIES, BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, UPCOMING_SUMMARIES, findSummary, isSummariesHub, summaryAudioUrl, summaryPath } from "./src/data/summaries";
 import { HOME_CONTENT, HOME_SEO } from "./src/data/homeContent";
 import firebaseConfig from "./src/lib/firebaseConfig";
 import {
@@ -1891,6 +1892,141 @@ function renderLandingHtml(template: string, page: LandingPage): string {
     .replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
 }
 
+// Head tags shared by the summary pages; replacements use functions so "$" in text is safe
+function withHead(template: string, head: { title: string; description: string; keywords: string; url: string; ogType?: string; jsonLd: unknown; content: string }): string {
+  const title = escapeHtml(head.title);
+  const description = escapeHtml(head.description);
+  return template
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${description}" />`)
+    .replace(/<meta name="keywords" content="[^"]*" \/>/, () => `<meta name="keywords" content="${escapeHtml(head.keywords)}" />`)
+    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${head.url}" />`)
+    .replace(/<meta property="og:url" content="[^"]*" \/>/, () => `<meta property="og:url" content="${head.url}" />`)
+    .replace(/<meta property="og:type" content="[^"]*" \/>/, () => `<meta property="og:type" content="${head.ogType || "website"}" />`)
+    .replace(/<meta property="og:title" content="[^"]*" \/>/, () => `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta name="twitter:title" content="[^"]*" \/>/, () => `<meta name="twitter:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*" \/>/, () => `<meta property="og:description" content="${description}" />`)
+    .replace(/<meta name="twitter:description" content="[^"]*" \/>/, () => `<meta name="twitter:description" content="${description}" />`)
+    .replace(
+      /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
+      () => `<script type="application/ld+json">${JSON.stringify(head.jsonLd).replace(/</g, "\\u003c")}</script>`
+    )
+    .replace(/<div id="root"><\/div>/, () => `<div id="root">${head.content}</div>`);
+}
+
+function summaryHasAudio(distPath: string, s: BookSummary): { duration: number } | null {
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(distPath, "summaries", `${s.slug}.json`), "utf8"));
+    return fs.existsSync(path.join(distPath, "summaries", `${s.slug}.mp3`)) ? { duration: Number(m.duration) || 0 } : null;
+  } catch {
+    return null;
+  }
+}
+
+function isoDuration(seconds: number): string {
+  return `PT${Math.floor(seconds / 60)}M${Math.round(seconds % 60)}S`;
+}
+
+function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: number } | null): string {
+  const url = `${SITE_URL}${summaryPath(s)}`;
+  const hubUrl = `${SITE_URL}${SUMMARIES_HUB_PATH}`;
+  const name = `ملخص كتاب ${s.bookTitle}`;
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        "@id": `${url}#article`,
+        headline: name,
+        description: s.description,
+        inLanguage: "ar",
+        datePublished: s.publishedAt,
+        url,
+        author: { "@type": "Organization", name: "Hakawati AI", url: `${SITE_URL}/` },
+        publisher: { "@type": "Organization", name: "Hakawati AI", logo: { "@type": "ImageObject", url: `${SITE_URL}/brand/logo.png` } },
+        about: { "@type": "Book", name: s.bookTitle, author: { "@type": "Person", name: s.author } },
+        ...(audio
+          ? {
+              audio: {
+                "@type": "AudioObject",
+                name,
+                contentUrl: `${SITE_URL}${summaryAudioUrl(s)}`,
+                encodingFormat: "audio/mpeg",
+                duration: isoDuration(audio.duration),
+                inLanguage: "ar",
+              },
+            }
+          : {}),
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}/` },
+          { "@type": "ListItem", position: 2, name: SUMMARIES_HUB.h1, item: hubUrl },
+          { "@type": "ListItem", position: 3, name, item: url },
+        ],
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: s.faqs.map((f) => ({ "@type": "Question", name: f.question, acceptedAnswer: { "@type": "Answer", text: f.answer } })),
+      },
+    ],
+  };
+  const content = [
+    `<main dir="rtl"><article>`,
+    `<nav><a href="/">الرئيسية</a> › <a href="${SUMMARIES_HUB_PATH}">${escapeHtml(SUMMARIES_HUB.h1)}</a></nav>`,
+    `<h1>${escapeHtml(name)}</h1>`,
+    `<p>تأليف: ${escapeHtml(s.author)}</p>`,
+    `<p>${escapeHtml(s.lead)}</p>`,
+    audio ? `<audio controls preload="none" src="${summaryAudioUrl(s)}"></audio>` : "",
+    ...s.sections.map((sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")),
+    `<h2>أسئلة شائعة عن كتاب ${escapeHtml(s.bookTitle)}</h2>`,
+    ...s.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    `</article><nav>`,
+    ...BOOK_SUMMARIES.filter((o) => o.slug !== s.slug).map((o) => `<a href="${summaryPath(o)}">ملخص كتاب ${escapeHtml(o.bookTitle)}</a> `),
+    `<a href="/">تحويل PDF إلى صوت</a></nav></main>`,
+  ].join("");
+  return withHead(template, { title: s.title, description: s.description, keywords: s.keywords, url, ogType: "article", jsonLd, content });
+}
+
+function renderSummariesHubHtml(template: string): string {
+  const url = `${SITE_URL}${SUMMARIES_HUB_PATH}`;
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "CollectionPage",
+        "@id": `${url}#webpage`,
+        url,
+        name: SUMMARIES_HUB.title,
+        description: SUMMARIES_HUB.description,
+        inLanguage: "ar",
+        isPartOf: { "@type": "WebSite", name: "Hakawati AI", url: `${SITE_URL}/` },
+      },
+      {
+        "@type": "ItemList",
+        itemListElement: BOOK_SUMMARIES.map((s, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE_URL}${summaryPath(s)}`, name: `ملخص كتاب ${s.bookTitle}` })),
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}/` },
+          { "@type": "ListItem", position: 2, name: SUMMARIES_HUB.h1, item: url },
+        ],
+      },
+    ],
+  };
+  const content = [
+    `<main dir="rtl"><h1>${escapeHtml(SUMMARIES_HUB.h1)}</h1><p>${escapeHtml(SUMMARIES_HUB.lead)}</p><ul>`,
+    ...BOOK_SUMMARIES.map((s) => `<li><a href="${summaryPath(s)}">ملخص كتاب ${escapeHtml(s.bookTitle)}</a> – ${escapeHtml(s.author)}. ${escapeHtml(s.lead)}</li>`),
+    `</ul>`,
+    UPCOMING_SUMMARIES.length ? `<h2>قريباً</h2><p>${UPCOMING_SUMMARIES.map(escapeHtml).join("، ")}</p>` : "",
+    `<a href="/">تحويل PDF إلى صوت</a></main>`,
+  ].join("");
+  return withHead(template, { title: SUMMARIES_HUB.title, description: SUMMARIES_HUB.description, keywords: SUMMARIES_HUB.keywords, url, jsonLd, content });
+}
+
 // The home page is a client-rendered app, so put its text into #root for crawlers
 // that read raw HTML (React replaces it on load with the same content). The same
 // template serves Arabic at / and English at /en, with matching head tags and JSON-LD.
@@ -2051,11 +2187,16 @@ async function startServer() {
     const landingHtml = new Map(LANDING_PAGES.map((p) => [p.slug, renderLandingHtml(indexTemplate, p)]));
     const homeHtml = renderHomeHtml(indexTemplate, "ar");
     const homeHtmlEn = renderHomeHtml(indexTemplate, "en");
+    const hubHtml = renderSummariesHubHtml(indexTemplate);
+    const summaryHtml = new Map(BOOK_SUMMARIES.map((s) => [s.slug, renderSummaryHtml(indexTemplate, s, summaryHasAudio(distPath, s))]));
 
     app.use((req, res, next) => {
       if (req.method !== "GET") return next();
       if (req.path === "/" || req.path === "/index.html") return res.type("html").send(homeHtml);
       if (req.path === "/en" || req.path === "/en/") return res.type("html").send(homeHtmlEn);
+      if (isSummariesHub(req.path)) return res.type("html").send(hubHtml);
+      const summary = findSummary(req.path);
+      if (summary) return res.type("html").send(summaryHtml.get(summary.slug));
       const page = findLandingPage(req.path);
       if (!page) return next();
       res.type("html").send(landingHtml.get(page.slug));

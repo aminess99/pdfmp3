@@ -4,6 +4,7 @@ import { LANDING_PAGES, landingPath } from '../data/landingPages';
 import { DIALECTS } from '../data/voices';
 import { dialectLabel } from '../lib/voiceLabel';
 import { tr, DIR, HOME_PATH, OTHER_LANG_PATH, isEn } from '../lib/i18n';
+import { SUMMARIES_HUB_PATH } from '../data/summaries';
 
 interface SiteHeaderProps {
   onOpenAuth: (mode: 'login' | 'register') => void;
@@ -41,6 +42,7 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenAuth, onNavigate }
       desc: tr('الصق أي نص واسمعه فوراً', 'Paste any text and hear it instantly'),
       href: !isEn && textToSpeechPage ? landingPath(textToSpeechPage) : `${HOME_PATH}#top`,
     },
+    ...(isEn ? [] : [{ mark: 'ملخص', name: 'ملخصات كتب صوتية', desc: 'أهم أفكار أشهر الكتب في ربع ساعة', href: SUMMARIES_HUB_PATH }]),
     { mark: tr('سؤال', 'Ask'), name: tr('اسأل كتابك', 'Ask your book'), desc: tr('ارفع كتاباً ثم اطرح عليه أسئلتك من الاستوديو', 'Upload a book, then ask it questions from the studio'), href: `${HOME_PATH}#top` },
   ];
 
