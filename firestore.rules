@@ -29,6 +29,12 @@ service cloud.firestore {
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
 
+    // Listening minutes: written only by the server (Admin SDK bypasses these rules)
+    match /credits/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
     // Shared clips: public read; signed-in users create short, well-formed clips; no edits
     match /shares/{shareId} {
       allow get: if true;

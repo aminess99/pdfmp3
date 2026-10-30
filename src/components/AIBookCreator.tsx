@@ -6,6 +6,7 @@ import { ConversionJob, Voice } from '../types';
 import { chaptersAr, pagesAr } from '../lib/arabicPlural';
 import { tr, DIR } from '../lib/i18n';
 import { VoiceOptionGroups } from './VoiceOptions';
+import { apiFetch } from '../lib/apiFetch';
 
 interface AIBookCreatorProps {
   onStartAudioJob: (job: ConversionJob) => void;
@@ -157,7 +158,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
       // Phase 1: Generating Book Chapters & Deep Content with Selected Language & Mode
       setGenerationPhase(tr("نكتب الفصول والمحتوى...", "Writing the chapters..."));
       
-      const bookRes = await fetch('/api/ai/generate-book', {
+      const bookRes = await apiFetch('/api/ai/generate-book', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -191,7 +192,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
       
       // Try AI cover from backend first
       try {
-        const coverRes = await fetch('/api/ai/generate-cover', {
+        const coverRes = await apiFetch('/api/ai/generate-cover', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -247,7 +248,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
     if (!generatedBook || isRegeneratingCover) return;
     setIsRegeneratingCover(true);
     try {
-      const coverRes = await fetch('/api/ai/generate-cover', {
+      const coverRes = await apiFetch('/api/ai/generate-cover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

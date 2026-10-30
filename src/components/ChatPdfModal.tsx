@@ -16,6 +16,7 @@ import {
 import { ConversionJob, Voice } from '../types';
 import { audioEngine } from '../lib/audioEngine';
 import { tr, DIR } from '../lib/i18n';
+import { apiFetch } from '../lib/apiFetch';
 
 interface ChatPdfModalProps {
   isOpen: boolean;
@@ -90,7 +91,7 @@ export const ChatPdfModal: React.FC<ChatPdfModalProps> = ({
         job.chapters?.map((c) => `${c.title}\n${c.text}`).join('\n\n') || 
         job.fileName;
 
-      const res = await fetch('/api/ai/chat-pdf', {
+      const res = await apiFetch('/api/ai/chat-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

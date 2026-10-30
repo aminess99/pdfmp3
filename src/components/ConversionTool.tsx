@@ -51,6 +51,7 @@ import { chaptersAr, minutesAr, pagesAr, wordsAr } from '../lib/arabicPlural';
 import { voiceLabel, voiceInitial, dialectLabel, genderLabel } from '../lib/voiceLabel';
 import { tr, DIR } from '../lib/i18n';
 import { VoiceOptionGroups } from './VoiceOptions';
+import { apiFetch } from '../lib/apiFetch';
 
 // "320 KB" under a megabyte, "2.4 MB" above it
 const formatFileSize = (bytes: number): string =>
@@ -375,7 +376,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     if (listeningMode === 'summary') {
       setConvertingChapterStatus(tr("جاري صياغة التلخيص التنفيذي والبودكاست بذكاء اصطناعي...", "Writing the summary..."));
       try {
-        const res = await fetch('/api/ai/transform-book', {
+        const res = await apiFetch('/api/ai/transform-book', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -398,7 +399,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     } else if (listeningMode === 'key_points') {
       setConvertingChapterStatus(tr("جاري استخراج أهم 5 إلى 7 نقاط محورية من الكتاب...", "Extracting the 5–7 key points..."));
       try {
-        const res = await fetch('/api/ai/transform-book', {
+        const res = await apiFetch('/api/ai/transform-book', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

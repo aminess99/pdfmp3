@@ -1,4 +1,5 @@
 import { BookChapter } from '../types';
+import { apiFetch } from './apiFetch';
 
 // Arabic number words mapping for readable chapters
 const ARABIC_ORDINAL_MAP: Record<string, number> = {
@@ -192,7 +193,7 @@ export async function detectArabicChaptersWithAI(
 
   // Fast check: Try AI-powered TOC & chapter parser
   try {
-    const res = await fetch('/api/ai/extract-chapters', {
+    const res = await apiFetch('/api/ai/extract-chapters', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -200,7 +201,7 @@ export async function detectArabicChaptersWithAI(
         defaultTitle: defaultTitle || 'الفصل الأول',
         voiceName: voiceName || 'القارئ الصوتي'
       }),
-    });
+    }, { silent: true }); // background step with a local fallback: never prompt from here
 
     if (res.ok) {
       const data = await res.json();

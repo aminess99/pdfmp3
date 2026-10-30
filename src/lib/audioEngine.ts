@@ -1,6 +1,7 @@
 import { toastOnce } from './toast';
 import { Voice, AudioStyle } from '../types';
 import { tr } from './i18n';
+import { apiFetch } from './apiFetch';
 
 export class AudioEngine {
   private currentAudioElement: HTMLAudioElement | null = null;
@@ -24,7 +25,7 @@ export class AudioEngine {
     referenceId?: string
   ): Promise<string | null> {
     try {
-      const res = await fetch('/api/tts/fish-audio', {
+      const res = await apiFetch('/api/tts/fish-audio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -60,6 +61,15 @@ export class AudioEngine {
     }
   }
 
+  // Clips are generated once at normal speed and sped up by the <audio> element (playbackRate),
+  // so changing the speed never re-synthesizes (or re-charges) audio
+  private clipKey(text: string, voice: Voice): string {
+    return `${voice.id || 'default'}_${text.trim()}`;
+  }
+
+  // Set when the last failure was already explained to the user (sign in / out of minutes)
+  private lastFailureHandled = false;
+
   // Generate or retrieve cached speech audio URL from server AI engines
   public async generateSpeechUrl(
     text: string,
@@ -68,7 +78,7 @@ export class AudioEngine {
   ): Promise<string | null> {
     if (!text || !text.trim()) return null;
 
-    const cacheKey = `${voice.id || 'default'}_${speed}_${text.trim()}`;
+    const cacheKey = this.clipKey(text, voice);
     if (this.audioCache.has(cacheKey)) {
       return this.audioCache.get(cacheKey)!;
     }
@@ -79,7 +89,7 @@ export class AudioEngine {
 
     const fetchPromise = (async () => {
       try {
-        const res = await fetch('/api/tts/speak', {
+        const res = await apiFetch('/api/tts/speak', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -92,12 +102,14 @@ export class AudioEngine {
               geminiVoiceName: voice.geminiVoiceName,
               stylePrompt: voice.stylePrompt,
             },
-            speed,
+            speed: 1.0,
           }),
         });
 
         if (!res.ok) {
           console.warn('Server TTS returned non-200:', res.status);
+          // apiFetch already prompted to sign in / top up; don't add a second error toast
+          this.lastFailureHandled = res.status === 401 || res.status === 402;
           if (res.status === 429) toastOnce(tr("طلبات كثيرة في وقت قصير، انتظر دقيقة ثم تابع.", "Too many requests in a short time. Wait a minute, then continue."), 'error');
           return null;
         }
@@ -136,7 +148,7 @@ export class AudioEngine {
   // Lookahead Pre-fetching of upcoming sentences to ensure 0-latency playback
   public prefetchSentence(text: string, voice: Voice, speed: number = 1.0): Promise<string | null> {
     if (!text || !text.trim()) return Promise.resolve(null);
-    const cacheKey = `${voice.id || 'default'}_${speed}_${text.trim()}`;
+    const cacheKey = this.clipKey(text, voice);
     if (this.audioCache.has(cacheKey)) {
       return Promise.resolve(this.audioCache.get(cacheKey)!);
     }
@@ -157,7 +169,7 @@ export class AudioEngine {
   // Retrieve single cached blob for a sentence
   public getCachedBlob(text: string, voice: Voice, speed: number = 1.0): Blob | null {
     if (!text || !text.trim()) return null;
-    const cacheKey = `${voice.id || 'default'}_${speed}_${text.trim()}`;
+    const cacheKey = this.clipKey(text, voice);
     return this.audioBlobCache.get(cacheKey)?.blob || null;
   }
 
@@ -385,7 +397,7 @@ export class AudioEngine {
     if (!this.isPlaying || this.currentSessionId !== sessionId) return;
 
     if (audioUrl) {
-      const cacheKey = `${voice.id || 'default'}_${rate}_${text.trim()}`;
+      const cacheKey = this.clipKey(text, voice);
       const preloaded = this.preloadedAudios.get(cacheKey);
       const audio = preloaded || new Audio(audioUrl);
       this.currentAudioElement = audio;
@@ -422,7 +434,10 @@ export class AudioEngine {
     if (this.currentSessionId !== sessionId) return;
     this.isPlaying = false;
     this.currentAudioElement = null;
-    toastOnce(tr('تعذّر تشغيل الصوت الآن، حاول مرة أخرى بعد قليل.', 'Couldn’t play the audio right now. Please try again shortly.'), 'error', 10_000);
+    if (!this.lastFailureHandled) {
+      toastOnce(tr('تعذّر تشغيل الصوت الآن، حاول مرة أخرى بعد قليل.', 'Couldn’t play the audio right now. Please try again shortly.'), 'error', 10_000);
+    }
+    this.lastFailureHandled = false;
     (this.onErrorCallback || this.onEndCallback)?.();
   }
 

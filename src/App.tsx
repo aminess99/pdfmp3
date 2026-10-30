@@ -17,6 +17,7 @@ import { NotFound } from './components/NotFound';
 import { Toaster } from './components/Toaster';
 import { SharePage } from './components/SharePage';
 import { SHARE_PATH_RE } from './lib/shares';
+import { REQUIRE_AUTH_EVENT, OUT_OF_CREDITS_EVENT } from './lib/apiFetch';
 import { findLandingPage } from './data/landingPages';
 import { HOME_SECTIONS } from './data/homeContent';
 import { ConversionJob, Voice } from './types';
@@ -107,13 +108,20 @@ export default function App() {
     });
   };
 
-  // Handle successful credit recharge
-  const handleSuccessPayment = (addedMinutes: number) => {
-    // Notify user dashboard / local credit state
-    const current = parseInt(localStorage.getItem('user_minutes_quota') || '30', 10);
-    localStorage.setItem('user_minutes_quota', (current + addedMinutes).toString());
-    window.dispatchEvent(new Event('quota_updated'));
-  };
+  // Minutes are only ever added by the server (payment webhook), never by the client
+  const handleSuccessPayment = () => {};
+
+  // Server answers "sign in first" / "out of minutes" (lib/apiFetch.ts) -> open the right dialog
+  useEffect(() => {
+    const onRequireAuth = () => setAuthModal({ isOpen: true, mode: 'register' });
+    const onOutOfCredits = () => handleSelectPlan('popular', 666, 19.99);
+    window.addEventListener(REQUIRE_AUTH_EVENT, onRequireAuth);
+    window.addEventListener(OUT_OF_CREDITS_EVENT, onOutOfCredits);
+    return () => {
+      window.removeEventListener(REQUIRE_AUTH_EVENT, onRequireAuth);
+      window.removeEventListener(OUT_OF_CREDITS_EVENT, onOutOfCredits);
+    };
+  }, []);
 
   // Listen to background progressive chapter updates
   React.useEffect(() => {

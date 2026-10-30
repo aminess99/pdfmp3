@@ -38,6 +38,7 @@ import { UserSettingsModal } from './UserSettingsModal';
 import { AIBookCreator } from './AIBookCreator';
 import { ChatPdfModal } from './ChatPdfModal';
 import { minutesAr } from '../lib/arabicPlural';
+import { fetchCredits, CREDITS_CHANGED_EVENT } from '../lib/apiFetch';
 import { tr, DIR } from '../lib/i18n';
 import { voiceLabel } from '../lib/voiceLabel';
 
@@ -59,6 +60,14 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   onOpenCheckout,
 }) => {
   const [activeTab, setActiveTab] = useState<'library' | 'new_book' | 'ai_creator'>('library');
+  // Listening minutes from the server (null: not enforced / not loaded yet)
+  const [balanceSeconds, setBalanceSeconds] = useState<number | null>(null);
+  useEffect(() => {
+    fetchCredits().then(setBalanceSeconds);
+    const onChange = (e: Event) => setBalanceSeconds((e as CustomEvent<number>).detail);
+    window.addEventListener(CREDITS_CHANGED_EVENT, onChange);
+    return () => window.removeEventListener(CREDITS_CHANGED_EVENT, onChange);
+  }, []);
   const [savedBooks, setSavedBooks] = useState<ConversionJob[]>([]);
   const [loadingBooks, setLoadingBooks] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -174,7 +183,6 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     .filter((b) => (filter === 'progress' ? progressOf(b) > 0 : filter === 'new' ? progressOf(b) === 0 : true));
   const continueBook = savedBooks.find((b) => progressOf(b) > 0);
   const COVER_HUES = ['#312e81', '#164e63', '#3b0764', '#1e3a8a', '#134e4a', '#4c1d95'];
-  const balance = localStorage.getItem('user_minutes_quota') || '30';
   const openCheckout = () =>
     onOpenCheckout?.({ id: 'popular', name: tr("باقة الشغوف", "Book lover"), priceUsd: 19.99, minutes: 666, unitRateUsd: 0.03 });
 
@@ -211,7 +219,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         <div className="p-4 rounded-[14px] bg-card border border-line flex flex-col gap-2.5">
           <span className="flex justify-between gap-2 text-sm">
             <span className="text-slate-400">{tr("رصيدك", "Your balance")}</span>
-            <strong className="text-white">{minutesAr(Number(balance) || 0)}</strong>
+            <strong className="text-white">{balanceSeconds === null ? '—' : minutesAr(Math.floor(balanceSeconds / 60))}</strong>
           </span>
           <button type="button" onClick={openCheckout} className="self-start text-sm text-brand-soft hover:text-indigo-200 cursor-pointer">
             {tr("شحن الرصيد", "Top up")}

@@ -2,6 +2,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 // @ts-ignore
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { tr } from './i18n';
+import { apiFetch } from './apiFetch';
 
 // Configure pdfjs worker locally from bundle, with unpkg fallback
 try {
@@ -63,7 +64,7 @@ export function cleanArabicExtractedText(rawText: string): string {
 export async function purifyTextWithAI(text: string): Promise<string> {
   if (!text || !text.trim()) return '';
   try {
-    const res = await fetch('/api/ai/purify-text', {
+    const res = await apiFetch('/api/ai/purify-text', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
@@ -230,7 +231,7 @@ export async function extractTextFromPDFFile(
     if (onProgress) onProgress(75);
     const pdfBase64 = await fileToBase64(file);
 
-    const res = await fetch('/api/pdf/extract', {
+    const res = await apiFetch('/api/pdf/extract', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

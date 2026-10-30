@@ -9,6 +9,18 @@ import { VOICES } from "./src/data/voices";
 import { LANDING_PAGES, LandingPage, findLandingPage, landingPath } from "./src/data/landingPages";
 import { HOME_CONTENT, HOME_SEO } from "./src/data/homeContent";
 import firebaseConfig from "./src/lib/firebaseConfig";
+import {
+  creditsEnabled,
+  uidFromRequest,
+  secondsForText,
+  isPublicText,
+  getBalance,
+  charge,
+  refund,
+  alreadyCharged,
+  rememberCharge,
+  forgetCharge,
+} from "./server/credits";
 
 dotenv.config();
 
@@ -28,6 +40,13 @@ app.use((req, res, next) => {
   if (!req.hostname.endsWith(".onrender.com")) return next();
   if (req.method !== "GET" && req.method !== "HEAD") return next();
   res.redirect(301, process.env.APP_URL.replace(/\/+$/, "") + req.originalUrl);
+});
+
+// The AI text tools (summaries, chat, book writing, OCR, chapter detection) need a signed-in
+// user; TTS routes do their own check in gateTts() because the demo texts are public.
+app.use(["/api/ai", "/api/pdf", "/api/book", "/api/tts/fish-audio"], (req, res, next) => {
+  if (req.method !== "POST") return next();
+  requireUser(req, res).then((ok) => ok && next(), next);
 });
 
 // Simple in-memory per-IP rate limit on the paid AI / TTS endpoints, so a
@@ -1002,7 +1021,59 @@ app.get("/api/tts/status", (req, res) => {
 // Priority 1: google/gemini-3.8-flash-lite-tts via OpenRouter
 // Priority 2: Direct Google Gemini 3.8 Flash-Lite TTS (Google GenAI)
 // Priority 3: Fish Audio S2.1 Pro
+// Listening minutes: anyone may hear the public demo texts; everything else needs a signed-in
+// user with enough balance. Returns null when it already answered (401/402), otherwise a refund
+// function to call if generation fails.
+async function gateTts(
+  req: express.Request,
+  res: express.Response,
+  text: string,
+  chargeKey: string
+): Promise<(() => Promise<void>) | null> {
+  const noop = async () => {};
+  if (!creditsEnabled() || isPublicText(text)) return noop;
+  const uid = await uidFromRequest(req);
+  if (!uid) {
+    res.status(401).json({ code: "auth_required", error: "سجّل الدخول للاستماع إلى نصوصك وكتبك." });
+    return null;
+  }
+  if (alreadyCharged(uid, chargeKey)) return noop;
+  const seconds = secondsForText(text);
+  const result = await charge(uid, seconds);
+  if (!result.ok) {
+    res.status(402).json({ code: "insufficient_credits", remainingSeconds: result.remaining, error: "رصيد دقائقك لا يكفي." });
+    return null;
+  }
+  rememberCharge(uid, chargeKey);
+  res.setHeader("X-Credits-Remaining", String(result.remaining));
+  return async () => {
+    forgetCharge(uid, chargeKey);
+    await refund(uid, seconds);
+  };
+}
+
+// Signed-in check for the AI text tools (they spend the OpenRouter credit too)
+async function requireUser(req: express.Request, res: express.Response): Promise<boolean> {
+  if (!creditsEnabled()) return true;
+  if (await uidFromRequest(req)) return true;
+  res.status(401).json({ code: "auth_required", error: "سجّل الدخول لاستخدام أدوات الذكاء الاصطناعي." });
+  return false;
+}
+
+app.get("/api/credits", async (req, res) => {
+  if (!creditsEnabled()) return res.json({ enabled: false });
+  const uid = await uidFromRequest(req);
+  if (!uid) return res.status(401).json({ code: "auth_required" });
+  try {
+    res.json({ enabled: true, secondsRemaining: await getBalance(uid) });
+  } catch (err: any) {
+    console.error("[credits] balance error", err?.message || err);
+    res.status(500).json({ error: "تعذّر قراءة الرصيد." });
+  }
+});
+
 app.post("/api/tts/speak", async (req, res) => {
+  let refundCharge: () => Promise<void> = async () => {};
   try {
     const { text, voice, speed = 1.0 } = req.body;
     if (!text || typeof text !== "string") {
@@ -1012,6 +1083,11 @@ app.post("/api/tts/speak", async (req, res) => {
     const trimmedText = text.slice(0, 10000).trim();
     const cacheKey = `${TTS_CACHE_VERSION}_${voice?.id || 'def'}_${speed}_${trimmedText}`;
     const diskPath = getAudioDiskCachePath(cacheKey);
+
+    // Charge the listener (cached clips cost us nothing but are still listening time)
+    const gate = await gateTts(req, res, trimmedText, `speak:${voice?.id || "def"}:${trimmedText}`);
+    if (!gate) return;
+    refundCharge = gate;
 
     // 1. Level 1: In-memory Fast Cache
     if (serverTtsCache.has(cacheKey)) {
@@ -1139,15 +1215,18 @@ app.post("/api/tts/speak", async (req, res) => {
     }
 
     // No robotic fallback (e.g. Google Translate TTS): if the AI voice fails, the client shows an error
+    await refundCharge();
     return res.status(503).json({ error: "لا يمكن توليد الصوت بالذكاء الاصطناعي حالياً." });
   } catch (error: any) {
     console.error("Speak Exception:", error);
-    res.status(500).json({ error: error.message || "فشل الاتصال بمحرك الصوت" });
+    await refundCharge();
+    if (!res.headersSent) res.status(500).json({ error: error.message || "فشل الاتصال بمحرك الصوت" });
   }
 });
 
 // Full audiobook chapter/text MP3 download synthesis endpoint
 app.post("/api/tts/generate-audio", async (req, res) => {
+  let refundCharge: () => Promise<void> = async () => {};
   try {
     const { text, speed = 1.0, title, voice: rawVoice, voiceId } = req.body;
     if (!text || typeof text !== "string") {
@@ -1166,6 +1245,10 @@ app.post("/api/tts/generate-audio", async (req, res) => {
     const trimmedText = text.slice(0, 15000).trim();
     const cacheKey = `${TTS_CACHE_VERSION}_${targetVoice?.id || 'def'}_${speed}_${trimmedText}`;
     const diskPath = getAudioDiskCachePath(cacheKey);
+
+    const gate = await gateTts(req, res, trimmedText, `download:${targetVoice?.id || "def"}:${trimmedText}`);
+    if (!gate) return;
+    refundCharge = gate;
 
     // Check disk/memory cache ONLY for very short single sentences (<200 chars)
     // Long chapters must ALWAYS run through the multi-chunk sequential assembler!
@@ -1291,10 +1374,12 @@ app.post("/api/tts/generate-audio", async (req, res) => {
       }
     }
 
+    await refundCharge();
     return res.status(503).json({ error: "تعذر توليد ملف التحميل الصوتي." });
   } catch (error: any) {
     console.error("Generate audio error:", error);
-    res.status(500).json({ error: error.message || "خطأ في توليد الملف الصوتي" });
+    await refundCharge();
+    if (!res.headersSent) res.status(500).json({ error: error.message || "خطأ في توليد الملف الصوتي" });
   }
 });
 

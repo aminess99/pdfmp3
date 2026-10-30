@@ -38,6 +38,7 @@ import { chaptersAr, minutesAr } from '../lib/arabicPlural';
 import { voiceLabel, voiceInitial, genderLabel, dialectLabel } from '../lib/voiceLabel';
 import { tr, DIR } from '../lib/i18n';
 import { VoiceOptionGroups, groupVoicesByDialect } from './VoiceOptions';
+import { apiFetch } from '../lib/apiFetch';
 
 interface StudioViewProps {
   job: ConversionJob;
@@ -244,23 +245,11 @@ export const StudioView: React.FC<StudioViewProps> = ({
     setProgressPercent((sentenceIdx / sentences.length) * 100);
     setClipFraction(0);
 
-    // Lookahead pre-fetch next segments
+    // Prepare only the next paragraph: each one is ~35 s of audio, enough time to generate the
+    // following one, and every prepared paragraph costs the listener minutes even if never heard
     if (sentenceIdx + 1 < sentences.length) {
-      const upcoming = sentences.slice(sentenceIdx + 1, sentenceIdx + 4);
-      audioEngine.prefetchBatch(upcoming, selectedVoice, playbackRate, 3);
-    } else if (chapters && activeChapterIndex < chapters.length - 1) {
-      // Near end of current chapter: pre-fetch first 3 segments of NEXT chapter for 0-second seamless transition!
-      const nextChapter = chapters[activeChapterIndex + 1];
-      if (nextChapter && nextChapter.text) {
-        const nextSentences = nextChapter.text
-          .split(/(?<=[.!?؟\n])\s+/)
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0 && !/^الصفحة\s*\d+$/i.test(s))
-          .slice(0, 3);
-        if (nextSentences.length > 0) {
-          audioEngine.prefetchBatch(nextSentences, selectedVoice, playbackRate, 2);
-        }
-      }
+      const upcoming = sentences.slice(sentenceIdx + 1, sentenceIdx + 2);
+      audioEngine.prefetchBatch(upcoming, selectedVoice, playbackRate, 1);
     }
 
     audioEngine.speak(
@@ -346,7 +335,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
     if (panelCache[key]) return;
     setPanelLoading(true);
     try {
-      const res = await fetch('/api/ai/transform-book', {
+      const res = await apiFetch('/api/ai/transform-book', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: fullText, mode: next, bookTitle: cleanBookTitle(job.fileName) }),
@@ -480,7 +469,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
       // 2. SERVER FALLBACK
       const textToDownload = currentChapter ? currentChapter.text : fullText;
-      const res = await fetch('/api/tts/generate-audio', {
+      const res = await apiFetch('/api/tts/generate-audio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -568,7 +557,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
       // Server fallback for whole book
       const fullMergedText = allChaptersList.map(c => c.text).join('\n\n');
-      const res = await fetch('/api/tts/generate-audio', {
+      const res = await apiFetch('/api/tts/generate-audio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
