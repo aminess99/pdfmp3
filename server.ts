@@ -819,15 +819,17 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitsPe
   return Buffer.concat([wavHeader, pcmBuffer]);
 }
 
-// Prefix the voice's dialect/style instruction (from the trusted VOICES list, not the
-// client) using Gemini TTS's natural-language style control: "<instruction>: <text>".
-// Set TTS_STYLE_PROMPT=off to send the bare text.
-function buildTtsInput(text: string, voice?: any): string {
-  if (process.env.TTS_STYLE_PROMPT === "off") return text;
-  const style = VOICES.find((v) => v.id === voice?.id)?.stylePrompt?.trim();
-  if (!style) return text;
-  return `${style.replace(/[.:،\s]+$/, "")}:\n${text}`;
+// The voice's dialect/style instruction, looked up in the trusted VOICES list (not taken
+// from the client). Gemini 3.8 TTS reads the text field verbatim, so this must never be
+// prepended to the text: it goes in OpenRouter's separate `instructions` field.
+// Set TTS_STYLE_PROMPT=off to send no instruction.
+function ttsStyleFor(voice?: any): string | undefined {
+  if (process.env.TTS_STYLE_PROMPT === "off") return undefined;
+  return VOICES.find((v) => v.id === voice?.id)?.stylePrompt?.trim() || undefined;
 }
+
+// Bump when the way audio is generated changes, so cached clips made the old way are not reused
+const TTS_CACHE_VERSION = "v2";
 
 // Synthesize audio using google/gemini-3.8-flash-lite-tts via OpenRouter with system instructions & dialect prompting
 async function synthesizeWithOpenRouterGeminiTts(
@@ -843,7 +845,7 @@ async function synthesizeWithOpenRouterGeminiTts(
   const isFemale = voice?.gender === "female";
   const voiceName = voice?.geminiVoiceName || (isFemale ? "Kore" : "Puck");
 
-  const inputForSpeech = buildTtsInput(text, voice);
+  const instructions = ttsStyleFor(voice);
 
   // List of active Gemini TTS models on OpenRouter (Notice: Gemini TTS strictly requires response_format: "pcm")
   const ttsModelsToTry = [
@@ -870,7 +872,8 @@ async function synthesizeWithOpenRouterGeminiTts(
         },
         body: JSON.stringify({
           model,
-          input: inputForSpeech,
+          input: text,
+          ...(instructions ? { instructions } : {}),
           voice: voiceName,
           speed: Number(speed) || 1.0,
           response_format: "pcm",
@@ -1007,7 +1010,7 @@ app.post("/api/tts/speak", async (req, res) => {
     }
 
     const trimmedText = text.slice(0, 10000).trim();
-    const cacheKey = `${voice?.id || 'def'}_${speed}_${trimmedText}`;
+    const cacheKey = `${TTS_CACHE_VERSION}_${voice?.id || 'def'}_${speed}_${trimmedText}`;
     const diskPath = getAudioDiskCachePath(cacheKey);
 
     // 1. Level 1: In-memory Fast Cache
@@ -1072,7 +1075,7 @@ app.post("/api/tts/speak", async (req, res) => {
       try {
         const response = await gemini.models.generateContent({
           model: "gemini-3.8-flash-lite-tts",
-          contents: [{ parts: [{ text: buildTtsInput(trimmedText, voice) }] }],
+          contents: [{ parts: [{ text: trimmedText }] }],
           config: {
             responseModalities: ["AUDIO"],
             speechConfig: {
@@ -1222,7 +1225,7 @@ app.post("/api/tts/generate-audio", async (req, res) => {
     }
 
     const trimmedText = text.slice(0, 15000).trim();
-    const cacheKey = `${targetVoice?.id || 'def'}_${speed}_${trimmedText}`;
+    const cacheKey = `${TTS_CACHE_VERSION}_${targetVoice?.id || 'def'}_${speed}_${trimmedText}`;
     const diskPath = getAudioDiskCachePath(cacheKey);
 
     // Check disk/memory cache ONLY for very short single sentences (<200 chars)
@@ -1289,7 +1292,7 @@ app.post("/api/tts/generate-audio", async (req, res) => {
           try {
             const response = await gemini.models.generateContent({
               model: "gemini-3.8-flash-lite-tts",
-              contents: [{ parts: [{ text: buildTtsInput(chunk, targetVoice) }] }],
+              contents: [{ parts: [{ text: chunk }] }],
               config: {
                 responseModalities: ["AUDIO"],
                 speechConfig: {

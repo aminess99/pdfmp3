@@ -34,7 +34,7 @@ function pcmToWav(pcm: Buffer, sampleRate = 24000, channels = 1, bits = 16): Buf
   return Buffer.concat([header, pcm]);
 }
 
-async function synthesize(text: string, voiceName: string, apiKey: string): Promise<Buffer> {
+async function synthesize(text: string, voiceName: string, instructions: string | undefined, apiKey: string): Promise<Buffer> {
   const res = await fetch('https://openrouter.ai/api/v1/audio/speech', {
     method: 'POST',
     headers: {
@@ -44,7 +44,8 @@ async function synthesize(text: string, voiceName: string, apiKey: string): Prom
       'X-Title': 'Hakawati AI',
     },
     // Same request shape as the server (Gemini TTS on OpenRouter returns raw 24kHz PCM)
-    body: JSON.stringify({ model: MODEL, input: text, voice: voiceName, speed: 1.0, response_format: 'pcm' }),
+    // Gemini 3.8 TTS speaks `input` verbatim, so the style goes in the separate `instructions` field
+    body: JSON.stringify({ model: MODEL, input: text, ...(instructions ? { instructions } : {}), voice: voiceName, speed: 1.0, response_format: 'pcm' }),
   });
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
@@ -74,14 +75,14 @@ async function main() {
       continue;
     }
     try {
-      // Same "<instruction>: <text>" input the server builds in buildTtsInput()
-      const style = process.env.TTS_STYLE_PROMPT === 'off' ? '' : voice.stylePrompt?.trim().replace(/[.:،\s]+$/, '');
-      const input = style ? `${style}:\n${voice.sampleText.trim()}` : voice.sampleText.trim();
+      // Same request the server sends (ttsStyleFor in server.ts)
+      const instructions = process.env.TTS_STYLE_PROMPT === 'off' ? undefined : voice.stylePrompt?.trim() || undefined;
+      const input = voice.sampleText.trim();
       // Retry transient failures (rate limits, timeouts) a couple of times
       let pcm: Buffer | null = null;
       for (let attempt = 1; attempt <= 3 && !pcm; attempt++) {
         try {
-          pcm = await synthesize(input, voice.geminiVoiceName, apiKey);
+          pcm = await synthesize(input, voice.geminiVoiceName, instructions, apiKey);
         } catch (err) {
           if (attempt === 3) throw err;
           console.warn(`retry ${voice.id} (attempt ${attempt}): ${(err as Error).message}`);
