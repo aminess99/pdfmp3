@@ -9,6 +9,7 @@ import {
   firebaseSignOut, 
   onAuthStateChanged,
   updateProfile,
+  sendPasswordResetEmail,
   doc, 
   setDoc, 
   getDoc,
@@ -31,7 +32,7 @@ interface AuthContextType {
   signUpWithEmail: (name: string, email: string, pass: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
-  quickAdminLogin: () => void;
+  resetPassword: (email: string) => Promise<void>;
   isAdmin: boolean;
 }
 
@@ -42,7 +43,7 @@ const AuthContext = createContext<AuthContextType>({
   signUpWithEmail: async () => {},
   signInWithGoogle: async () => {},
   signOut: async () => {},
-  quickAdminLogin: () => {},
+  resetPassword: async () => {},
   isAdmin: false,
 });
 
@@ -54,7 +55,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const checkIsAdmin = (email?: string | null) => {
     if (!email) return false;
     const lower = email.toLowerCase();
-    return lower === 'aminefiverr1996@gmail.com' || lower.includes('amine');
+    return lower === 'aminefiverr1996@gmail.com';
   };
 
   useEffect(() => {
@@ -98,13 +99,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               uid: firebaseUser.uid,
               displayName: appUser.name,
               email: appUser.email,
-              role: appUser.role,
               createdAt: serverTimestamp(),
             });
           }
         } catch (err) {
           console.warn('Firestore sync note:', err);
         }
+      } else {
+        // No Firebase session: drop the optimistic cached user
+        setUser(null);
+        localStorage.removeItem('pdf_audio_user');
       }
       setLoading(false);
     });
@@ -145,7 +149,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           uid: cred.user.uid,
           displayName: name,
           email: cred.user.email,
-          role: appUser.role,
           createdAt: serverTimestamp(),
         });
       } catch (err) {
@@ -172,7 +175,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           uid: res.user.uid,
           displayName: appUser.name,
           email: appUser.email,
-          role: appUser.role,
           createdAt: serverTimestamp(),
         }, { merge: true });
       } catch (err) {
@@ -181,15 +183,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const quickAdminLogin = () => {
-    const adminUser: AppUser = {
-      uid: 'admin-amine-uid',
-      name: 'أمين (المسؤول)',
-      email: 'aminefiverr1996@gmail.com',
-      role: 'admin',
-    };
-    setUser(adminUser);
-    localStorage.setItem('pdf_audio_user', JSON.stringify(adminUser));
+  const resetPassword = async (email: string) => {
+    await sendPasswordResetEmail(auth, email);
   };
 
   const signOut = async () => {
@@ -211,7 +206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signUpWithEmail,
         signInWithGoogle,
         signOut,
-        quickAdminLogin,
+        resetPassword,
         isAdmin: Boolean(user && user.role === 'admin'),
       }}
     >

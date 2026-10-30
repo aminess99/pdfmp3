@@ -6,23 +6,196 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { VOICES } from "./src/data/voices";
+import { LANDING_PAGES, LandingPage, findLandingPage, landingPath } from "./src/data/landingPages";
+import { isAdminUser, overview as adminOverview, usersTable as adminUsersTable, recentPayments as adminRecentPayments, giftMinutes as adminGiftMinutes } from "./server/admin";
+import { libraryEnabled, listBooks, getBook, saveBook, deleteBook, isValidBookId } from "./server/library";
+import { summaryText } from "./src/data/summaryTexts";
+import { BOOK_SUMMARIES, BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, UPCOMING_SUMMARIES, findSummary, isSummariesHub, summaryAudioUrl, summaryCoverUrl, summaryPath } from "./src/data/summaries";
+import { HOME_CONTENT, HOME_SEO } from "./src/data/homeContent";
+import firebaseConfig from "./src/lib/firebaseConfig";
+import {
+  creditsEnabled,
+  uidFromRequest,
+  secondsForText,
+  isPublicText,
+  getBalance,
+  charge,
+  refund,
+  alreadyCharged,
+  rememberCharge,
+  forgetCharge,
+  userFromRequest,
+  addPurchasedSeconds,
+  findSubscription,
+  recordSubscription,
+  saveCustomerId,
+  customerIdFor,
+  isSubscriber,
+  subscriberUntil,
+  forgetSubscriber,
+  useDailyQuota,
+  recordTtsUsage,
+} from "./server/credits";
+import { PLANS, paymentsEnabled, planAvailable, createCheckout, verifyWebhook, planOfPayment, billingPortalUrl } from "./server/payments";
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
+
+// Dodo Payments webhook: the signature covers the raw body, so this route must read it
+// before express.json() parses it. Minutes are added only here, never by the client.
+app.post("/api/webhooks/dodo", express.raw({ type: "*/*", limit: "1mb" }), async (req, res) => {
+  const raw = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
+  let event: any;
+  try {
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") headers[k] = v;
+    event = verifyWebhook(raw, headers);
+  } catch (err: any) {
+    console.warn("[payments] rejected webhook:", err?.message || err);
+    return res.status(401).json({ error: "invalid signature" });
+  }
+  try {
+    if (event.type === "payment.succeeded") {
+      const payment = event.data;
+      let uid: string | undefined = payment.metadata?.uid;
+      let plan = planOfPayment(payment);
+      const customerId: string | undefined = payment.customer?.customer_id;
+      // Monthly renewals: find the owner recorded by the first payment of the subscription
+      const subscriptionId: string | undefined = payment.subscription_id || undefined;
+      if (subscriptionId) {
+        const sub = await findSubscription(subscriptionId);
+        if (sub) {
+          uid = uid || sub.uid;
+          plan = plan || sub.plan;
+        } else if (uid && plan) {
+          await recordSubscription(subscriptionId, { uid, plan, customerId });
+        }
+      }
+      if (uid && customerId) await saveCustomerId(uid, customerId);
+      if (!uid || !plan) {
+        console.error("[payments] paid but cannot credit (missing uid/plan):", payment.payment_id, payment.metadata);
+        return res.json({ ok: true });
+      }
+      const result = await addPurchasedSeconds(uid, PLANS[plan].minutes * 60, payment.payment_id, {
+        plan,
+        amount: payment.total_amount,
+        currency: payment.currency,
+        email: payment.customer?.email || null,
+      });
+      forgetSubscriber(uid);
+      console.log(`[payments] ${payment.payment_id}: ${plan} for ${uid} -> ${result}`);
+    }
+    res.json({ ok: true });
+  } catch (err: any) {
+    // 5xx makes Dodo retry; the payments/{id} record keeps the retry from double-crediting
+    console.error("[payments] webhook handling failed:", err?.message || err);
+    res.status(500).json({ error: "retry" });
+  }
+});
 
 app.use(express.json({ limit: "50mb" }));
 
-// Persistent Disk-based Audio Cache Directory
-const AUDIO_CACHE_DIR = path.join(process.cwd(), ".cache", "audio");
-try {
-  if (!fs.existsSync(AUDIO_CACHE_DIR)) {
-    fs.mkdirSync(AUDIO_CACHE_DIR, { recursive: true });
+// Render sits behind a proxy: trust it so req.ip is the visitor's IP
+app.set("trust proxy", 1);
+
+// Once the custom domain works, send visitors and search engines from the old
+// *.onrender.com address to it (enable with REDIRECT_TO_DOMAIN=on). GET/HEAD only,
+// so in-flight API POSTs from an open tab are not broken.
+app.use((req, res, next) => {
+  if (process.env.REDIRECT_TO_DOMAIN !== "on" || !process.env.APP_URL) return next();
+  if (!req.hostname.endsWith(".onrender.com")) return next();
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  res.redirect(301, process.env.APP_URL.replace(/\/+$/, "") + req.originalUrl);
+});
+
+// The AI text tools (summaries, chat, book writing, OCR, chapter detection) need a signed-in
+// user; TTS routes do their own check in gateTts() because the demo texts are public.
+app.use(["/api/ai", "/api/pdf", "/api/book", "/api/tts/fish-audio"], (req, res, next) => {
+  if (req.method !== "POST") return next();
+  requireUser(req, res).then((ok) => ok && next(), next);
+});
+
+// Simple in-memory per-IP rate limit on the paid AI / TTS endpoints, so a
+// single visitor or bot cannot drain the OpenRouter / Gemini credit.
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_PER_MINUTE = Number(process.env.RATE_LIMIT_PER_MINUTE) || 60;
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+app.use(["/api/ai", "/api/tts", "/api/pdf", "/api/book"], (req, res, next) => {
+  if (req.method !== "POST") return next();
+  const ip = req.ip || "unknown";
+  const now = Date.now();
+  let bucket = rateBuckets.get(ip);
+  if (!bucket || bucket.resetAt <= now) {
+    bucket = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+    rateBuckets.set(ip, bucket);
   }
-} catch (e) {
-  console.warn("Audio cache dir creation warning:", e);
+  bucket.count++;
+  if (bucket.count > RATE_LIMIT_PER_MINUTE) {
+    res.set("Retry-After", String(Math.ceil((bucket.resetAt - now) / 1000)));
+    return res.status(429).json({ error: "عدد الطلبات كبير جداً، يرجى المحاولة بعد دقيقة." });
+  }
+  next();
+});
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, bucket] of rateBuckets) {
+    if (bucket.resetAt <= now) rateBuckets.delete(ip);
+  }
+}, 5 * 60_000).unref();
+
+// Generated audio is cached on disk. On Render that must be the persistent disk mounted at
+// /var/data (DATA_DIR overrides it): the app directory is wiped on every deploy.
+function pickAudioCacheDir(): string {
+  const dataDir = process.env.DATA_DIR || "/var/data";
+  // The mount point exists only when the disk is attached; never create it ourselves
+  const candidates = fs.existsSync(dataDir) ? [path.join(dataDir, "audio")] : [];
+  for (const dir of [...candidates, path.join(process.cwd(), ".cache", "audio")]) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.accessSync(dir, fs.constants.W_OK);
+      return dir;
+    } catch {
+      // not mounted or not writable: try the next one
+    }
+  }
+  return path.join(process.cwd(), ".cache", "audio");
 }
+const AUDIO_CACHE_DIR = pickAudioCacheDir();
+const AUDIO_CACHE_PERSISTENT = !AUDIO_CACHE_DIR.startsWith(process.cwd());
+console.log(
+  `[audio-cache] ${AUDIO_CACHE_DIR} (${AUDIO_CACHE_PERSISTENT ? "persistent disk" : "temporary: cleared on every deploy"})`
+);
+
+// Keep the cache under a size budget by deleting the least recently used files
+const AUDIO_CACHE_MAX_BYTES = Number(process.env.AUDIO_CACHE_MAX_GB || 4) * 1024 ** 3;
+function pruneAudioCache(): void {
+  try {
+    const files = fs
+      .readdirSync(AUDIO_CACHE_DIR)
+      .map((name) => {
+        const full = path.join(AUDIO_CACHE_DIR, name);
+        const st = fs.statSync(full);
+        return { full, size: st.size, used: Math.max(st.atimeMs, st.mtimeMs) };
+      })
+      .sort((a, b) => a.used - b.used);
+    let total = files.reduce((n, f) => n + f.size, 0);
+    const before = total;
+    for (const f of files) {
+      if (total <= AUDIO_CACHE_MAX_BYTES * 0.9) break;
+      fs.unlinkSync(f.full);
+      total -= f.size;
+    }
+    console.log(`[audio-cache] ${files.length} files, ${(before / 1024 ** 2).toFixed(0)} MB` + (before !== total ? `, pruned to ${(total / 1024 ** 2).toFixed(0)} MB` : ""));
+  } catch (err: any) {
+    console.warn("[audio-cache] prune failed:", err?.message || err);
+  }
+}
+setTimeout(pruneAudioCache, 30_000).unref();
+setInterval(pruneAudioCache, 6 * 60 * 60_000).unref();
 
 function getAudioDiskCachePath(key: string): string {
   const hash = crypto.createHash("sha256").update(key).digest("hex");
@@ -37,10 +210,13 @@ function getGeminiClient() {
 }
 
 // OpenRouter API helper prioritizing Google Gemini and DeepSeek models
+// `prompt` may be a plain string or an OpenRouter multimodal content array (e.g. text + PDF file).
+// OPENROUTER_TEXT_MODEL (optional env) is tried first for every text request.
 async function callOpenRouter(
-  prompt: string, 
+  prompt: string | any[],
   preferredModel = "google/gemini-2.5-flash",
-  maxTokens: number = 4000
+  maxTokens: number = 4000,
+  timeoutMs: number = 35000
 ): Promise<string | null> {
   const openRouterKey = process.env.OPENROUTER_API_KEY;
   if (!openRouterKey || !openRouterKey.startsWith("sk-or-v1-")) {
@@ -52,6 +228,7 @@ async function callOpenRouter(
   // 2. deepseek/deepseek-chat (DeepSeek V3)
   // 3. meta-llama/llama-3.3-70b-instruct
   const modelsToTry = [
+    process.env.OPENROUTER_TEXT_MODEL,
     preferredModel,
     "google/gemini-2.5-flash",
     "google/gemini-2.5-flash-lite",
@@ -59,20 +236,20 @@ async function callOpenRouter(
     "meta-llama/llama-3.3-70b-instruct",
   ];
 
-  const uniqueModels = [...new Set(modelsToTry)];
+  const uniqueModels = [...new Set(modelsToTry.filter(Boolean) as string[])];
 
   for (const model of uniqueModels) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000);
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${openRouterKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": process.env.APP_URL || "https://ais-applet.local",
-          "X-Title": "PDF to Audio Arabic Studio",
+          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+          "X-Title": "Hakawati AI",
         },
         body: JSON.stringify({
           model,
@@ -103,7 +280,7 @@ async function callOpenRouter(
       }
     } catch (err: any) {
       if (err?.name === "AbortError" || err?.message?.includes("aborted")) {
-        console.info(`[OpenRouter] ${model} timed out after 35s, trying next model.`);
+        console.info(`[OpenRouter] ${model} timed out after ${timeoutMs / 1000}s, trying next model.`);
       } else {
         console.warn(`[OpenRouter] Failed calling ${model}:`, err?.message || err);
       }
@@ -115,7 +292,7 @@ async function callOpenRouter(
 
 // Health check
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", app: "PDFtoAudio", timestamp: new Date().toISOString() });
+  res.json({ status: "ok", app: "Hakawati AI", timestamp: new Date().toISOString() });
 });
 
 // AI Text-to-Audio Script Summarizer & Diacritics Optimizer
@@ -296,6 +473,28 @@ app.post("/api/pdf/extract", async (req, res) => {
       }
     }
 
+    // 2b. OpenRouter Vision OCR (PDF file input) when Gemini is not configured or failed
+    if (!extractedText || extractedText.length <= 20) {
+      const openRouterOcr = await callOpenRouter(
+        [
+          { type: "text", text: prompt },
+          {
+            type: "file",
+            file: {
+              filename: fileName || "book.pdf",
+              file_data: `data:application/pdf;base64,${cleanBase64}`,
+            },
+          },
+        ],
+        "google/gemini-2.5-flash",
+        16000,
+        120000
+      );
+      if (openRouterOcr && openRouterOcr.length > 20) {
+        extractedText = openRouterOcr;
+      }
+    }
+
     // 3. Fallback: If AI OCR failed (e.g. 429 Quota Exceeded), extract via digital PDF server engine
     if (!extractedText || extractedText.length <= 20) {
       console.log("AI OCR quota exceeded or unavailable. Running digital PDF fallback engine...");
@@ -407,7 +606,8 @@ function localExtractKeyPoints(text: string, bookTitle?: string): string {
 }
 
 // AI Book Listening Mode Transformer: Generates Executive Summaries (10m) or Key Points (50%)
-app.post("/api/book/transform-mode", async (req, res) => {
+// The client calls /api/ai/transform-book; keep the original path too
+app.post(["/api/book/transform-mode", "/api/ai/transform-book"], async (req, res) => {
   try {
     const { text, mode, bookTitle } = req.body;
     if (!text || typeof text !== "string" || !text.trim()) {
@@ -417,6 +617,7 @@ app.post("/api/book/transform-mode", async (req, res) => {
     if (!mode || mode === "full") {
       return res.json({ success: true, transformedText: text.trim(), mode: "full" });
     }
+    if (!(await useFreeDaily(req, res, "transform"))) return;
 
     const titleContext = bookTitle ? `عنوان الكتاب: "${bookTitle}"` : "";
 
@@ -630,8 +831,7 @@ app.post("/api/ai/extract-chapters", async (req, res) => {
     const readerVoice = voiceName || "القارئ الصوتي";
 
     const ai = getGeminiClient();
-    if (ai) {
-      const prompt = `أنت كبير مخرجي ومنتجي الكتب الصوتية الاحترافية باللغة العربية (Audiobook Executive Producer).
+    const prompt = `أنت كبير مخرجي ومنتجي الكتب الصوتية الاحترافية باللغة العربية (Audiobook Executive Producer).
 قم بفحص النص التالي من الكتاب واستخراج البيانات بدقة متناهية:
 
 المطلوب بدقة:
@@ -640,7 +840,7 @@ app.post("/api/ai/extract-chapters", async (req, res) => {
 3. إذا وجدت فصولاً حقيقية: قسّم الكتاب وفقاً لعناوين فصول المؤلف الأصلية حرفياً، واستخرج نص كل فصل منقّى من أرقام الصفحات والهوامش.
 4. إذا لم تجد فصولاً أو فهارس أصلية واضحة: قسّم النص تلقائياً إلى 3 إلى 8 أجزاء منطقية متوازنة بأسماء معبرة (مثل: "الجزء الأول: المقدمة والتمهيد"، "الجزء الثاني: صلب الموضوع"... إلخ).
 5. صِغ مقدمة صوتية افتتاحية فخمة ومشوقة (Cinematic Audio Intro) باللغة العربية الفصحى لوضعها في بداية الفصل الأول على هذا النمط:
-   "كتاب: [اسم الكتاب] .. للكاتب: [اسم المؤلف أو الكاتب إن وجد] .. بصوت: ${readerVoice} .. إنتاج منصة PDF to Audio .. استماعاً ممتعاً."
+   "كتاب: [اسم الكتاب] .. للكاتب: [اسم المؤلف أو الكاتب إن وجد] .. بصوت: ${readerVoice} .. إنتاج منصة Hakawati AI .. استماعاً ممتعاً."
 
 أرجع النتيجة بصيغة JSON حصراً على هذا الشكل الدقيق:
 {
@@ -659,6 +859,8 @@ app.post("/api/ai/extract-chapters", async (req, res) => {
 نص الكتاب المراد تحليله:
 ${trimmedInput.slice(0, 35000)}`;
 
+    let rawJson = "";
+    if (ai) {
       try {
         const response = await ai.models.generateContent({
           model: "gemini-3.8-flash",
@@ -667,32 +869,44 @@ ${trimmedInput.slice(0, 35000)}`;
             responseMimeType: "application/json",
           }
         });
-
-        const rawJson = response.text?.trim() || "";
-        if (rawJson) {
-          const parsed = JSON.parse(rawJson);
-          if (parsed && Array.isArray(parsed.chapters) && parsed.chapters.length > 0) {
-            // Prepend cinematic audio intro to the first chapter if provided
-            if (parsed.cinematicIntro && parsed.chapters[0]) {
-              const introPrefix = `🎙️ ${parsed.cinematicIntro.trim()}\n\n---\n\n`;
-              if (!parsed.chapters[0].text.startsWith('🎙️')) {
-                parsed.chapters[0].text = introPrefix + parsed.chapters[0].text;
-              }
-            }
-
-            return res.json({
-              success: true,
-              bookTitle: parsed.bookTitle || defaultTitle,
-              authorName: parsed.authorName || "",
-              isOriginalTOC: Boolean(parsed.isOriginalTOC),
-              cinematicIntro: parsed.cinematicIntro || "",
-              chapters: parsed.chapters
-            });
-          }
-        }
+        rawJson = response.text?.trim() || "";
       } catch (geminiErr: any) {
-        console.warn("AI chapter parsing note, using local engine:", geminiErr?.message || geminiErr);
+        console.warn("Gemini chapter parsing unavailable:", geminiErr?.message || geminiErr);
       }
+    }
+
+    // OpenRouter fallback (strip ```json fences some models add)
+    if (!rawJson) {
+      const openRouterJson = await callOpenRouter(prompt, "google/gemini-2.5-flash", 16000, 120000);
+      if (openRouterJson) {
+        rawJson = openRouterJson.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+      }
+    }
+
+    try {
+      if (rawJson) {
+        const parsed = JSON.parse(rawJson);
+        if (parsed && Array.isArray(parsed.chapters) && parsed.chapters.length > 0) {
+          // Prepend cinematic audio intro to the first chapter if provided
+          if (parsed.cinematicIntro && parsed.chapters[0]) {
+            const introPrefix = `🎙️ ${parsed.cinematicIntro.trim()}\n\n---\n\n`;
+            if (!parsed.chapters[0].text.startsWith('🎙️')) {
+              parsed.chapters[0].text = introPrefix + parsed.chapters[0].text;
+            }
+          }
+
+          return res.json({
+            success: true,
+            bookTitle: parsed.bookTitle || defaultTitle,
+            authorName: parsed.authorName || "",
+            isOriginalTOC: Boolean(parsed.isOriginalTOC),
+            cinematicIntro: parsed.cinematicIntro || "",
+            chapters: parsed.chapters
+          });
+        }
+      }
+    } catch (parseErr: any) {
+      console.warn("AI chapter parsing note, using local engine:", parseErr?.message || parseErr);
     }
 
     res.json({ success: false, message: "fallback to local regex" });
@@ -733,6 +947,18 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitsPe
   return Buffer.concat([wavHeader, pcmBuffer]);
 }
 
+// The voice's dialect/style instruction, looked up in the trusted VOICES list (not taken
+// from the client). Gemini 3.8 TTS reads the text field verbatim, so this must never be
+// prepended to the text: it goes in OpenRouter's separate `instructions` field.
+// Set TTS_STYLE_PROMPT=off to send no instruction.
+function ttsStyleFor(voice?: any): string | undefined {
+  if (process.env.TTS_STYLE_PROMPT === "off") return undefined;
+  return VOICES.find((v) => v.id === voice?.id)?.stylePrompt?.trim() || undefined;
+}
+
+// Bump when the way audio is generated changes, so cached clips made the old way are not reused
+const TTS_CACHE_VERSION = "v2";
+
 // Synthesize audio using google/gemini-3.8-flash-lite-tts via OpenRouter with system instructions & dialect prompting
 async function synthesizeWithOpenRouterGeminiTts(
   text: string,
@@ -747,7 +973,7 @@ async function synthesizeWithOpenRouterGeminiTts(
   const isFemale = voice?.gender === "female";
   const voiceName = voice?.geminiVoiceName || (isFemale ? "Kore" : "Puck");
 
-  const inputForSpeech = `${text}`;
+  const instructions = ttsStyleFor(voice);
 
   // List of active Gemini TTS models on OpenRouter (Notice: Gemini TTS strictly requires response_format: "pcm")
   const ttsModelsToTry = [
@@ -769,12 +995,13 @@ async function synthesizeWithOpenRouterGeminiTts(
         headers: {
           Authorization: `Bearer ${openRouterKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": process.env.APP_URL || "https://ais-applet.local",
-          "X-Title": "PDF to Audio Arabic Studio",
+          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+          "X-Title": "Hakawati AI",
         },
         body: JSON.stringify({
           model,
-          input: inputForSpeech,
+          input: text,
+          ...(instructions ? { instructions } : {}),
           voice: voiceName,
           speed: Number(speed) || 1.0,
           response_format: "pcm",
@@ -903,7 +1130,266 @@ app.get("/api/tts/status", (req, res) => {
 // Priority 1: google/gemini-3.8-flash-lite-tts via OpenRouter
 // Priority 2: Direct Google Gemini 3.8 Flash-Lite TTS (Google GenAI)
 // Priority 3: Fish Audio S2.1 Pro
+// Listening minutes: anyone may hear the public demo texts; everything else needs a signed-in
+// user with enough balance. Returns null when it already answered (401/402), otherwise a refund
+// function to call if generation fails.
+async function gateTts(
+  req: express.Request,
+  res: express.Response,
+  text: string,
+  chargeKey: string
+): Promise<(() => Promise<void>) | null> {
+  const noop = async () => {};
+  if (!creditsEnabled() || isPublicText(text)) return noop;
+  const uid = await uidFromRequest(req);
+  if (!uid) {
+    res.status(401).json({ code: "auth_required", error: "سجّل الدخول للاستماع إلى نصوصك وكتبك." });
+    return null;
+  }
+  if (alreadyCharged(uid, chargeKey)) return noop;
+  const seconds = secondsForText(text);
+  const result = await charge(uid, seconds);
+  if (!result.ok) {
+    res.status(402).json({ code: "insufficient_credits", remainingSeconds: result.remaining, error: "رصيد دقائقك لا يكفي." });
+    return null;
+  }
+  rememberCharge(uid, chargeKey);
+  res.setHeader("X-Credits-Remaining", String(result.remaining));
+  return async () => {
+    forgetCharge(uid, chargeKey);
+    await refund(uid, seconds);
+  };
+}
+
+// Signed-in check for the AI text tools (they spend the OpenRouter credit too)
+async function requireUser(req: express.Request, res: express.Response): Promise<boolean> {
+  if (!creditsEnabled()) return true;
+  if (await uidFromRequest(req)) return true;
+  res.status(401).json({ code: "auth_required", error: "سجّل الدخول لاستخدام أدوات الذكاء الاصطناعي." });
+  return false;
+}
+
+// ---- Library: signed-in users' books on the persistent disk (server/library.ts)
+async function libraryUser(req: express.Request, res: express.Response): Promise<string | null> {
+  if (!creditsEnabled() || !libraryEnabled()) {
+    res.status(503).json({ code: "library_unavailable" });
+    return null;
+  }
+  const uid = await uidFromRequest(req);
+  if (!uid) res.status(401).json({ code: "auth_required" });
+  return uid;
+}
+
+app.get("/api/library", async (req, res) => {
+  const uid = await libraryUser(req, res);
+  if (!uid) return;
+  try {
+    res.json({ books: listBooks(uid) });
+  } catch (err: any) {
+    console.error("[library] list", err?.message || err);
+    res.status(500).json({ error: "تعذّر تحميل المكتبة." });
+  }
+});
+
+app.get("/api/library/:id", async (req, res) => {
+  const uid = await libraryUser(req, res);
+  if (!uid) return;
+  if (!isValidBookId(req.params.id)) return res.status(400).json({ error: "bad id" });
+  try {
+    const book = getBook(uid, req.params.id);
+    if (!book) return res.status(404).json({ error: "not found" });
+    res.json({ book });
+  } catch (err: any) {
+    console.error("[library] get", err?.message || err);
+    res.status(500).json({ error: "تعذّر تحميل الكتاب." });
+  }
+});
+
+app.put("/api/library/:id", async (req, res) => {
+  const uid = await libraryUser(req, res);
+  if (!uid) return;
+  const book = req.body?.book;
+  if (!book || book.id !== req.params.id) return res.status(400).json({ error: "bad book" });
+  try {
+    // Free accounts keep a few books on the server; subscribers keep as many as they like
+    const isNew = !listBooks(uid).some((b) => b.id === book.id);
+    if (isNew && listBooks(uid).length >= FREE_LIBRARY_BOOKS && !(await isSubscriber(uid))) {
+      return res.status(403).json({ code: "subscription_required", feature: "library", error: SUBSCRIBE_MESSAGES.library });
+    }
+    const result = saveBook(uid, book);
+    if (!result.ok) return res.status(result.status).json({ code: result.error });
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[library] save", err?.message || err);
+    res.status(500).json({ error: "تعذّر حفظ الكتاب." });
+  }
+});
+
+app.delete("/api/library/:id", async (req, res) => {
+  const uid = await libraryUser(req, res);
+  if (!uid) return;
+  if (!isValidBookId(req.params.id)) return res.status(400).json({ error: "bad id" });
+  try {
+    deleteBook(uid, req.params.id);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[library] delete", err?.message || err);
+    res.status(500).json({ error: "تعذّر حذف الكتاب." });
+  }
+});
+
+// Starts a hosted Dodo checkout for one of the plans and returns its URL
+app.post("/api/checkout", async (req, res) => {
+  const plan = String(req.body?.plan || "");
+  if (!paymentsEnabled() || !planAvailable(plan) || !creditsEnabled()) {
+    return res.status(503).json({ code: "payments_unavailable" });
+  }
+  const user = await userFromRequest(req);
+  if (!user) return res.status(401).json({ code: "auth_required" });
+  try {
+    res.json({ url: await createCheckout(plan, user.uid, user.email, SITE_URL) });
+  } catch (err: any) {
+    console.error("[payments] checkout failed:", err?.message || err);
+    res.status(502).json({ error: "تعذّر بدء الدفع الآن، حاول بعد قليل." });
+  }
+});
+
+// Link to Dodo's customer portal to manage or cancel the monthly plan
+app.post("/api/billing-portal", async (req, res) => {
+  if (!paymentsEnabled() || !creditsEnabled()) return res.status(503).json({ code: "payments_unavailable" });
+  const user = await userFromRequest(req);
+  if (!user) return res.status(401).json({ code: "auth_required" });
+  try {
+    const customerId = await customerIdFor(user.uid);
+    if (!customerId) return res.status(404).json({ code: "no_subscription" });
+    res.json({ url: await billingPortalUrl(customerId, SITE_URL) });
+  } catch (err: any) {
+    console.error("[payments] portal failed:", err?.message || err);
+    res.status(502).json({ error: "تعذّر فتح إدارة الاشتراك الآن." });
+  }
+});
+
+// ---- Subscriber features. Free accounts keep the summaries, the voice samples and their
+// minutes; the costly AI tools and the conveniences below are what a plan adds.
+const FREE_LIBRARY_BOOKS = 3;
+const FREE_DAILY = { chat: 5, transform: 2 } as const;
+
+const SUBSCRIBE_MESSAGES = {
+  book: "مؤلف الكتب بالذكاء الاصطناعي متاح للمشتركين.",
+  download: "تحميل الصوت كملف متاح للمشتركين. يمكنك الاستماع مجاناً من الموقع.",
+  library: `المكتبة المجانية تتسع لـ${FREE_LIBRARY_BOOKS} كتب. اشترك لتحفظ عدداً غير محدود.`,
+  chat: `استخدمت أسئلتك المجانية اليوم (${FREE_DAILY.chat}). اشترك لتسأل بلا حد، أو عد غداً.`,
+  transform: `استخدمت ملخصاتك المجانية اليوم (${FREE_DAILY.transform}). اشترك للملخصات بلا حد، أو عد غداً.`,
+};
+
+// true = go ahead; otherwise the response (401 or 403) has been sent
+async function requireSubscriber(req: express.Request, res: express.Response, feature: keyof typeof SUBSCRIBE_MESSAGES): Promise<boolean> {
+  if (!creditsEnabled()) return true;
+  const uid = await uidFromRequest(req);
+  if (!uid) {
+    res.status(401).json({ code: "auth_required" });
+    return false;
+  }
+  if (await isSubscriber(uid)) return true;
+  res.status(403).json({ code: "subscription_required", feature, error: SUBSCRIBE_MESSAGES[feature] });
+  return false;
+}
+
+// Subscribers: unlimited. Free accounts: a few uses a day (429 when used up)
+async function useFreeDaily(req: express.Request, res: express.Response, feature: keyof typeof FREE_DAILY): Promise<boolean> {
+  if (!creditsEnabled()) return true;
+  const uid = await uidFromRequest(req);
+  if (!uid) {
+    res.status(401).json({ code: "auth_required" });
+    return false;
+  }
+  if (await isSubscriber(uid)) return true;
+  try {
+    if ((await useDailyQuota(uid, feature, FREE_DAILY[feature])).ok) return true;
+  } catch (err: any) {
+    console.error("[quota]", err?.message || err);
+    return true; // never block on a quota storage hiccup
+  }
+  res.status(429).json({ code: "daily_limit", feature, error: SUBSCRIBE_MESSAGES[feature] });
+  return false;
+}
+
+// ---- Admin dashboard (server/admin.ts): verified admin emails only
+async function adminUser(req: express.Request, res: express.Response): Promise<{ uid: string; email?: string } | null> {
+  if (!creditsEnabled()) {
+    res.status(503).json({ error: "admin needs FIREBASE_SERVICE_ACCOUNT" });
+    return null;
+  }
+  const user = await userFromRequest(req);
+  if (!isAdminUser(user)) {
+    res.status(403).json({ error: "forbidden" });
+    return null;
+  }
+  return user;
+}
+
+app.get("/api/admin/overview", async (req, res) => {
+  if (!(await adminUser(req, res))) return;
+  try {
+    res.json(await adminOverview());
+  } catch (err: any) {
+    console.error("[admin] overview", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+app.get("/api/admin/users", async (req, res) => {
+  if (!(await adminUser(req, res))) return;
+  try {
+    res.json({ users: await adminUsersTable(String(req.query.q || "")) });
+  } catch (err: any) {
+    console.error("[admin] users", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+app.get("/api/admin/payments", async (req, res) => {
+  if (!(await adminUser(req, res))) return;
+  try {
+    res.json({ payments: await adminRecentPayments() });
+  } catch (err: any) {
+    console.error("[admin] payments", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+app.post("/api/admin/users/:uid/gift", async (req, res) => {
+  const admin = await adminUser(req, res);
+  if (!admin) return;
+  const minutes = Number(req.body?.minutes);
+  if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 100_000 || !/^[A-Za-z0-9_-]{1,128}$/.test(req.params.uid)) {
+    return res.status(400).json({ error: "bad request" });
+  }
+  try {
+    await adminGiftMinutes(admin.email || "", req.params.uid, minutes, String(req.body?.note || ""));
+    console.log(`[admin] ${admin.email} gifted ${minutes} min to ${req.params.uid}`);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[admin] gift", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+app.get("/api/credits", async (req, res) => {
+  if (!creditsEnabled()) return res.json({ enabled: false });
+  const uid = await uidFromRequest(req);
+  if (!uid) return res.status(401).json({ code: "auth_required" });
+  try {
+    const until = await subscriberUntil(uid);
+    res.json({ enabled: true, secondsRemaining: await getBalance(uid), subscriber: until > Date.now(), subscriberUntil: until || null });
+  } catch (err: any) {
+    console.error("[credits] balance error", err?.message || err);
+    res.status(500).json({ error: "تعذّر قراءة الرصيد." });
+  }
+});
+
 app.post("/api/tts/speak", async (req, res) => {
+  let refundCharge: () => Promise<void> = async () => {};
   try {
     const { text, voice, speed = 1.0 } = req.body;
     if (!text || typeof text !== "string") {
@@ -911,8 +1397,13 @@ app.post("/api/tts/speak", async (req, res) => {
     }
 
     const trimmedText = text.slice(0, 10000).trim();
-    const cacheKey = `${voice?.id || 'def'}_${speed}_${trimmedText}`;
+    const cacheKey = `${TTS_CACHE_VERSION}_${voice?.id || 'def'}_${speed}_${trimmedText}`;
     const diskPath = getAudioDiskCachePath(cacheKey);
+
+    // Charge the listener (cached clips cost us nothing but are still listening time)
+    const gate = await gateTts(req, res, trimmedText, `speak:${voice?.id || "def"}:${trimmedText}`);
+    if (!gate) return;
+    refundCharge = gate;
 
     // 1. Level 1: In-memory Fast Cache
     if (serverTtsCache.has(cacheKey)) {
@@ -921,6 +1412,7 @@ app.post("/api/tts/speak", async (req, res) => {
       res.setHeader("Content-Length", cached.buffer.length);
       res.setHeader("X-Voice-Engine", cached.engine);
       res.setHeader("X-TTS-Cache", "MEMORY-HIT");
+      recordTtsUsage("cached", secondsForText(text));
       return res.send(cached.buffer);
     }
 
@@ -928,13 +1420,17 @@ app.post("/api/tts/speak", async (req, res) => {
     try {
       if (fs.existsSync(diskPath)) {
         const diskBuffer = fs.readFileSync(diskPath);
+        // Mark it as recently used for pruneAudioCache (reads don't reliably update atime)
+        const now = new Date();
+        fs.utimes(diskPath, now, now, () => {});
         if (diskBuffer && diskBuffer.length > 500) {
-          const contentType = "audio/mpeg";
+          const contentType = diskBuffer.subarray(0, 4).toString() === "RIFF" ? "audio/wav" : "audio/mpeg";
           serverTtsCache.set(cacheKey, { buffer: diskBuffer, contentType, engine: "disk-cached-gemini-tts" });
           res.setHeader("Content-Type", contentType);
           res.setHeader("Content-Length", diskBuffer.length);
           res.setHeader("X-Voice-Engine", "disk-cached-gemini-tts");
           res.setHeader("X-TTS-Cache", "DISK-HIT");
+          recordTtsUsage("cached", secondsForText(text));
           return res.send(diskBuffer);
         }
       }
@@ -967,6 +1463,7 @@ app.post("/api/tts/speak", async (req, res) => {
       res.setHeader("Content-Length", openRouterResult.buffer.length);
       res.setHeader("X-Voice-Engine", openRouterResult.engine);
       res.setHeader("X-TTS-Cache", "GENERATED-AND-SAVED");
+      recordTtsUsage("generated", secondsForText(text));
       return res.send(openRouterResult.buffer);
     }
 
@@ -1013,6 +1510,7 @@ app.post("/api/tts/speak", async (req, res) => {
           res.setHeader("Content-Length", audioBuffer.length);
           res.setHeader("X-Voice-Engine", geminiResult.engine);
           res.setHeader("X-TTS-Cache", "GENERATED-AND-SAVED");
+          recordTtsUsage("generated", secondsForText(text));
           return res.send(audioBuffer);
         }
       } catch (geminiErr: any) {
@@ -1039,77 +1537,21 @@ app.post("/api/tts/speak", async (req, res) => {
       }
     }
 
-    // 4. QUATERNARY RELIABLE FALLBACK: Free High-Quality Google Arabic Audio Synthesizer
-    try {
-      // Split into safe sub-chunks if text is long, concatenate audio buffers
-      const maxSubLength = 200;
-      const subTexts: string[] = [];
-      if (trimmedText.length <= maxSubLength) {
-        subTexts.push(trimmedText);
-      } else {
-        const sentences = trimmedText.split(/(?<=[.!?؟\n])\s+/);
-        let cur = "";
-        for (const s of sentences) {
-          if (!cur) cur = s;
-          else if ((cur + " " + s).length <= maxSubLength) cur += " " + s;
-          else {
-            subTexts.push(cur);
-            cur = s;
-          }
-        }
-        if (cur) subTexts.push(cur);
-      }
-
-      const audioParts: Buffer[] = [];
-      for (const part of subTexts.slice(0, 4)) {
-        const encodedText = encodeURIComponent(part.trim());
-        const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=ar&client=tw-ob&ttsspeed=${speed || 1.0}`;
-        const gRes = await fetch(googleTtsUrl, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://translate.google.com/",
-          },
-        });
-        if (gRes.ok) {
-          const ab = await gRes.arrayBuffer();
-          audioParts.push(Buffer.from(ab));
-        }
-      }
-
-      if (audioParts.length > 0) {
-        const buffer = Buffer.concat(audioParts);
-        if (buffer.length > 500) {
-          const engine = "google-arabic-neural-tts";
-          try {
-            fs.writeFileSync(diskPath, buffer);
-          } catch (e) {}
-
-          if (serverTtsCache.size > 250) {
-            const firstKey = serverTtsCache.keys().next().value;
-            if (firstKey) serverTtsCache.delete(firstKey);
-          }
-          serverTtsCache.set(cacheKey, { buffer, contentType: "audio/mpeg", engine });
-
-          res.setHeader("Content-Type", "audio/mpeg");
-          res.setHeader("Content-Length", buffer.length);
-          res.setHeader("X-Voice-Engine", engine);
-          res.setHeader("X-TTS-Cache", "GENERATED-AND-SAVED");
-          return res.send(buffer);
-        }
-      }
-    } catch (gErr) {
-      console.warn("Google TTS fallback note:", gErr);
-    }
-
+    // No robotic fallback (e.g. Google Translate TTS): if the AI voice fails, the client shows an error
+    await refundCharge();
     return res.status(503).json({ error: "لا يمكن توليد الصوت بالذكاء الاصطناعي حالياً." });
   } catch (error: any) {
     console.error("Speak Exception:", error);
-    res.status(500).json({ error: error.message || "فشل الاتصال بمحرك الصوت" });
+    await refundCharge();
+    if (!res.headersSent) res.status(500).json({ error: error.message || "فشل الاتصال بمحرك الصوت" });
   }
 });
 
 // Full audiobook chapter/text MP3 download synthesis endpoint
 app.post("/api/tts/generate-audio", async (req, res) => {
+  // Downloading the audio as a file is a subscriber feature; listening on the site is not
+  if (!(await requireSubscriber(req, res, "download"))) return;
+  let refundCharge: () => Promise<void> = async () => {};
   try {
     const { text, speed = 1.0, title, voice: rawVoice, voiceId } = req.body;
     if (!text || typeof text !== "string") {
@@ -1126,8 +1568,12 @@ app.post("/api/tts/generate-audio", async (req, res) => {
     }
 
     const trimmedText = text.slice(0, 15000).trim();
-    const cacheKey = `${targetVoice?.id || 'def'}_${speed}_${trimmedText}`;
+    const cacheKey = `${TTS_CACHE_VERSION}_${targetVoice?.id || 'def'}_${speed}_${trimmedText}`;
     const diskPath = getAudioDiskCachePath(cacheKey);
+
+    const gate = await gateTts(req, res, trimmedText, `download:${targetVoice?.id || "def"}:${trimmedText}`);
+    if (!gate) return;
+    refundCharge = gate;
 
     // Check disk/memory cache ONLY for very short single sentences (<200 chars)
     // Long chapters must ALWAYS run through the multi-chunk sequential assembler!
@@ -1253,36 +1699,12 @@ app.post("/api/tts/generate-audio", async (req, res) => {
       }
     }
 
-    // 4. Free Google Arabic Audio Synthesizer fallback for instant download
-    try {
-      const encodedText = encodeURIComponent(trimmedText.slice(0, 300));
-      const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=ar&client=tw-ob&ttsspeed=${speed || 1.0}`;
-      const gRes = await fetch(googleTtsUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Referer": "https://translate.google.com/",
-        },
-      });
-
-      if (gRes.ok) {
-        const arrayBuf = await gRes.arrayBuffer();
-        const buffer = Buffer.from(arrayBuf);
-        if (buffer.length > 500) {
-          const safeTitle = encodeURIComponent((title || "audiobook").replace(/[\/\\?%*:|"<>]/g, "_"));
-          res.setHeader("Content-Type", "audio/mpeg");
-          res.setHeader("Content-Length", buffer.length);
-          res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.mp3"`);
-          return res.send(buffer);
-        }
-      }
-    } catch (gErr) {
-      console.warn("Google TTS download fallback note:", gErr);
-    }
-
+    await refundCharge();
     return res.status(503).json({ error: "تعذر توليد ملف التحميل الصوتي." });
   } catch (error: any) {
     console.error("Generate audio error:", error);
-    res.status(500).json({ error: error.message || "خطأ في توليد الملف الصوتي" });
+    await refundCharge();
+    if (!res.headersSent) res.status(500).json({ error: error.message || "خطأ في توليد الملف الصوتي" });
   }
 });
 
@@ -1327,6 +1749,7 @@ app.post("/api/tts/fish-audio", async (req, res) => {
 
 // AI Professional Book Generator Engine from Scratch (Gemini 3.8 Flash)
 app.post("/api/ai/generate-book", async (req, res) => {
+  if (!(await requireSubscriber(req, res, "book"))) return;
   try {
     const { 
       topic, 
@@ -1467,6 +1890,7 @@ Task: Write and compose a complete, highly engaging, beautifully structured book
 
 // AI Realistic Book Cover Engine (Pollinations 8K Flux & OpenRouter Image Models)
 app.post("/api/ai/generate-cover", async (req, res) => {
+  if (!(await requireSubscriber(req, res, "book"))) return;
   try {
     const { 
       title, 
@@ -1542,8 +1966,8 @@ app.post("/api/ai/generate-cover", async (req, res) => {
               headers: {
                 "Authorization": `Bearer ${openRouterKey}`,
                 "Content-Type": "application/json",
-                "HTTP-Referer": process.env.APP_URL || "https://ais-applet.local",
-                "X-Title": "PDF to Audio Arabic Studio",
+                "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+                "X-Title": "Hakawati AI",
               },
               body: JSON.stringify({
                 model: orModel,
@@ -1650,6 +2074,7 @@ app.post("/api/ai/generate-cover", async (req, res) => {
 app.post("/api/ai/chat-pdf", async (req, res) => {
   try {
     const { question, bookText, bookTitle, history = [] } = req.body;
+    if (question && typeof question === "string" && question.trim() && !(await useFreeDaily(req, res, "chat"))) return;
     if (!question || typeof question !== "string" || !question.trim()) {
       return res.status(400).json({ error: "السؤال مطلوب." });
     }
@@ -1714,6 +2139,384 @@ ${JSON.stringify(history.slice(-4))}
   }
 });
 
+// ---- SEO landing pages: serve index.html with page-specific meta tags, JSON-LD
+// and pre-rendered content so crawlers see each page without running JavaScript.
+const SITE_URL = (process.env.APP_URL || "https://hakawatiai.com").replace(/\/+$/, "");
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderLandingHtml(template: string, page: LandingPage): string {
+  const url = `${SITE_URL}${landingPath(page)}`;
+  const title = escapeHtml(page.title);
+  const description = escapeHtml(page.description);
+
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        "@id": `${url}#webpage`,
+        url,
+        name: page.title,
+        description: page.description,
+        inLanguage: "ar",
+        isPartOf: { "@type": "WebSite", name: "Hakawati AI", url: `${SITE_URL}/` },
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}/` },
+          { "@type": "ListItem", position: 2, name: page.linkLabel, item: url },
+        ],
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: page.faqs.map((f) => ({
+          "@type": "Question",
+          name: f.question,
+          acceptedAnswer: { "@type": "Answer", text: f.answer },
+        })),
+      },
+    ],
+  };
+
+  const content = [
+    `<main dir="rtl">`,
+    `<h1>${escapeHtml(page.h1)}</h1>`,
+    `<p>${escapeHtml(page.subtitle)}</p>`,
+    ...page.sections.map(
+      (sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")
+    ),
+    `<h2>أسئلة حول ${escapeHtml(page.linkLabel)}</h2>`,
+    ...page.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    `<nav><a href="/">تحويل PDF إلى صوت</a> `,
+    ...LANDING_PAGES.filter((p) => p.slug !== page.slug).map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `),
+    `</nav></main>`,
+  ].join("");
+
+  // Replacements use functions so "$" in page text is never treated as a pattern
+  return template
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${description}" />`)
+    .replace(/<meta name="keywords" content="[^"]*" \/>/, () => `<meta name="keywords" content="${escapeHtml(page.keywords)}" />`)
+    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${url}" />`)
+    .replace(/<meta property="og:url" content="[^"]*" \/>/, () => `<meta property="og:url" content="${url}" />`)
+    .replace(/<meta property="og:title" content="[^"]*" \/>/, () => `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta name="twitter:title" content="[^"]*" \/>/, () => `<meta name="twitter:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*" \/>/, () => `<meta property="og:description" content="${description}" />`)
+    .replace(/<meta name="twitter:description" content="[^"]*" \/>/, () => `<meta name="twitter:description" content="${description}" />`)
+    .replace(
+      /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
+      () => `<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>`
+    )
+    .replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
+}
+
+// Head tags shared by the summary pages; replacements use functions so "$" in text is safe
+function withHead(template: string, head: { title: string; description: string; keywords: string; url: string; ogType?: string; jsonLd: unknown; content: string }): string {
+  const title = escapeHtml(head.title);
+  const description = escapeHtml(head.description);
+  return template
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${description}" />`)
+    .replace(/<meta name="keywords" content="[^"]*" \/>/, () => `<meta name="keywords" content="${escapeHtml(head.keywords)}" />`)
+    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${head.url}" />`)
+    .replace(/<meta property="og:url" content="[^"]*" \/>/, () => `<meta property="og:url" content="${head.url}" />`)
+    .replace(/<meta property="og:type" content="[^"]*" \/>/, () => `<meta property="og:type" content="${head.ogType || "website"}" />`)
+    .replace(/<meta property="og:title" content="[^"]*" \/>/, () => `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta name="twitter:title" content="[^"]*" \/>/, () => `<meta name="twitter:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*" \/>/, () => `<meta property="og:description" content="${description}" />`)
+    .replace(/<meta name="twitter:description" content="[^"]*" \/>/, () => `<meta name="twitter:description" content="${description}" />`)
+    .replace(
+      /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
+      () => `<script type="application/ld+json">${JSON.stringify(head.jsonLd).replace(/</g, "\\u003c")}</script>`
+    )
+    .replace(/<div id="root"><\/div>/, () => `<div id="root">${head.content}</div>`);
+}
+
+function summaryHasAudio(distPath: string, s: BookSummary): { duration: number } | null {
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(distPath, "summaries", `${s.slug}.json`), "utf8"));
+    return fs.existsSync(path.join(distPath, "summaries", `${s.slug}.mp3`)) ? { duration: Number(m.duration) || 0 } : null;
+  } catch {
+    return null;
+  }
+}
+
+function isoDuration(seconds: number): string {
+  return `PT${Math.floor(seconds / 60)}M${Math.round(seconds % 60)}S`;
+}
+
+function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: number } | null): string {
+  const url = `${SITE_URL}${summaryPath(s)}`;
+  const hubUrl = `${SITE_URL}${SUMMARIES_HUB_PATH}`;
+  const name = `ملخص كتاب ${s.bookTitle}`;
+  const text = summaryText(s);
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        "@id": `${url}#article`,
+        headline: name,
+        description: s.description,
+        inLanguage: "ar",
+        datePublished: s.publishedAt,
+        url,
+        author: { "@type": "Organization", name: "Hakawati AI", url: `${SITE_URL}/` },
+        publisher: { "@type": "Organization", name: "Hakawati AI", logo: { "@type": "ImageObject", url: `${SITE_URL}/brand/logo.png` } },
+        about: {
+          "@type": "Book",
+          name: s.bookTitle,
+          author: { "@type": "Person", name: s.author },
+          ...(s.hasCover ? { image: `${SITE_URL}${summaryCoverUrl(s, "jpg")}` } : {}),
+        },
+        ...(s.hasCover ? { image: `${SITE_URL}${summaryCoverUrl(s, "jpg")}` } : {}),
+        ...(audio
+          ? {
+              audio: {
+                "@type": "AudioObject",
+                name,
+                contentUrl: `${SITE_URL}${summaryAudioUrl(s)}`,
+                encodingFormat: "audio/mpeg",
+                duration: isoDuration(audio.duration),
+                inLanguage: "ar",
+              },
+            }
+          : {}),
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}/` },
+          { "@type": "ListItem", position: 2, name: SUMMARIES_HUB.h1, item: hubUrl },
+          { "@type": "ListItem", position: 3, name, item: url },
+        ],
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: text.faqs.map((f) => ({ "@type": "Question", name: f.question, acceptedAnswer: { "@type": "Answer", text: f.answer } })),
+      },
+    ],
+  };
+  const content = [
+    `<main dir="rtl"><article>`,
+    `<nav><a href="/">الرئيسية</a> › <a href="${SUMMARIES_HUB_PATH}">${escapeHtml(SUMMARIES_HUB.h1)}</a></nav>`,
+    `<h1>${escapeHtml(name)}</h1>`,
+    `<p>تأليف: ${escapeHtml(s.author)}</p>`,
+    `<p>${escapeHtml(s.lead)}</p>`,
+    audio ? `<audio controls preload="none" src="${summaryAudioUrl(s)}"></audio>` : "",
+    ...text.sections.map((sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")),
+    `<h2>أسئلة شائعة عن كتاب ${escapeHtml(s.bookTitle)}</h2>`,
+    ...text.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    `</article><nav>`,
+    ...BOOK_SUMMARIES.filter((o) => o.slug !== s.slug).map((o) => `<a href="${summaryPath(o)}">ملخص كتاب ${escapeHtml(o.bookTitle)}</a> `),
+    `<a href="/">تحويل PDF إلى صوت</a></nav></main>`,
+  ].join("");
+  const html = withHead(template, { title: s.title, description: s.description, keywords: s.keywords, url, ogType: "article", jsonLd, content });
+  if (!s.hasCover) return html;
+  // Link previews (WhatsApp, Facebook, X) show the book cover instead of the site banner
+  const cover = `${SITE_URL}${summaryCoverUrl(s, "jpg")}`;
+  return html
+    .replace(/<meta property="og:image" content="[^"]*" \/>/, () => `<meta property="og:image" content="${cover}" />`)
+    .replace(/<meta property="og:image:width" content="[^"]*" \/>/, () => '<meta property="og:image:width" content="768" />')
+    .replace(/<meta property="og:image:height" content="[^"]*" \/>/, () => '<meta property="og:image:height" content="1280" />')
+    .replace(/<meta property="og:image:alt" content="[^"]*" \/>/, () => `<meta property="og:image:alt" content="${escapeHtml(`غلاف كتاب ${s.bookTitle}`)}" />`)
+    .replace(/<meta name="twitter:image" content="[^"]*" \/>/, () => `<meta name="twitter:image" content="${cover}" />`);
+}
+
+function renderSummariesHubHtml(template: string): string {
+  const url = `${SITE_URL}${SUMMARIES_HUB_PATH}`;
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "CollectionPage",
+        "@id": `${url}#webpage`,
+        url,
+        name: SUMMARIES_HUB.title,
+        description: SUMMARIES_HUB.description,
+        inLanguage: "ar",
+        isPartOf: { "@type": "WebSite", name: "Hakawati AI", url: `${SITE_URL}/` },
+      },
+      {
+        "@type": "ItemList",
+        itemListElement: BOOK_SUMMARIES.map((s, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE_URL}${summaryPath(s)}`, name: `ملخص كتاب ${s.bookTitle}` })),
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}/` },
+          { "@type": "ListItem", position: 2, name: SUMMARIES_HUB.h1, item: url },
+        ],
+      },
+    ],
+  };
+  const content = [
+    `<main dir="rtl"><h1>${escapeHtml(SUMMARIES_HUB.h1)}</h1><p>${escapeHtml(SUMMARIES_HUB.lead)}</p><ul>`,
+    ...BOOK_SUMMARIES.map((s) => `<li><a href="${summaryPath(s)}">ملخص كتاب ${escapeHtml(s.bookTitle)}</a> – ${escapeHtml(s.author)}. ${escapeHtml(s.lead)}</li>`),
+    `</ul>`,
+    UPCOMING_SUMMARIES.length ? `<h2>قريباً</h2><p>${UPCOMING_SUMMARIES.map(escapeHtml).join("، ")}</p>` : "",
+    `<a href="/">تحويل PDF إلى صوت</a></main>`,
+  ].join("");
+  return withHead(template, { title: SUMMARIES_HUB.title, description: SUMMARIES_HUB.description, keywords: SUMMARIES_HUB.keywords, url, jsonLd, content });
+}
+
+// The home page is a client-rendered app, so put its text into #root for crawlers
+// that read raw HTML (React replaces it on load with the same content). The same
+// template serves Arabic at / and English at /en, with matching head tags and JSON-LD.
+function renderHomeHtml(template: string, lang: "ar" | "en"): string {
+  const c = HOME_CONTENT[lang];
+  const seo = HOME_SEO[lang];
+  const en = lang === "en";
+  const url = en ? `${SITE_URL}/en` : `${SITE_URL}/`;
+  const title = escapeHtml(seo.title);
+  const description = escapeHtml(seo.description);
+
+  const content = [
+    `<main dir="${en ? "ltr" : "rtl"}">`,
+    `<h1>${escapeHtml(c.h1)}</h1>`,
+    `<p>${escapeHtml(c.subtitle)}</p>`,
+    ...c.sections.map(
+      (sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")
+    ),
+    `<h2>${en ? "How it works" : "كيف يعمل"}</h2><ol>`,
+    ...c.steps.map((st) => `<li><strong>${escapeHtml(st.title)}</strong> ${escapeHtml(st.text)}</li>`),
+    `</ol><h2>${en ? "Who is it for?" : "لمن هذا الموقع؟"}</h2>`,
+    ...c.useCases.map((u) => `<h3>${escapeHtml(u.title)}</h3><p>${escapeHtml(u.text)}</p>`),
+    `<h2>${en ? "Frequently asked questions" : "الأسئلة الشائعة"}</h2>`,
+    ...c.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    `<nav>`,
+    `<a href="${en ? "/" : "/en"}">${en ? "العربية" : "English"}</a> `,
+    ...(en ? [] : LANDING_PAGES.map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `)),
+    ...(en ? [] : [`<a href="${SUMMARIES_HUB_PATH}">${escapeHtml(SUMMARIES_HUB.h1)}</a> `]),
+    `</nav></main>`,
+  ].join("");
+
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebApplication",
+        "@id": `${url}#webapp`,
+        name: "Hakawati AI",
+        alternateName: "حكواتي",
+        url,
+        description: seo.description,
+        inLanguage: lang,
+        applicationCategory: "MultimediaApplication",
+        operatingSystem: "All",
+        browserRequirements: "Requires JavaScript. Requires HTML5.",
+        offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      },
+      {
+        "@type": "HowTo",
+        "@id": `${url}#howto`,
+        name: en ? "How to turn an Arabic PDF or text into audio" : "كيفية تحويل كتاب PDF أو نص إلى صوت",
+        step: c.steps.map((st, i) => ({ "@type": "HowToStep", position: i + 1, name: st.title, text: st.text })),
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: c.faqs.map((f) => ({
+          "@type": "Question",
+          name: f.question,
+          acceptedAnswer: { "@type": "Answer", text: f.answer },
+        })),
+      },
+    ],
+  };
+
+  const alternates =
+    `<link rel="alternate" hreflang="ar" href="${SITE_URL}/" />` +
+    `<link rel="alternate" hreflang="en" href="${SITE_URL}/en" />` +
+    `<link rel="alternate" hreflang="x-default" href="${SITE_URL}/" />`;
+
+  return template
+    .replace(/<html lang="ar" dir="rtl">/, () => (en ? '<html lang="en" dir="ltr">' : '<html lang="ar" dir="rtl">'))
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${description}" />`)
+    .replace(/<meta name="keywords" content="[^"]*" \/>/, () => `<meta name="keywords" content="${escapeHtml(seo.keywords)}" />`)
+    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${url}" />${alternates}`)
+    .replace(/<meta property="og:url" content="[^"]*" \/>/, () => `<meta property="og:url" content="${url}" />`)
+    .replace(/<meta property="og:locale" content="[^"]*" \/>/, () => `<meta property="og:locale" content="${seo.ogLocale}" />`)
+    .replace(/<meta property="og:title" content="[^"]*" \/>/, () => `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta name="twitter:title" content="[^"]*" \/>/, () => `<meta name="twitter:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*" \/>/, () => `<meta property="og:description" content="${description}" />`)
+    .replace(/<meta name="twitter:description" content="[^"]*" \/>/, () => `<meta name="twitter:description" content="${description}" />`)
+    .replace(
+      /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
+      () => `<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>`
+    )
+    .replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
+}
+
+// Shared clips (/s/<id>) live in Firestore with public read; fetch them over REST
+// so the page carries real Open Graph tags for WhatsApp / Facebook previews.
+const SHARE_ID_RE = /^[A-Za-z0-9_-]{10,40}$/;
+const shareCache = new Map<string, { at: number; clip: { text: string; bookTitle: string; chapterTitle: string } | null }>();
+
+async function fetchSharedClip(id: string) {
+  const hit = shareCache.get(id);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.clip;
+  const url =
+    `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}` +
+    `/databases/${encodeURIComponent(firebaseConfig.firestoreDatabaseId || "(default)")}` +
+    `/documents/shares/${id}?key=${firebaseConfig.apiKey}`;
+  let clip: { text: string; bookTitle: string; chapterTitle: string } | null = null;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (res.ok) {
+      const f = (await res.json()).fields || {};
+      clip = {
+        text: f.text?.stringValue || "",
+        bookTitle: f.bookTitle?.stringValue || "",
+        chapterTitle: f.chapterTitle?.stringValue || "",
+      };
+    } else if (res.status !== 404) {
+      return null; // transient error: don't cache
+    }
+  } catch {
+    return null;
+  }
+  if (shareCache.size > 500) shareCache.clear();
+  shareCache.set(id, { at: Date.now(), clip });
+  return clip;
+}
+
+function renderShareHtml(template: string, id: string, clip: { text: string; bookTitle: string; chapterTitle: string }): string {
+  const url = `${SITE_URL}/s/${id}`;
+  const book = clip.bookTitle || "كتاب صوتي";
+  const title = escapeHtml(`مقطع مسموع من «${book}» | Hakawati AI`);
+  const snippet = clip.text.length > 180 ? clip.text.slice(0, 177) + "..." : clip.text;
+  const description = escapeHtml(snippet);
+  const content =
+    `<main dir="rtl"><h1>${escapeHtml(book)}</h1>` +
+    (clip.chapterTitle ? `<p>${escapeHtml(clip.chapterTitle)}</p>` : "") +
+    `<blockquote>${escapeHtml(clip.text)}</blockquote><a href="/">جرّب Hakawati AI</a></main>`;
+  return template
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${description}" />`)
+    // User-generated pages: shareable, but kept out of the search index
+    .replace(/<meta name="robots" content="[^"]*" \/>/, () => '<meta name="robots" content="noindex, follow" />')
+    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${url}" />`)
+    .replace(/<meta property="og:url" content="[^"]*" \/>/, () => `<meta property="og:url" content="${url}" />`)
+    .replace(/<meta property="og:title" content="[^"]*" \/>/, () => `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta name="twitter:title" content="[^"]*" \/>/, () => `<meta name="twitter:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*" \/>/, () => `<meta property="og:description" content="${description}" />`)
+    .replace(/<meta name="twitter:description" content="[^"]*" \/>/, () => `<meta name="twitter:description" content="${description}" />`)
+    .replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/, "")
+    .replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
+}
+
 // Start Express + Vite server
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -1724,14 +2527,53 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    const indexTemplate = fs.readFileSync(path.join(distPath, "index.html"), "utf8");
+    const landingHtml = new Map(LANDING_PAGES.map((p) => [p.slug, renderLandingHtml(indexTemplate, p)]));
+    const homeHtml = renderHomeHtml(indexTemplate, "ar");
+    const homeHtmlEn = renderHomeHtml(indexTemplate, "en");
+    const hubHtml = renderSummariesHubHtml(indexTemplate);
+    const summaryHtml = new Map(BOOK_SUMMARIES.map((s) => [s.slug, renderSummaryHtml(indexTemplate, s, summaryHasAudio(distPath, s))]));
+
+    app.use((req, res, next) => {
+      if (req.method !== "GET") return next();
+      if (req.path === "/" || req.path === "/index.html") return res.type("html").send(homeHtml);
+      if (req.path === "/en" || req.path === "/en/") return res.type("html").send(homeHtmlEn);
+      if (isSummariesHub(req.path)) return res.type("html").send(hubHtml);
+      const summary = findSummary(req.path);
+      if (summary) return res.type("html").send(summaryHtml.get(summary.slug));
+      const page = findLandingPage(req.path);
+      if (!page) return next();
+      res.type("html").send(landingHtml.get(page.slug));
+    });
+
+    // Unknown paths get a real 404 (not a soft 404) so search engines drop them
+    const notFoundHtml = indexTemplate
+      .replace(/<title>[^<]*<\/title>/, () => "<title>الصفحة غير موجودة – Hakawati AI</title>")
+      .replace(/<meta name="robots" content="[^"]*" \/>/, () => '<meta name="robots" content="noindex" />');
+
+    app.get("/s/:id", async (req, res, next) => {
+      const id = req.params.id.replace(/\/$/, "");
+      if (!SHARE_ID_RE.test(id)) return res.status(404).type("html").send(notFoundHtml);
+      const clip = await fetchSharedClip(id);
+      if (clip === null && !shareCache.has(id)) {
+        // Firestore unreachable: serve the app shell, which loads the clip client-side
+        return res.type("html").send(indexTemplate);
+      }
+      if (!clip) return res.status(404).type("html").send(notFoundHtml);
+      res.type("html").send(renderShareHtml(indexTemplate, id, clip));
+    });
+
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      res.status(404).type("html").send(notFoundHtml);
     });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+    // Report at startup whether listening minutes and payments work (logs the reason if not)
+    creditsEnabled();
+    paymentsEnabled();
   });
 }
 

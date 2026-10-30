@@ -45,7 +45,7 @@ export async function createProfessionalArabicPdf(book: GeneratedBookStructure):
     chapterAbbr: isRtl ? 'الفصل' : 'Chapter',
     goldenLesson: isRtl ? '💡 خلاصة ذهبية:' : '💡 Key Takeaway:',
     pageWord: isRtl ? 'صفحة' : 'Page',
-    footerStudio: isRtl ? 'تم التأليف والتنسيق بالذكاء الاصطناعي الفائق • استوديو PDF to Audio © 2026' : 'Generated & Formatted with Advanced AI Studio © 2026'
+    footerStudio: isRtl ? 'تم التأليف والتنسيق بالذكاء الاصطناعي الفائق • استوديو Hakawati AI © 2026' : 'Generated & Formatted with Advanced AI Studio © 2026'
   };
 
   // Create hidden offscreen render container

@@ -8,6 +8,7 @@ import {
   updateProfile,
   signInWithPopup,
   GoogleAuthProvider,
+  sendPasswordResetEmail,
   User as FirebaseUser
 } from 'firebase/auth';
 import { 
@@ -35,6 +36,7 @@ export const db = firebaseConfig.firestoreDatabaseId
 export const googleProvider = new GoogleAuthProvider();
 
 export {
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   firebaseSignOut,

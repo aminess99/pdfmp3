@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { cleanArabicExtractedText } from './pdfUtils';
+import { tr } from './i18n';
 
 export interface EpubExtractionResult {
   success: boolean;
@@ -198,7 +199,7 @@ export async function extractTextFromEpubFile(
         success: false,
         text: '',
         pagesCount: 1,
-        error: 'لم نتمكن من العثور على محتوى نصي مقروء داخل ملف ePub هذا.',
+        error: tr("لم نتمكن من العثور على محتوى نصي مقروء داخل ملف ePub هذا.", "We couldn’t find readable text in this ePub file."),
       };
     }
 
@@ -222,7 +223,7 @@ export async function extractTextFromEpubFile(
       success: false,
       text: '',
       pagesCount: 1,
-      error: `فشل استخراج محتوى ePub: ${err?.message || 'الملف قد يكون تالفاً أو محمي بنظام DRM.'}`,
+      error: tr(`فشل استخراج محتوى ePub: ${err?.message || 'الملف قد يكون تالفاً أو محمي بنظام DRM.'}`, `Couldn’t read this ePub: ${err?.message || 'the file may be damaged or DRM-protected.'}`),
     };
   }
 }

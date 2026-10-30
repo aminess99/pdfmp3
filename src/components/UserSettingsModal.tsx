@@ -1,19 +1,8 @@
 import React, { useState } from 'react';
-import { 
-  X, 
-  Settings, 
-  Volume2, 
-  Globe, 
-  ShieldCheck, 
-  Sliders, 
-  Moon, 
-  Bell, 
-  Download, 
-  Check, 
-  Sparkles,
-  Zap
-} from 'lucide-react';
-import { useLanguage } from '../lib/LanguageContext';
+import { X, Check } from 'lucide-react';
+import { VOICES } from '../data/voices';
+import { tr, DIR } from '../lib/i18n';
+import { VoiceOptionGroups } from './VoiceOptions';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
@@ -21,215 +10,128 @@ interface UserSettingsModalProps {
   user: { name: string; email: string };
 }
 
-export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
-  isOpen,
-  onClose,
-  user,
-}) => {
-  const { lang, setLang } = useLanguage();
-  const [defaultSpeed, setDefaultSpeed] = useState<string>(() => localStorage.getItem('app_default_speed') || '1.0');
-  const [autoPlayNext, setAutoPlayNext] = useState<boolean>(() => localStorage.getItem('app_auto_play_next') !== 'false');
-  const [downloadQuality, setDownloadQuality] = useState<'standard' | 'hd'>(() => (localStorage.getItem('app_download_quality') as any) || 'hd');
-  const [saveSuccess, setSaveSuccess] = useState(false);
+// Preferences read by ConversionTool (default voice) and StudioView (speed, auto-next)
+export const SETTINGS_KEYS = {
+  voice: 'app_default_voice',
+  speed: 'app_default_speed',
+  autoNext: 'app_auto_play_next',
+} as const;
+
+const SPEEDS = ['0.8', '1', '1.25', '1.5', '2'];
+
+const readSetting = (key: string, fallback: string) => {
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, onClose, user }) => {
+  const [voiceId, setVoiceId] = useState(() => readSetting(SETTINGS_KEYS.voice, ''));
+  const [speed, setSpeed] = useState(() => String(Number(readSetting(SETTINGS_KEYS.speed, '1')) || 1));
+  const [autoNext, setAutoNext] = useState(() => readSetting(SETTINGS_KEYS.autoNext, 'true') !== 'false');
+  const [saved, setSaved] = useState(false);
 
   if (!isOpen) return null;
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem('app_default_speed', defaultSpeed);
-    localStorage.setItem('app_auto_play_next', autoPlayNext.toString());
-    localStorage.setItem('app_download_quality', downloadQuality);
-    
-    setSaveSuccess(true);
-    setTimeout(() => {
-      setSaveSuccess(false);
-      onClose();
-    }, 1200);
+    try {
+      if (voiceId) localStorage.setItem(SETTINGS_KEYS.voice, voiceId);
+      else localStorage.removeItem(SETTINGS_KEYS.voice);
+      localStorage.setItem(SETTINGS_KEYS.speed, speed);
+      localStorage.setItem(SETTINGS_KEYS.autoNext, String(autoNext));
+    } catch {}
+    setSaved(true);
+    setTimeout(onClose, 700);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in font-['Cairo',sans-serif]" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
-      <div className="relative w-full max-w-lg bg-[#0c1220] border border-blue-500/40 rounded-3xl shadow-2xl overflow-hidden text-white space-y-0">
-        
-        {/* Header */}
-        <div className="p-5 sm:p-6 bg-gradient-to-r from-blue-950 via-indigo-950 to-blue-950 border-b border-blue-900/40 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-blue-600/20 border border-blue-500/40 text-cyan-400 flex items-center justify-center font-bold shrink-0">
-              <Settings className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-base sm:text-lg font-black text-white font-['Tajawal']">
-                {lang === 'ar' ? 'إعدادات المشترك والتطبيق' : 'Account & App Settings'}
-              </h3>
-              <p className="text-xs text-slate-300">
-                {lang === 'ar' ? 'تخصيص تجربة الاستماع واللغة والتحميل' : 'Customize listening, language & audio quality'}
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
-          >
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/85 font-body" dir={DIR} onClick={onClose}>
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        onSubmit={handleSave}
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-[520px] max-h-[calc(100dvh-32px)] overflow-y-auto bg-card border border-line rounded-[20px] p-6 sm:p-7 flex flex-col gap-1 text-slate-200"
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h2 id="settings-title" className="font-display font-extrabold text-2xl text-white">{tr("الإعدادات", "Settings")}</h2>
+          <button type="button" onClick={onClose} aria-label={tr("إغلاق", "Close")} className="w-11 h-11 rounded-full text-slate-400 hover:text-white hover:bg-raised flex items-center justify-center cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content & Form */}
-        <form onSubmit={handleSave} className="p-5 sm:p-6 space-y-5 max-h-[75vh] overflow-y-auto custom-scrollbar">
-          
-          {/* User Account Info Pill */}
-          <div className="p-3.5 rounded-2xl bg-[#11192b] border border-blue-900/40 flex items-center justify-between">
-            <div className="space-y-0.5">
-              <div className="text-xs font-black text-white">{user.name}</div>
-              <div className="text-[11px] text-slate-400 truncate">{user.email}</div>
-            </div>
-            <span className="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>{lang === 'ar' ? 'حساب موثق' : 'Verified'}</span>
-            </span>
-          </div>
+        <div className="flex items-center justify-between gap-4 min-h-[72px] border-b border-raised">
+          <span className="flex flex-col leading-snug">
+            <label htmlFor="pref-voice" className="text-white font-semibold">{tr("الصوت الافتراضي", "Default voice")}</label>
+            <span className="text-[13px] text-slate-400">{tr("يُختار تلقائياً في كل تحويل جديد", "Picked automatically for every new conversion")}</span>
+          </span>
+          <select
+            id="pref-voice"
+            value={voiceId}
+            onChange={(e) => setVoiceId(e.target.value)}
+            className="min-h-11 max-w-[200px] bg-ink border border-line rounded-[10px] px-3 text-[15px] text-white cursor-pointer"
+          >
+            <option value="">{tr("حسب اللهجة", "By dialect")}</option>
+            <VoiceOptionGroups voices={VOICES} />
+          </select>
+        </div>
 
-          {/* Section 1: Language Preference */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300 flex items-center gap-2">
-              <Globe className="w-4 h-4 text-cyan-400" />
-              <span>{lang === 'ar' ? 'لغة واجهة التطبيق' : 'App Interface Language'}</span>
-            </label>
-            <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 min-h-[72px] border-b border-raised py-3">
+          <span id="speed-label" className="text-white font-semibold">{tr("السرعة الافتراضية", "Default speed")}</span>
+          <div role="radiogroup" aria-labelledby="speed-label" className="flex gap-1.5">
+            {SPEEDS.map((s) => (
               <button
+                key={s}
                 type="button"
-                onClick={() => setLang('ar')}
-                className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  lang === 'ar'
-                    ? 'bg-blue-600/20 border-blue-500 text-white shadow-md'
-                    : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-white'
+                role="radio"
+                aria-checked={speed === s}
+                onClick={() => setSpeed(s)}
+                className={`min-w-12 min-h-11 px-2 rounded-[10px] text-sm border cursor-pointer ${
+                  speed === s ? 'border-brand bg-brand-deep text-white' : 'border-line text-slate-300 hover:text-white'
                 }`}
               >
-                <span>العربية (Arabic)</span>
-                {lang === 'ar' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                {s}x
               </button>
-
-              <button
-                type="button"
-                onClick={() => setLang('en')}
-                className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  lang === 'en'
-                    ? 'bg-blue-600/20 border-blue-500 text-white shadow-md'
-                    : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                <span>English (إنجليزية)</span>
-                {lang === 'en' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
-              </button>
-            </div>
+            ))}
           </div>
+        </div>
 
-          {/* Section 2: Audio Player Defaults */}
-          <div className="space-y-3 pt-2 border-t border-slate-800/80">
-            <div className="text-xs font-bold text-indigo-300 flex items-center gap-2">
-              <Volume2 className="w-4 h-4" />
-              <span>{lang === 'ar' ? 'تفضيلات المشغل الصوتي' : 'Audio Player Preferences'}</span>
-            </div>
+        <div className="flex items-center justify-between gap-4 min-h-[72px] border-b border-raised">
+          <span className="flex flex-col leading-snug">
+            <span className="text-white font-semibold">{tr("الانتقال تلقائياً للفصل التالي", "Auto-play next chapter")}</span>
+            <span className="text-[13px] text-slate-400">{tr("عند انتهاء الفصل يبدأ الذي بعده", "When a chapter ends, the next one starts")}</span>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoNext}
+            aria-label={tr("الانتقال تلقائياً للفصل التالي", "Auto-play next chapter")}
+            onClick={() => setAutoNext(!autoNext)}
+            className={`relative w-[52px] h-8 rounded-full shrink-0 cursor-pointer transition-colors ${autoNext ? 'bg-brand' : 'bg-line-strong'}`}
+          >
+            <span className={`absolute top-1 w-6 h-6 rounded-full bg-white transition-all ${autoNext ? 'end-1' : 'end-[24px]'}`} />
+          </button>
+        </div>
 
-            {/* Default Speed */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] text-slate-400 block font-medium">
-                {lang === 'ar' ? 'السرعة الافتراضية عند بدء تشغيل أي فصل:' : 'Default audio playback speed:'}
-              </label>
-              <div className="grid grid-cols-4 gap-2">
-                {['0.8', '1.0', '1.25', '1.5'].map((spd) => (
-                  <button
-                    key={spd}
-                    type="button"
-                    onClick={() => setDefaultSpeed(spd)}
-                    className={`py-2 rounded-xl border text-xs font-bold font-mono transition-all cursor-pointer ${
-                      defaultSpeed === spd
-                        ? 'bg-indigo-600 text-white border-indigo-500 shadow-md'
-                        : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    {spd}x
-                  </button>
-                ))}
-              </div>
-            </div>
+        <div className="flex items-center gap-3 py-5">
+          <span className="w-11 h-11 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-bold shrink-0">
+            {user.name ? user.name.charAt(0).toUpperCase() : tr('م', 'U')}
+          </span>
+          <span className="flex flex-col leading-tight min-w-0">
+            <span className="text-white font-semibold truncate">{user.name}</span>
+            <span className="text-sm text-slate-400 truncate" dir="ltr">{user.email}</span>
+          </span>
+        </div>
 
-            {/* Auto-Play Next Chapter Toggle */}
-            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/70 border border-slate-800">
-              <div className="space-y-0.5">
-                <div className="text-xs font-bold text-slate-200">
-                  {lang === 'ar' ? 'الانتقال التلقائي للفصل التالي' : 'Auto-play next chapter'}
-                </div>
-                <div className="text-[10px] text-slate-400">
-                  {lang === 'ar' ? 'تشغيل الفصل اللاحق تلقائياً بفاصل 0 ثانية' : 'Seamless transition without pausing'}
-                </div>
-              </div>
-
-              <input
-                type="checkbox"
-                checked={autoPlayNext}
-                onChange={(e) => setAutoPlayNext(e.target.checked)}
-                className="w-5 h-5 accent-blue-600 rounded cursor-pointer"
-              />
-            </div>
-
-            {/* Audio Download Quality */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] text-slate-400 block font-medium">
-                {lang === 'ar' ? 'جودة تحميل ملفات MP3:' : 'MP3 Download Audio Quality:'}
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDownloadQuality('hd')}
-                  className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                    downloadQuality === 'hd'
-                      ? 'bg-blue-600/20 border-blue-500 text-cyan-300'
-                      : 'bg-slate-900 border-slate-800 text-slate-400'
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>استوديو HD (320 kbps)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setDownloadQuality('standard')}
-                  className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                    downloadQuality === 'standard'
-                      ? 'bg-blue-600/20 border-blue-500 text-cyan-300'
-                      : 'bg-slate-900 border-slate-800 text-slate-400'
-                  }`}
-                >
-                  <Download className="w-3.5 h-3.5 text-slate-400" />
-                  <span>قياسي مدمج (128 kbps)</span>
-                </button>
-              </div>
-            </div>
-
-          </div>
-
-          {/* Submit Button */}
-          <div className="pt-2">
-            <button
-              type="submit"
-              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold text-sm shadow-xl shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              {saveSuccess ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-300" />
-                  <span>{lang === 'ar' ? 'تم حفظ التفضيلات بنجاح!' : 'Settings Saved Successfully!'}</span>
-                </>
-              ) : (
-                <span>{lang === 'ar' ? 'حفظ التفضيلات' : 'Save Preferences'}</span>
-              )}
-            </button>
-          </div>
-
-        </form>
-
-      </div>
+        <button type="submit" className="min-h-12 rounded-xl bg-brand hover:bg-indigo-500 text-white font-bold flex items-center justify-center gap-2 cursor-pointer">
+          {saved && <Check className="w-5 h-5" />}
+          {saved ? tr("تم الحفظ", "Saved") : tr("حفظ", "Save")}
+        </button>
+      </form>
     </div>
   );
 };

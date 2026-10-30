@@ -1,12 +1,14 @@
+import { toastOnce } from './toast';
 import { Voice, AudioStyle } from '../types';
+import { tr } from './i18n';
+import { apiFetch } from './apiFetch';
 
 export class AudioEngine {
-  private synth: SpeechSynthesis | null = null;
-  private currentUtterance: SpeechSynthesisUtterance | null = null;
   private currentAudioElement: HTMLAudioElement | null = null;
   private isPlaying = false;
   private onBoundaryCallback?: (charIndex: number, text: string) => void;
   private onEndCallback?: () => void;
+  private onErrorCallback?: () => void;
   private audioCache = new Map<string, string>();
   private audioBlobCache = new Map<string, { blob: Blob; type: string }>();
   private inflightPromises = new Map<string, Promise<string | null>>();
@@ -14,11 +16,6 @@ export class AudioEngine {
   private activeRequestController: AbortController | null = null;
   private currentSessionId = 0;
 
-  constructor() {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      this.synth = window.speechSynthesis;
-    }
-  }
 
   // Request high-quality MP3 from Fish Audio API backend
   public async fetchFishAudio(
@@ -28,7 +25,7 @@ export class AudioEngine {
     referenceId?: string
   ): Promise<string | null> {
     try {
-      const res = await fetch('/api/tts/fish-audio', {
+      const res = await apiFetch('/api/tts/fish-audio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -64,6 +61,15 @@ export class AudioEngine {
     }
   }
 
+  // Clips are generated once at normal speed and sped up by the <audio> element (playbackRate),
+  // so changing the speed never re-synthesizes (or re-charges) audio
+  private clipKey(text: string, voice: Voice): string {
+    return `${voice.id || 'default'}_${text.trim()}`;
+  }
+
+  // Set when the last failure was already explained to the user (sign in / out of minutes)
+  private lastFailureHandled = false;
+
   // Generate or retrieve cached speech audio URL from server AI engines
   public async generateSpeechUrl(
     text: string,
@@ -72,7 +78,7 @@ export class AudioEngine {
   ): Promise<string | null> {
     if (!text || !text.trim()) return null;
 
-    const cacheKey = `${voice.id || 'default'}_${speed}_${text.trim()}`;
+    const cacheKey = this.clipKey(text, voice);
     if (this.audioCache.has(cacheKey)) {
       return this.audioCache.get(cacheKey)!;
     }
@@ -83,7 +89,7 @@ export class AudioEngine {
 
     const fetchPromise = (async () => {
       try {
-        const res = await fetch('/api/tts/speak', {
+        const res = await apiFetch('/api/tts/speak', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -96,12 +102,15 @@ export class AudioEngine {
               geminiVoiceName: voice.geminiVoiceName,
               stylePrompt: voice.stylePrompt,
             },
-            speed,
+            speed: 1.0,
           }),
         });
 
         if (!res.ok) {
           console.warn('Server TTS returned non-200:', res.status);
+          // apiFetch already prompted to sign in / top up; don't add a second error toast
+          this.lastFailureHandled = res.status === 401 || res.status === 402;
+          if (res.status === 429) toastOnce(tr("طلبات كثيرة في وقت قصير، انتظر دقيقة ثم تابع.", "Too many requests in a short time. Wait a minute, then continue."), 'error');
           return null;
         }
 
@@ -139,7 +148,7 @@ export class AudioEngine {
   // Lookahead Pre-fetching of upcoming sentences to ensure 0-latency playback
   public prefetchSentence(text: string, voice: Voice, speed: number = 1.0): Promise<string | null> {
     if (!text || !text.trim()) return Promise.resolve(null);
-    const cacheKey = `${voice.id || 'default'}_${speed}_${text.trim()}`;
+    const cacheKey = this.clipKey(text, voice);
     if (this.audioCache.has(cacheKey)) {
       return Promise.resolve(this.audioCache.get(cacheKey)!);
     }
@@ -160,7 +169,7 @@ export class AudioEngine {
   // Retrieve single cached blob for a sentence
   public getCachedBlob(text: string, voice: Voice, speed: number = 1.0): Blob | null {
     if (!text || !text.trim()) return null;
-    const cacheKey = `${voice.id || 'default'}_${speed}_${text.trim()}`;
+    const cacheKey = this.clipKey(text, voice);
     return this.audioBlobCache.get(cacheKey)?.blob || null;
   }
 
@@ -329,36 +338,57 @@ export class AudioEngine {
     });
   }
 
-  // Play audio sample preview for any voice
+  // Play audio sample preview for any voice.
+  // Plays the pre-generated file in /voice-samples/ (see scripts/generate-voice-samples.ts)
+  // and only synthesizes on the fly when that file is missing.
   public playVoicePreview(voice: Voice, onEnd?: () => void) {
     this.stop();
+    const sessionId = this.currentSessionId;
 
-    // Synthesize sample text with the voice
-    const sampleText = voice.sampleText || 'مرحباً بكم، هذا صوت عالي النقاء جاهز لقراءة كتبكم.';
-    this.speak(
-      sampleText,
-      voice,
-      { id: 'normal', name: 'عادي', description: '', icon: '' },
-      1.0,
-      undefined,
-      onEnd
-    );
+    const generateSampleWithAI = () => {
+      if (this.currentSessionId !== sessionId) return;
+      const sampleText = voice.sampleText || 'مرحباً بكم، هذا صوت عالي النقاء جاهز لقراءة كتبكم.';
+      this.speak(
+        sampleText,
+        voice,
+        { id: 'normal', name: 'عادي', description: '', icon: '' },
+        1.0,
+        undefined,
+        onEnd
+      );
+    };
+
+    const audio = new Audio(`/voice-samples/${voice.id}.mp3`);
+    this.currentAudioElement = audio;
+    this.isPlaying = true;
+
+    audio.onended = () => {
+      if (this.currentSessionId !== sessionId) return;
+      this.isPlaying = false;
+      this.currentAudioElement = null;
+      if (onEnd) onEnd();
+    };
+    audio.onerror = generateSampleWithAI;
+    audio.play().catch(generateSampleWithAI);
   }
 
-  // Primary speech synthesis method: Uses Fish Audio Cloned Voice / Gemini TTS with browser fallback
+  // Speaks text with the AI voice only (no browser speech fallback). On failure playback stops,
+  // the user is told, and onError runs (or onEnd, so callers can reset their play buttons).
   public async speak(
     text: string,
     voice: Voice,
     style: AudioStyle,
     rate: number = 1.0,
     onBoundary?: (charIndex: number, text: string) => void,
-    onEnd?: () => void
+    onEnd?: () => void,
+    onError?: () => void
   ) {
     this.stop();
     const sessionId = ++this.currentSessionId;
     this.isPlaying = true;
     this.onBoundaryCallback = onBoundary;
     this.onEndCallback = onEnd;
+    this.onErrorCallback = onError;
 
     // First attempt: Server AI voice generation (Fish Audio S2.1 Pro cloned voice or Gemini)
     const audioUrl = await this.generateSpeechUrl(text, voice, rate);
@@ -367,7 +397,7 @@ export class AudioEngine {
     if (!this.isPlaying || this.currentSessionId !== sessionId) return;
 
     if (audioUrl) {
-      const cacheKey = `${voice.id || 'default'}_${rate}_${text.trim()}`;
+      const cacheKey = this.clipKey(text, voice);
       const preloaded = this.preloadedAudios.get(cacheKey);
       const audio = preloaded || new Audio(audioUrl);
       this.currentAudioElement = audio;
@@ -384,8 +414,8 @@ export class AudioEngine {
 
       audio.onerror = (e) => {
         if (this.currentSessionId !== sessionId) return;
-        console.warn('HTMLAudio error, falling back to browser speech:', e);
-        this.fallbackBrowserSpeak(text, voice, rate, sessionId);
+        console.warn('HTMLAudio error:', e);
+        this.failPlayback(sessionId);
       };
 
       try {
@@ -393,95 +423,27 @@ export class AudioEngine {
         return;
       } catch (playErr) {
         if (this.currentSessionId !== sessionId) return;
-        console.warn('Audio play failed, falling back:', playErr);
+        console.warn('Audio play failed:', playErr);
       }
     }
 
-    // Fallback: Browser Web Speech API (only if AI server synthesis was unavailable and session is current)
-    if (this.currentSessionId === sessionId) {
-      this.fallbackBrowserSpeak(text, voice, rate, sessionId);
-    }
+    this.failPlayback(sessionId);
   }
 
-  private fallbackBrowserSpeak(text: string, voice: Voice, rate: number, sessionId: number) {
-    if (!this.synth) {
-      console.warn('Speech synthesis not supported on this browser');
-      this.isPlaying = false;
-      if (this.onEndCallback) this.onEndCallback();
-      return;
+  private failPlayback(sessionId: number) {
+    if (this.currentSessionId !== sessionId) return;
+    this.isPlaying = false;
+    this.currentAudioElement = null;
+    if (!this.lastFailureHandled) {
+      toastOnce(tr('تعذّر تشغيل الصوت الآن، حاول مرة أخرى بعد قليل.', 'Couldn’t play the audio right now. Please try again shortly.'), 'error', 10_000);
     }
-
-    if (this.currentSessionId !== sessionId) {
-      return;
-    }
-
-    // Ensure any previously scheduled or playing browser speech is strictly cancelled
-    this.synth.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = voice.dialectId === 'msa' ? 'ar' : voice.dialectId === 'eg' ? 'ar-EG' : voice.dialectId === 'sa' ? 'ar-SA' : 'ar';
-    utterance.rate = rate * (voice.rate || 1.0);
-    utterance.pitch = voice.pitch || 1.0;
-
-    const browserVoices = this.synth.getVoices();
-    const isFemale = voice.gender === 'female';
-    const arabicVoices = browserVoices.filter(
-      (v) => v.lang.startsWith('ar') || v.lang.includes(voice.dialectId)
-    );
-    // Find matching gender in browser voices if possible
-    const matchedVoice = arabicVoices.find((v) => {
-      const name = v.name.toLowerCase();
-      if (isFemale) {
-        return name.includes('female') || name.includes('layla') || name.includes('salma') || name.includes('meryem') || name.includes('hoda') || name.includes('zeina') || name.includes('zariyah');
-      } else {
-        return name.includes('male') || name.includes('tariq') || name.includes('shakir') || name.includes('hamed') || name.includes('naayf') || name.includes('maged');
-      }
-    }) || arabicVoices[0];
-
-    if (matchedVoice) {
-      utterance.voice = matchedVoice;
-    }
-
-    utterance.onboundary = (event) => {
-      if (this.currentSessionId === sessionId && this.onBoundaryCallback) {
-        this.onBoundaryCallback(event.charIndex, text);
-      }
-    };
-
-    utterance.onend = () => {
-      if (this.currentSessionId === sessionId) {
-        this.isPlaying = false;
-        if (this.onEndCallback) {
-          this.onEndCallback();
-        }
-      }
-    };
-
-    utterance.onerror = (err) => {
-      // 'interrupted' and 'canceled' are expected when user stops or navigates
-      if (err.error === 'interrupted' || err.error === 'canceled') {
-        return;
-      }
-      if (this.currentSessionId === sessionId) {
-        console.warn('Browser Speech error:', err);
-        this.isPlaying = false;
-        if (this.onEndCallback) {
-          this.onEndCallback();
-        }
-      }
-    };
-
-    this.currentUtterance = utterance;
-    this.isPlaying = true;
-    this.synth.speak(utterance);
+    this.lastFailureHandled = false;
+    (this.onErrorCallback || this.onEndCallback)?.();
   }
 
   public pause() {
     if (this.currentAudioElement && !this.currentAudioElement.paused) {
       this.currentAudioElement.pause();
-      this.isPlaying = false;
-    } else if (this.synth && this.synth.speaking) {
-      this.synth.pause();
       this.isPlaying = false;
     }
   }
@@ -489,9 +451,6 @@ export class AudioEngine {
   public resume() {
     if (this.currentAudioElement && this.currentAudioElement.paused) {
       this.currentAudioElement.play();
-      this.isPlaying = true;
-    } else if (this.synth && this.synth.paused) {
-      this.synth.resume();
       this.isPlaying = true;
     }
   }
@@ -508,11 +467,14 @@ export class AudioEngine {
       this.currentAudioElement.src = '';
       this.currentAudioElement = null;
     }
-    if (this.synth) {
-      this.synth.cancel();
-    }
-    this.currentUtterance = null;
     this.isPlaying = false;
+  }
+
+  // Fraction (0–1) of the clip that is currently playing, for progress bars
+  public getCurrentClipProgress(): number {
+    const a = this.currentAudioElement;
+    if (!a || !a.duration || !isFinite(a.duration)) return 0;
+    return Math.min(1, a.currentTime / a.duration);
   }
 
   public getIsPlaying(): boolean {

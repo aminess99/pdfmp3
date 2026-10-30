@@ -21,7 +21,10 @@ export interface Dialect {
   country: string;
   flag: string;
   code: string; // e.g. ar-MA, ar-SA, ar-EG
+  region?: DialectRegion; // optional: dialects stored with older saved books lack it
 }
+
+export type DialectRegion = 'msa' | 'gulf' | 'levant' | 'iraq_yemen' | 'nile' | 'maghreb';
 
 export interface AudioStyle {
   id: string;
@@ -77,6 +80,8 @@ export interface ConversionJob {
   backgroundStatus?: string;
   totalExpectedChapters?: number;
   createdAt: string;
+  // Open the studio straight on this panel (from the dashboard's tools page)
+  initialPanel?: 'summary' | 'key_points';
 }
 
 export interface Testimonial {

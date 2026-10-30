@@ -1,0 +1,56 @@
+name: Generate voice samples
+
+# Runs when the voice catalogue or this generator changes on a pushed branch (only missing
+# samples are generated), or manually from the Actions tab. Needs the OPENROUTER_API_KEY secret.
+on:
+  push:
+    paths:
+      - src/data/voices.ts
+      - scripts/generate-voice-samples.ts
+      - .github/workflows/voice-samples.yml
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Regenerate samples that already exist"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: voice-samples-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - run: npm ci
+
+      - name: Generate samples
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: npx tsx scripts/generate-voice-samples.ts ${{ inputs.force && '--force' || '' }}
+
+      - name: Commit samples
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/voice-samples
+          if git diff --cached --quiet; then
+            echo "No new samples"
+          else
+            git commit -m "Add generated voice samples"
+            git push
+          fi

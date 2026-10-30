@@ -1,36 +1,46 @@
-import React, { useState } from 'react';
-import { Header } from './components/Header';
+import React, { useEffect, useState } from 'react';
+import { SiteHeader } from './components/SiteHeader';
 import { HeroSection } from './components/HeroSection';
 import { ConversionTool } from './components/ConversionTool';
-import { FeaturesBox } from './components/FeaturesBox';
-import { ValueMetrics } from './components/ValueMetrics';
 import { VoiceSamplesSection } from './components/VoiceSamplesSection';
-import { HowItWorks } from './components/HowItWorks';
+import { HowItWorks, UseCasesSection } from './components/HowItWorks';
 import { PricingSection } from './components/PricingSection';
-import { TestimonialsSection } from './components/TestimonialsSection';
-import { AudiobookGuidesSection } from './components/AudiobookGuidesSection';
 import { FAQSection } from './components/FAQSection';
-import { ContactSection } from './components/ContactSection';
 import { AuthModals } from './components/AuthModals';
-import { AudioPlayerDrawer } from './components/AudioPlayerDrawer';
-import { AudioLibraryModal } from './components/AudioLibraryModal';
 import { StudioView } from './components/StudioView';
 import { UserDashboard } from './components/UserDashboard';
 import { Footer } from './components/Footer';
 import { PaymentCheckoutModal } from './components/PaymentCheckoutModal';
 import { LegalModal } from './components/LegalModal';
+import { LandingContent } from './components/LandingContent';
+import { NotFound } from './components/NotFound';
+import { Toaster } from './components/Toaster';
+import { SharePage } from './components/SharePage';
+import { SummaryPage } from './components/SummaryPage';
+import { SummariesHub, SummariesShowcase } from './components/SummariesHub';
+import { findSummary, isSummariesHub } from './data/summaries';
+import { SHARE_PATH_RE } from './lib/shares';
+import { REQUIRE_AUTH_EVENT, OUT_OF_CREDITS_EVENT, SUBSCRIBE_EVENT, CREDITS_CHANGED_EVENT, fetchCredits } from './lib/apiFetch';
+import { toast } from './lib/toast';
+import { findLandingPage } from './data/landingPages';
+import { HOME_SECTIONS } from './data/homeContent';
 import { ConversionJob, Voice } from './types';
 import { audioEngine } from './lib/audioEngine';
 import { useVoices } from './lib/useVoices';
 import { useAuth } from './lib/AuthContext';
+import { tr, HOME_PATH, isEn } from './lib/i18n';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState<boolean>(true);
+  const [landingPage] = useState(() => findLandingPage(window.location.pathname));
+  const [shareId] = useState(() => window.location.pathname.match(SHARE_PATH_RE)?.[1] || null);
+  const [summary] = useState(() => findSummary(window.location.pathname));
+  const [isHub] = useState(() => isSummariesHub(window.location.pathname));
+  const [isNotFound] = useState(() => !landingPage && !shareId && !summary && !isHub && !['/', '/index.html', '/en', '/en/'].includes(window.location.pathname));
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({
     isOpen: false,
     mode: 'login',
   });
-  const [libraryOpen, setLibraryOpen] = useState<boolean>(false);
   const [activeJob, setActiveJob] = useState<ConversionJob | null>(null);
   const [activeSection, setActiveSection] = useState<string>('home');
 
@@ -58,7 +68,7 @@ export default function App() {
     type: 'privacy',
   });
 
-  // All 30 authentic Arabic voices across 14 dialects
+  // All Arabic voices across every supported dialect
   const { allVoices } = useVoices();
 
   // Real Firebase Auth
@@ -82,13 +92,13 @@ export default function App() {
 
   // Select plan handler from Pricing Section
   const handleSelectPlan = (planId: string, minutes: number, price: number) => {
-    let planName = 'باقة القارئ (Starter)';
+    let planName = tr("باقة القارئ (Starter)", "Reader");
     let unitRate = 0.03;
     if (planId === 'popular') {
-      planName = 'باقة الشغوف (Pro Pack)';
+      planName = tr("باقة الشغوف (Pro Pack)", "Book lover");
       unitRate = 0.03;
     } else if (planId === 'master') {
-      planName = 'باقة النخبة (Master Pack)';
+      planName = tr("باقة النخبة (Master Pack)", "Pro");
       unitRate = 0.02;
     }
 
@@ -104,13 +114,42 @@ export default function App() {
     });
   };
 
-  // Handle successful credit recharge
-  const handleSuccessPayment = (addedMinutes: number) => {
-    // Notify user dashboard / local credit state
-    const current = parseInt(localStorage.getItem('user_minutes_quota') || '30', 10);
-    localStorage.setItem('user_minutes_quota', (current + addedMinutes).toString());
-    window.dispatchEvent(new Event('quota_updated'));
-  };
+  // Minutes are only ever added by the server (payment webhook), never by the client
+  const handleSuccessPayment = () => {};
+
+  // Back from Dodo's checkout (?payment=success): the webhook usually lands within seconds,
+  // so poll the balance briefly and let the dashboard show the new minutes
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('payment') !== 'success') return;
+    params.delete('payment');
+    const rest = params.toString();
+    window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
+    toast(tr('شكراً لك! تم الدفع، وستُضاف دقائقك خلال لحظات.', 'Thank you! Payment received; your minutes will be added in a moment.'), 'success');
+    let tries = 0;
+    let last: number | null = null;
+    const timer = setInterval(async () => {
+      const balance = await fetchCredits();
+      if (balance !== null) window.dispatchEvent(new CustomEvent(CREDITS_CHANGED_EVENT, { detail: balance }));
+      if ((last !== null && balance !== null && balance > last) || ++tries >= 8) clearInterval(timer);
+      last = balance;
+    }, 4000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Server answers "sign in first" / "out of minutes" (lib/apiFetch.ts) -> open the right dialog
+  useEffect(() => {
+    const onRequireAuth = () => setAuthModal({ isOpen: true, mode: 'register' });
+    const onOutOfCredits = () => handleSelectPlan('popular', 900, 19.99);
+    window.addEventListener(REQUIRE_AUTH_EVENT, onRequireAuth);
+    window.addEventListener(OUT_OF_CREDITS_EVENT, onOutOfCredits);
+    window.addEventListener(SUBSCRIBE_EVENT, onOutOfCredits);
+    return () => {
+      window.removeEventListener(SUBSCRIBE_EVENT, onOutOfCredits);
+      window.removeEventListener(REQUIRE_AUTH_EVENT, onRequireAuth);
+      window.removeEventListener(OUT_OF_CREDITS_EVENT, onOutOfCredits);
+    };
+  }, []);
 
   // Listen to background progressive chapter updates
   React.useEffect(() => {
@@ -129,13 +168,7 @@ export default function App() {
   }, []);
 
   const handlePreviewVoiceSample = (voice: Voice) => {
-    audioEngine.stop();
-    audioEngine.speak(
-      voice.sampleText,
-      voice,
-      { id: 'normal', name: 'عادي', description: '', icon: '' },
-      1.0
-    );
+    audioEngine.playVoicePreview(voice);
   };
 
   const handleNavigate = (sectionId: string) => {
@@ -146,14 +179,51 @@ export default function App() {
       const el = document.getElementById(sectionId);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth' });
+      } else {
+        // Section lives on the home page (e.g. navigating from the 404 page)
+        window.location.href = `${HOME_PATH}#${sectionId}`;
       }
     }
   };
 
+  // Content renders after load, so the browser can't jump to a #section on its own
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id) return;
+    const t = setTimeout(() => document.getElementById(id)?.scrollIntoView(), 300);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Public content pages (shared clips, book summaries), the same for guests and signed-in users
+  if (shareId || summary || isHub) {
+    return (
+      <div className="min-h-screen bg-ink text-slate-100 font-body">
+        <Toaster />
+        <SiteHeader onOpenAuth={handleOpenAuth} onNavigate={handleNavigate} />
+        <main>
+          {shareId ? <SharePage shareId={shareId} /> : summary ? <SummaryPage summary={summary} /> : <SummariesHub />}
+        </main>
+        <Footer onNavigate={handleNavigate} onOpenLegal={(type) => setLegalModal({ isOpen: true, type })} />
+        {authModal.isOpen && (
+          <AuthModals
+            isOpen={authModal.isOpen}
+            mode={authModal.mode}
+            onClose={handleCloseAuth}
+            onSwitchMode={(mode) => setAuthModal({ isOpen: true, mode })}
+          />
+        )}
+        {legalModal.isOpen && (
+          <LegalModal isOpen={legalModal.isOpen} onClose={() => setLegalModal({ ...legalModal, isOpen: false })} type={legalModal.type} />
+        )}
+      </div>
+    );
+  }
+
   // If User is Authenticated, render App Dashboard directly (no marketing distraction!)
   if (user) {
     return (
-      <div className={`min-h-screen ${darkMode ? 'bg-[#090d16] text-slate-100' : 'bg-slate-900 text-slate-100'} transition-colors duration-300 font-['Cairo',sans-serif]`}>
+      <div className="min-h-screen bg-ink text-slate-100 font-body">
+      <Toaster />
         <UserDashboard
           user={{ name: user.name, email: user.email }}
           isAdmin={isAdmin}
@@ -188,71 +258,48 @@ export default function App() {
 
   // If Guest (unregistered user), render full Marketing Landing Page + Interactive Conversion Hook
   return (
-    <div className={`min-h-screen ${darkMode ? 'bg-[#0b0f19] text-slate-100' : 'bg-slate-900 text-slate-100'} transition-colors duration-300 font-['Cairo',sans-serif]`}>
-      {/* Header */}
-      <Header
-        darkMode={darkMode}
-        setDarkMode={setDarkMode}
-        onOpenAuth={handleOpenAuth}
-        onNavigate={handleNavigate}
-        activeSection={activeSection}
-        user={null}
-        onLogout={handleLogout}
-        onOpenLibrary={() => handleOpenAuth('login')}
-        isAdmin={false}
-      />
+    <div className="min-h-screen bg-ink text-slate-100 font-body">
+      <Toaster />
+      <SiteHeader onOpenAuth={handleOpenAuth} onNavigate={handleNavigate} />
 
-      {/* Main Content Area */}
-      <main className="space-y-4">
-        {/* Hero Section */}
-        <HeroSection />
+      {isNotFound ? (
+        <main>
+          <NotFound />
+        </main>
+      ) : (
+      <main>
+        <HeroSection badge={landingPage?.badge} title={landingPage?.h1} subtitle={landingPage?.subtitle}>
+          <ConversionTool
+            onConversionStart={handleConversionStart}
+            onPreviewVoiceSample={handlePreviewVoiceSample}
+            availableVoicesList={allVoices}
+            onRequestAuth={handleOpenAuth}
+            initialDialectId={landingPage?.dialectId}
+            initialInputMode={landingPage?.inputMode}
+          />
+        </HeroSection>
 
-        {/* Core Interactive Tool & Features Box (Left: Conversion Tool, Right: Features Box) */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-4 sm:-mt-6 relative z-20">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-            
-            {/* Left Box: Core Conversion Tool (7 cols) */}
-            <div className="lg:col-span-7 flex">
-              <ConversionTool
-                onConversionStart={handleConversionStart}
-                onPreviewVoiceSample={handlePreviewVoiceSample}
-                availableVoicesList={allVoices}
-                onRequestAuth={handleOpenAuth}
-              />
-            </div>
+        {/* SEO article: page-specific on /<slug> landing pages, general on the home page */}
+        {landingPage ? (
+          <LandingContent
+            sections={landingPage.sections}
+            faqs={landingPage.faqs}
+            faqTitle={`أسئلة حول ${landingPage.linkLabel}`}
+            currentSlug={landingPage.slug}
+          />
+        ) : (
+          <LandingContent sections={HOME_SECTIONS} currentSlug="" />
+        )}
 
-            {/* Right Box: Features & Info Box (5 cols) */}
-            <div className="lg:col-span-5 flex">
-              <FeaturesBox />
-            </div>
-
-          </div>
-        </section>
-
-        {/* 4 Metrics Bar */}
-        <ValueMetrics />
-
-        {/* Voice Samples & 14 Dialects Explorer */}
         <VoiceSamplesSection availableVoicesList={allVoices} />
-
-        {/* How It Works */}
+        {/* The summaries are Arabic only */}
+        {!isEn && <SummariesShowcase />}
         <HowItWorks />
-
-        {/* Pricing */}
+        <UseCasesSection />
         <PricingSection onSelectPlan={handleSelectPlan} />
-
-        {/* Testimonials */}
-        <TestimonialsSection />
-
-        {/* SEO Guides & Knowledge Base */}
-        <AudiobookGuidesSection />
-
-        {/* FAQ */}
         <FAQSection />
-
-        {/* Contact */}
-        <ContactSection />
       </main>
+      )}
 
       {/* Footer */}
       <Footer 
@@ -267,17 +314,10 @@ export default function App() {
           onExit={() => setActiveJob(null)}
           availableVoices={allVoices}
           isUserLoggedIn={false}
+          onRequestAuth={handleOpenAuth}
         />
       )}
 
-      {/* Saved Audio Library Modal */}
-      {libraryOpen && (
-        <AudioLibraryModal
-          isOpen={libraryOpen}
-          onClose={() => setLibraryOpen(false)}
-          onPlayJob={(job) => setActiveJob(job)}
-        />
-      )}
 
       {/* Authentication Dialog Modal */}
       {authModal.isOpen && (
