@@ -52,6 +52,7 @@ import { voiceLabel, voiceInitial, dialectLabel, genderLabel } from '../lib/voic
 import { tr, DIR } from '../lib/i18n';
 import { VoiceOptionGroups } from './VoiceOptions';
 import { apiFetch } from '../lib/apiFetch';
+import { saveBookToServer } from '../lib/library';
 
 // "320 KB" under a megabyte, "2.4 MB" above it
 const formatFileSize = (bytes: number): string =>
@@ -521,8 +522,11 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
               localStorage.setItem('pdf_audio_library', JSON.stringify(updated));
             } catch (e) {}
 
-            // Save to Firebase Firestore if user is authenticated
+            // Signed-in users: save to the server library (no size limit), or to Firestore
+            // (1 MB per book) when the server library is unavailable
             if (user && user.uid) {
+              saveBookToServer(newJob).then((savedOnServer) => {
+              if (savedOnServer) return;
               try {
                 setDoc(doc(db, 'audiobooks', newJob.id), {
                   userId: user.uid,
@@ -545,6 +549,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                   toast(tr("لم نتمكن من حفظ الكتاب في مكتبتك على السحابة، لكنه محفوظ في هذا المتصفح.", "We couldn’t save the book to your cloud library, but it is saved in this browser."), 'error');
                 });
               } catch (cloudErr) {}
+              });
             }
 
             audioEngine.stop();

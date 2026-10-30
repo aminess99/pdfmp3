@@ -38,6 +38,7 @@ import { UserSettingsModal } from './UserSettingsModal';
 import { AIBookCreator } from './AIBookCreator';
 import { ChatPdfModal } from './ChatPdfModal';
 import { minutesAr } from '../lib/arabicPlural';
+import { listServerBooks, getServerBook, deleteServerBook, saveBookToServer, needsText } from '../lib/library';
 import { fetchCredits, CREDITS_CHANGED_EVENT } from '../lib/apiFetch';
 import { tr, DIR } from '../lib/i18n';
 import { voiceLabel } from '../lib/voiceLabel';
@@ -103,6 +104,23 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       combined = [];
     }
 
+    // Server library first: it holds whole books of any size, on every device
+    if (authUser && authUser.uid) {
+      const serverBooks = await listServerBooks();
+      if (serverBooks) {
+        // A copy saved in this browser keeps its text; the server one only lists chapters
+        const byId = new Map(combined.map((b) => [b.id, b]));
+        for (const b of serverBooks) if (!byId.has(b.id)) byId.set(b.id, b);
+        combined = [...byId.values()];
+        // Books saved before the server library existed: copy them up once, in the background
+        const onServer = new Set(serverBooks.map((b) => b.id));
+        const toUpload = combined.filter((b) => !onServer.has(b.id) && !needsText(b));
+        (async () => {
+          for (const b of toUpload) await saveBookToServer(b);
+        })();
+      }
+    }
+
     if (authUser && authUser.uid) {
       try {
         const q = query(collection(db, 'audiobooks'), where('userId', '==', authUser.uid));
@@ -153,6 +171,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       localStorage.setItem('pdf_audio_library', JSON.stringify(updated));
     } catch {}
     if (authUser?.uid) {
+      deleteServerBook(id);
       try {
         await deleteDoc(doc(db, 'audiobooks', id));
       } catch (err) {
@@ -162,6 +181,21 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       }
     }
     toast(tr("حُذف الكتاب من مكتبتك.", "Book deleted from your library."), 'success');
+  };
+
+  // Books listed from the server come without their text: fetch it before opening
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const openBook = async (book: ConversionJob) => {
+    if (!needsText(book)) return onStartJob(book);
+    setOpeningId(book.id);
+    const full = await getServerBook(book.id);
+    setOpeningId(null);
+    if (!full || needsText(full)) {
+      toast(tr("تعذّر تحميل نص الكتاب الآن، حاول بعد قليل.", "Couldn’t load the book’s text right now. Please try again shortly."), 'error');
+      return;
+    }
+    setSavedBooks((prev) => prev.map((b) => (b.id === full.id ? full : b)));
+    onStartJob(full);
   };
 
   const [filter, setFilter] = useState<'all' | 'progress' | 'new'>('all');
@@ -317,7 +351,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
               {continueBook && filter !== 'new' && !searchQuery && (
                 <button
                   type="button"
-                  onClick={() => onStartJob(continueBook)}
+                  onClick={() => openBook(continueBook)}
                   className="flex items-center gap-5 p-5 rounded-[18px] bg-card border border-line text-start hover:border-line-strong cursor-pointer"
                 >
                   <span aria-hidden="true" className="w-[72px] h-[100px] shrink-0 rounded-lg bg-gradient-to-br from-indigo-900 to-slate-900 border border-indigo-800" />
@@ -351,8 +385,9 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                       <div key={book.id} className="group flex flex-col gap-2.5">
                         <button
                           type="button"
-                          onClick={() => onStartJob(book)}
-                          className="relative aspect-[3/4] rounded-[10px] border border-line flex items-end p-3.5 text-start font-display font-extrabold text-base text-indigo-50 cursor-pointer hover:border-line-strong"
+                          onClick={() => openBook(book)}
+                          aria-busy={openingId === book.id}
+                          className={`relative aspect-[3/4] rounded-[10px] border border-line flex items-end p-3.5 text-start font-display font-extrabold text-base text-indigo-50 cursor-pointer hover:border-line-strong ${openingId === book.id ? 'animate-pulse' : ''}`}
                           style={{ background: `linear-gradient(160deg, ${COVER_HUES[i % COVER_HUES.length]}, #0b0f19)` }}
                           aria-label={tr(`استمع إلى ${title}`, `Listen to ${title}`)}
                         >

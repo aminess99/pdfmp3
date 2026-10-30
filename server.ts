@@ -7,6 +7,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { VOICES } from "./src/data/voices";
 import { LANDING_PAGES, LandingPage, findLandingPage, landingPath } from "./src/data/landingPages";
+import { libraryEnabled, listBooks, getBook, saveBook, deleteBook, isValidBookId } from "./server/library";
 import { summaryText } from "./src/data/summaryTexts";
 import { BOOK_SUMMARIES, BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, UPCOMING_SUMMARIES, findSummary, isSummariesHub, summaryAudioUrl, summaryCoverUrl, summaryPath } from "./src/data/summaries";
 import { HOME_CONTENT, HOME_SEO } from "./src/data/homeContent";
@@ -1101,6 +1102,70 @@ async function requireUser(req: express.Request, res: express.Response): Promise
   res.status(401).json({ code: "auth_required", error: "سجّل الدخول لاستخدام أدوات الذكاء الاصطناعي." });
   return false;
 }
+
+// ---- Library: signed-in users' books on the persistent disk (server/library.ts)
+async function libraryUser(req: express.Request, res: express.Response): Promise<string | null> {
+  if (!creditsEnabled() || !libraryEnabled()) {
+    res.status(503).json({ code: "library_unavailable" });
+    return null;
+  }
+  const uid = await uidFromRequest(req);
+  if (!uid) res.status(401).json({ code: "auth_required" });
+  return uid;
+}
+
+app.get("/api/library", async (req, res) => {
+  const uid = await libraryUser(req, res);
+  if (!uid) return;
+  try {
+    res.json({ books: listBooks(uid) });
+  } catch (err: any) {
+    console.error("[library] list", err?.message || err);
+    res.status(500).json({ error: "تعذّر تحميل المكتبة." });
+  }
+});
+
+app.get("/api/library/:id", async (req, res) => {
+  const uid = await libraryUser(req, res);
+  if (!uid) return;
+  if (!isValidBookId(req.params.id)) return res.status(400).json({ error: "bad id" });
+  try {
+    const book = getBook(uid, req.params.id);
+    if (!book) return res.status(404).json({ error: "not found" });
+    res.json({ book });
+  } catch (err: any) {
+    console.error("[library] get", err?.message || err);
+    res.status(500).json({ error: "تعذّر تحميل الكتاب." });
+  }
+});
+
+app.put("/api/library/:id", async (req, res) => {
+  const uid = await libraryUser(req, res);
+  if (!uid) return;
+  const book = req.body?.book;
+  if (!book || book.id !== req.params.id) return res.status(400).json({ error: "bad book" });
+  try {
+    const result = saveBook(uid, book);
+    if (!result.ok) return res.status(result.status).json({ code: result.error });
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[library] save", err?.message || err);
+    res.status(500).json({ error: "تعذّر حفظ الكتاب." });
+  }
+});
+
+app.delete("/api/library/:id", async (req, res) => {
+  const uid = await libraryUser(req, res);
+  if (!uid) return;
+  if (!isValidBookId(req.params.id)) return res.status(400).json({ error: "bad id" });
+  try {
+    deleteBook(uid, req.params.id);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[library] delete", err?.message || err);
+    res.status(500).json({ error: "تعذّر حذف الكتاب." });
+  }
+});
 
 app.get("/api/credits", async (req, res) => {
   if (!creditsEnabled()) return res.json({ enabled: false });
