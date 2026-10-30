@@ -1,11 +1,13 @@
 name: Generate summary audio
 
-# Narrates new or edited book summaries (src/data/summaries.ts) into public/summaries/,
+# Narrates new or edited book summaries (src/data/summaries.ts, summary-texts/) into public/summaries/,
 # on push or manually from the Actions tab. Needs the OPENROUTER_API_KEY secret.
 on:
   push:
     paths:
       - src/data/summaries.ts
+      - src/data/summaryTexts.ts
+      - src/data/summary-texts/**
       - scripts/generate-summary-audio.ts
       - .github/workflows/summary-audio.yml
   workflow_dispatch:

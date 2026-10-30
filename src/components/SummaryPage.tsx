@@ -3,6 +3,7 @@ import { ChevronLeft, Clock, Download, Headphones, Loader2, Mic, Pause, Play, Ro
 import {
   BOOK_SUMMARIES,
   BookSummary,
+  SummaryText,
   SummaryAudioManifest,
   SUMMARIES_HUB_PATH,
   summaryAudioUrl,
@@ -11,6 +12,7 @@ import {
 } from '../data/summaries';
 import { VOICES } from '../data/voices';
 import { voiceLabel } from '../lib/voiceLabel';
+import { loadSummaryText } from '../lib/summaryLoader';
 
 const fmt = (sec: number) => {
   if (!isFinite(sec) || sec < 0) sec = 0;
@@ -50,9 +52,15 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [speedIdx, setSpeedIdx] = useState(0);
+  const [text, setText] = useState<SummaryText | null>(null);
+  const [textError, setTextError] = useState(false);
 
   const voice = VOICES.find((v) => v.id === summary.voiceId);
   const minutes = manifest ? Math.round(manifest.duration / 60) : summary.minutes;
+
+  useEffect(() => {
+    loadSummaryText(summary).then(setText, () => setTextError(true));
+  }, [summary]);
 
   // The audio is generated offline; until it exists the page is text only
   useEffect(() => {
@@ -97,6 +105,7 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
     document.getElementById('summary-player')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
 
+  const sections = text?.sections ?? [];
   const others = BOOK_SUMMARIES.filter((s) => s.slug !== summary.slug);
 
   return (
@@ -163,7 +172,7 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
                 </button>
                 <div className="flex-1 min-w-0 flex flex-col gap-1">
                   <span className="text-sm text-white font-semibold truncate">
-                    {manifest && currentSection >= 0 ? summary.sections[currentSection]?.heading : `ملخص كتاب ${summary.bookTitle}`}
+                    {manifest && currentSection >= 0 ? sections[currentSection]?.heading : `ملخص كتاب ${summary.bookTitle}`}
                   </span>
                   <div className="flex items-center gap-2" dir="ltr">
                     <span className="text-[13px] text-slate-400 tabular-nums">{fmt(time)}</span>
@@ -211,7 +220,7 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
           )}
 
           <ol className="flex flex-col border-t border-line pt-2">
-            {summary.sections.map((sec, i) => (
+            {sections.map((sec, i) => (
               <li key={sec.heading}>
                 <button
                   type="button"
@@ -231,8 +240,17 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
         </section>
 
         {/* The text (what search engines read, and the narration script) */}
+        {!text && (
+          <div role="status" className="py-10 flex justify-center text-slate-400">
+            {textError ? (
+              <button type="button" onClick={() => window.location.reload()} className="min-h-11 px-5 rounded-[10px] border border-line text-slate-200 cursor-pointer">تعذّر تحميل النص، أعد المحاولة</button>
+            ) : (
+              <Loader2 className="w-7 h-7 animate-spin" aria-label="جاري التحميل" />
+            )}
+          </div>
+        )}
         <div className="flex flex-col gap-10">
-          {summary.sections.map((sec, i) => (
+          {sections.map((sec, i) => (
             <section key={sec.heading} id={`section-${i + 1}`} className="flex flex-col gap-3 scroll-mt-24">
               <div className="flex items-start justify-between gap-3">
                 <h2 className="font-display font-extrabold text-2xl sm:text-[28px] text-white leading-snug">{sec.heading}</h2>
@@ -255,15 +273,17 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
           ))}
         </div>
 
+        {text && (
         <section className="flex flex-col gap-4">
           <h2 className="font-display font-extrabold text-2xl text-white">أسئلة شائعة عن كتاب {summary.bookTitle}</h2>
-          {summary.faqs.map((f) => (
+          {text.faqs.map((f) => (
             <div key={f.question} className="rounded-[14px] bg-card border border-line p-5 flex flex-col gap-2">
               <h3 className="text-[17px] font-semibold text-white">{f.question}</h3>
               <p className="text-slate-400 leading-[1.8]">{f.answer}</p>
             </div>
           ))}
         </section>
+        )}
 
         <div className="p-6 rounded-[20px] border border-brand/40 bg-brand-deep/30 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
           <span className="flex flex-col gap-1">

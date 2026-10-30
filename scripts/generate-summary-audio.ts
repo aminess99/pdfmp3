@@ -11,7 +11,8 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
-import { BOOK_SUMMARIES, BookSummary, SummaryAudioManifest, summaryScript } from '../src/data/summaries';
+import { BOOK_SUMMARIES, BookSummary, SummaryAudioManifest } from '../src/data/summaries';
+import { summaryText } from '../src/data/summaryTexts';
 import { VOICES } from '../src/data/voices';
 
 dotenv.config();
@@ -95,6 +96,9 @@ async function synthesize(text: string, voiceName: string, instructions: string,
     }
   }
 }
+
+// The narration in reading order
+const summaryScript = (s: BookSummary) => summaryText(s).sections.map((sec) => ({ heading: sec.heading, paragraphs: sec.paragraphs }));
 
 function hashFor(summary: BookSummary, voiceName: string, instructions: string): string {
   return crypto

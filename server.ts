@@ -7,6 +7,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { VOICES } from "./src/data/voices";
 import { LANDING_PAGES, LandingPage, findLandingPage, landingPath } from "./src/data/landingPages";
+import { summaryText } from "./src/data/summaryTexts";
 import { BOOK_SUMMARIES, BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, UPCOMING_SUMMARIES, findSummary, isSummariesHub, summaryAudioUrl, summaryPath } from "./src/data/summaries";
 import { HOME_CONTENT, HOME_SEO } from "./src/data/homeContent";
 import firebaseConfig from "./src/lib/firebaseConfig";
@@ -1931,6 +1932,7 @@ function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: 
   const url = `${SITE_URL}${summaryPath(s)}`;
   const hubUrl = `${SITE_URL}${SUMMARIES_HUB_PATH}`;
   const name = `ملخص كتاب ${s.bookTitle}`;
+  const text = summaryText(s);
   const jsonLd = {
     "@context": "https://schema.org",
     "@graph": [
@@ -1969,7 +1971,7 @@ function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: 
       {
         "@type": "FAQPage",
         "@id": `${url}#faq`,
-        mainEntity: s.faqs.map((f) => ({ "@type": "Question", name: f.question, acceptedAnswer: { "@type": "Answer", text: f.answer } })),
+        mainEntity: text.faqs.map((f) => ({ "@type": "Question", name: f.question, acceptedAnswer: { "@type": "Answer", text: f.answer } })),
       },
     ],
   };
@@ -1980,9 +1982,9 @@ function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: 
     `<p>تأليف: ${escapeHtml(s.author)}</p>`,
     `<p>${escapeHtml(s.lead)}</p>`,
     audio ? `<audio controls preload="none" src="${summaryAudioUrl(s)}"></audio>` : "",
-    ...s.sections.map((sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")),
+    ...text.sections.map((sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")),
     `<h2>أسئلة شائعة عن كتاب ${escapeHtml(s.bookTitle)}</h2>`,
-    ...s.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    ...text.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
     `</article><nav>`,
     ...BOOK_SUMMARIES.filter((o) => o.slug !== s.slug).map((o) => `<a href="${summaryPath(o)}">ملخص كتاب ${escapeHtml(o.bookTitle)}</a> `),
     `<a href="/">تحويل PDF إلى صوت</a></nav></main>`,
