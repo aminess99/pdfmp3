@@ -11,6 +11,11 @@ import missedPrayer from './summary-texts/missed-prayer';
 import thePrince from './summary-texts/the-prince';
 import emotionalIntelligence from './summary-texts/emotional-intelligence';
 import goodToGreat from './summary-texts/good-to-great';
+import surroundedByIdiots from './summary-texts/surrounded-by-idiots';
+import menFromMars from './summary-texts/men-from-mars-women-from-venus';
+import alDaaWalDawaa from './summary-texts/al-daa-wal-dawaa';
+import powerOfSubconscious from './summary-texts/power-of-your-subconscious-mind';
+import howToWinFriends from './summary-texts/how-to-win-friends';
 
 export const SUMMARY_TEXTS: Record<string, SummaryText> = {
   'atomic-habits': atomicHabits,
@@ -23,6 +28,11 @@ export const SUMMARY_TEXTS: Record<string, SummaryText> = {
   'the-prince': thePrince,
   'emotional-intelligence': emotionalIntelligence,
   'good-to-great': goodToGreat,
+  'surrounded-by-idiots': surroundedByIdiots,
+  'men-from-mars-women-from-venus': menFromMars,
+  'al-daa-wal-dawaa': alDaaWalDawaa,
+  'power-of-your-subconscious-mind': powerOfSubconscious,
+  'how-to-win-friends': howToWinFriends,
 };
 
 export const summaryText = (s: BookSummary): SummaryText => {

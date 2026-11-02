@@ -11,7 +11,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
-import { BOOK_SUMMARIES, BookSummary, SummaryAudioManifest } from '../src/data/summaries';
+import { ALL_SUMMARIES, BookSummary, SummaryAudioManifest } from '../src/data/summaries';
 import { summaryText } from '../src/data/summaryTexts';
 import { VOICES } from '../src/data/voices';
 
@@ -196,7 +196,7 @@ async function main() {
   fs.mkdirSync(PIECE_CACHE, { recursive: true });
 
   let failed = 0;
-  for (const summary of BOOK_SUMMARIES) {
+  for (const summary of ALL_SUMMARIES) {
     if (only.length && !only.includes(summary.slug)) continue;
     console.log(`==    ${summary.slug}`);
     try {

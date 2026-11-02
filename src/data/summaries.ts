@@ -44,7 +44,10 @@ export interface SummaryAudioManifest {
 export const SUMMARIES_HUB_PATH = `/${encodeURIComponent('ملخصات-كتب-صوتية')}`;
 const SUMMARY_PREFIX = 'ملخص-كتاب-';
 
-export const BOOK_SUMMARIES: BookSummary[] = [
+// Every summary, published or scheduled. Only the audio generator and the cover script read
+// this list directly, so a scheduled summary has its audio ready before its day arrives;
+// everything the site shows goes through publishedSummaries() below.
+export const ALL_SUMMARIES: BookSummary[] = [
   {
     slug: 'العادات-الذرية',
     bookTitle: 'العادات الذرية',
@@ -215,7 +218,99 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     textId: 'good-to-great',
     hasCover: true,
   },
+  // Scheduled: one new summary a day, going live at 00:00 UTC on its publishedAt date
+  {
+    slug: 'محاط-بالحمقى',
+    bookTitle: 'محاط بالحمقى',
+    author: 'توماس إريكسون',
+    category: 'علم النفس',
+    voiceId: 'khalid_msa',
+    minutes: 12,
+    title: 'ملخص كتاب محاط بالحمقى صوتي ومكتوب – توماس إريكسون | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب محاط بالحمقى لتوماس إريكسون بالعربية الفصحى، أو اقرأه مكتوباً: الألوان الأربعة للطباع (الأحمر والأصفر والأخضر والأزرق)، وكيف تتفاهم مع كل نمط، ولماذا نرى الآخرين حمقى.',
+    keywords:
+      'ملخص كتاب محاط بالحمقى, ملخص كتاب محاط بالحمقى pdf, محاط بالحمقى كتاب صوتي, توماس إريكسون, الألوان الأربعة للشخصية, نموذج ديسك, أنماط الشخصية',
+    lead: 'هل تشعر أحياناً أن كل من حولك لا يفهمك؟ الألوان الأربعة للطباع عند توماس إريكسون، وكيف تتعامل مع كل لون بدل أن تتعب من الاختلاف.',
+    publishedAt: '2026-11-03',
+    textId: 'surrounded-by-idiots',
+  },
+  {
+    slug: 'الرجال-من-المريخ-والنساء-من-الزهرة',
+    bookTitle: 'الرجال من المريخ والنساء من الزهرة',
+    author: 'جون غراي',
+    category: 'علم النفس',
+    voiceId: 'huda_msa',
+    minutes: 11,
+    title: 'ملخص كتاب الرجال من المريخ والنساء من الزهرة صوتي ومكتوب – جون غراي | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب الرجال من المريخ والنساء من الزهرة لجون غراي بالعربية الفصحى، أو اقرأه مكتوباً: فكرة الكهف والموجة، واحتياجات كل طرف، وفن التواصل والاعتذار، مع قراءة متوازنة للكتاب.',
+    keywords:
+      'ملخص كتاب الرجال من المريخ والنساء من الزهرة, ملخص كتاب الرجال من المريخ والنساء من الزهرة pdf, الرجال من المريخ والنساء من الزهرة كتاب صوتي, جون غراي, العلاقة بين الرجل والمرأة, التواصل بين الزوجين',
+    lead: 'لماذا يسيء الرجل والمرأة فهم بعضهما رغم الحب؟ أشهر أفكار جون غراي عن الكهف والموجة وطرق التواصل، مع نظرة هادئة إلى حدودها.',
+    publishedAt: '2026-11-04',
+    textId: 'men-from-mars-women-from-venus',
+  },
+  {
+    slug: 'الداء-والدواء',
+    bookTitle: 'الداء والدواء',
+    author: 'ابن قيم الجوزية',
+    category: 'ديني',
+    voiceId: 'suhaib_doc',
+    minutes: 13,
+    title: 'ملخص كتاب الداء والدواء صوتي ومكتوب – ابن قيم الجوزية | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب الداء والدواء (الجواب الكافي) لابن قيم الجوزية بالعربية الفصحى، أو اقرأه مكتوباً: الدعاء والقدر، وآثار الذنوب، والتوبة والاستغفار، وحفظ النظر واللسان والقلب، وخطر تعلق القلب.',
+    keywords:
+      'ملخص كتاب الداء والدواء, ملخص كتاب الداء والدواء pdf, الداء والدواء كتاب صوتي, الجواب الكافي لمن سأل عن الدواء الشافي, ابن القيم, آثار الذنوب, التوبة والاستغفار',
+    lead: 'ما أثر الذنوب في القلب والحياة، وما الدواء؟ أهم ما في كتاب ابن القيم عن الدعاء والقدر والتوبة وحفظ الجوارح، ورسالته في عدم اليأس.',
+    publishedAt: '2026-11-05',
+    textId: 'al-daa-wal-dawaa',
+  },
+  {
+    slug: 'قوة-عقلك-الباطن',
+    bookTitle: 'قوة عقلك الباطن',
+    author: 'جوزيف مورفي',
+    category: 'تطوير الذات',
+    voiceId: 'fatima_msa',
+    minutes: 11,
+    title: 'ملخص كتاب قوة عقلك الباطن صوتي ومكتوب – جوزيف مورفي | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب قوة عقلك الباطن لجوزيف مورفي بالعربية الفصحى، أو اقرأه مكتوباً: العقل الواعي والباطن، والتوكيدات، والتخيل، وتقنية ما قبل النوم، والمسامحة، مع نظرة متوازنة إلى حدود الكتاب.',
+    keywords:
+      'ملخص كتاب قوة عقلك الباطن, ملخص كتاب قوة عقلك الباطن pdf, قوة عقلك الباطن كتاب صوتي, جوزيف مورفي, العقل الباطن, التوكيدات الإيجابية, التفكير الإيجابي',
+    lead: 'كيف تؤثر أفكارك المتكررة في حياتك؟ أهم تقنيات جوزيف مورفي لتوجيه العقل الباطن، وما يصلح منها وما يحتاج إلى حذر.',
+    publishedAt: '2026-11-06',
+    textId: 'power-of-your-subconscious-mind',
+  },
+  {
+    slug: 'كيف-تكسب-الأصدقاء',
+    bookTitle: 'كيف تكسب الأصدقاء',
+    author: 'ديل كارنيجي',
+    category: 'تطوير الذات',
+    voiceId: 'youssef_msa',
+    minutes: 12,
+    title: 'ملخص كتاب كيف تكسب الأصدقاء صوتي ومكتوب – ديل كارنيجي | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب كيف تكسب الأصدقاء وتؤثر في الناس لديل كارنيجي بالعربية الفصحى، أو اقرأه مكتوباً: ست طرق ليحبك الناس، وطرق الإقناع دون جدال، ومبادئ القيادة دون إثارة الاستياء.',
+    keywords:
+      'ملخص كتاب كيف تكسب الأصدقاء, ملخص كتاب كيف تكسب الأصدقاء pdf, كيف تكسب الأصدقاء وتؤثر في الناس, كيف تكسب الأصدقاء كتاب صوتي, ديل كارنيجي, مهارات التواصل, فن التعامل مع الناس',
+    lead: 'ما الذي يجعل الناس يحبونك ويثقون بك؟ مبادئ ديل كارنيجي الأربعة في التعامل مع الناس، من الاهتمام الصادق إلى تجنب الجدال.',
+    publishedAt: '2026-11-07',
+    textId: 'how-to-win-friends',
+  },
 ];
+
+// A summary goes live on its publishedAt date (UTC). Before that it is invisible: no page
+// (findSummary answers undefined, so the route 404s), no hub entry, no sitemap line,
+// and its book shows under "coming soon". Moving a date earlier or later reschedules it.
+export const todayIso = (now: Date = new Date()): string => now.toISOString().slice(0, 10);
+export const isPublished = (s: BookSummary, now: Date = new Date()): boolean => s.publishedAt <= todayIso(now);
+export const publishedSummaries = (now: Date = new Date()): BookSummary[] => ALL_SUMMARIES.filter((s) => isPublished(s, now));
+
+// What the browser shows: fixed when the page loads, which is fine for a visit. The long-lived
+// server calls publishedSummaries() again whenever the date changes (see server.ts).
+export const BOOK_SUMMARIES: BookSummary[] = publishedSummaries();
 
 export const summaryPath = (s: BookSummary): string => `/${encodeURIComponent(SUMMARY_PREFIX + s.slug)}`;
 
@@ -235,13 +330,14 @@ export function findSummary(pathname: string): BookSummary | undefined {
   const path = decodePath(pathname);
   if (!path.startsWith(SUMMARY_PREFIX)) return undefined;
   const slug = path.slice(SUMMARY_PREFIX.length);
-  return BOOK_SUMMARIES.find((s) => s.slug === slug);
+  return publishedSummaries().find((s) => s.slug === slug);
 }
 
 export const isSummariesHub = (pathname: string): boolean => decodePath(pathname) === 'ملخصات-كتب-صوتية';
 
-// Next on the list (chosen by Arabic search demand); listed on the hub as "coming soon"
-export const UPCOMING_SUMMARIES: string[] = [
+// Next on the list (chosen by Arabic search demand); listed on the hub as "coming soon".
+// Scheduled summaries stay here until their day arrives.
+const UPCOMING_TITLES: string[] = [
   'أبي الذي أكره',
   '48 قانوناً للقوة',
   'فن اللامبالاة',
@@ -261,7 +357,17 @@ export const UPCOMING_SUMMARIES: string[] = [
   'زاد المعاد',
   'الذكاء العاطفي',
   'من جيد إلى عظيم',
-].filter((t) => !BOOK_SUMMARIES.some((s) => s.bookTitle === t));
+  'الداء والدواء',
+  'قوة عقلك الباطن',
+  'كيف تكسب الأصدقاء',
+];
+
+export const upcomingSummaries = (now: Date = new Date()): string[] => {
+  const published = publishedSummaries(now);
+  return UPCOMING_TITLES.filter((t) => !published.some((s) => s.bookTitle === t));
+};
+
+export const UPCOMING_SUMMARIES: string[] = upcomingSummaries();
 
 export const SUMMARIES_HUB = {
   title: 'ملخصات كتب صوتية مجانية بالعربي | Hakawati AI',

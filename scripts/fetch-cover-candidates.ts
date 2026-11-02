@@ -3,7 +3,7 @@
 // pick the right edition before it goes into public/covers/. Run by .github/workflows/covers.yml.
 import fs from 'fs';
 import path from 'path';
-import { BOOK_SUMMARIES } from '../src/data/summaries';
+import { ALL_SUMMARIES } from '../src/data/summaries';
 
 // English editions help when the Arabic one has no cover online
 const ENGLISH: Record<string, { title: string; author: string }> = {
@@ -46,7 +46,7 @@ async function openLibrary(title: string, author: string): Promise<{ url: string
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   const index: Record<string, { file: string; label: string; url: string }[]> = {};
-  for (const s of BOOK_SUMMARIES) {
+  for (const s of ALL_SUMMARIES) {
     const dir = path.join(OUT, s.textId);
     fs.mkdirSync(dir, { recursive: true });
     const en = ENGLISH[s.textId];

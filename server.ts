@@ -12,7 +12,7 @@ import { libraryEnabled, listBooks, getBook, saveBook, deleteBook, isValidBookId
 import { summaryText } from "./src/data/summaryTexts";
 import { ARTICLES, ARTICLES_HUB, ARTICLES_HUB_PATH, Article, articlePath, findArticle, isArticlesHub, splitLinks } from "./src/data/articles";
 import { articleText } from "./src/data/articleTexts";
-import { BOOK_SUMMARIES, BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, UPCOMING_SUMMARIES, findSummary, isSummariesHub, summaryAudioUrl, summaryCoverUrl, summaryPath } from "./src/data/summaries";
+import { BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, findSummary, publishedSummaries, todayIso, upcomingSummaries, isSummariesHub, summaryAudioUrl, summaryCoverUrl, summaryPath } from "./src/data/summaries";
 import { HOME_CONTENT, HOME_SEO } from "./src/data/homeContent";
 import firebaseConfig from "./src/lib/firebaseConfig";
 import {
@@ -2320,7 +2320,7 @@ function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: 
     `<h2>أسئلة شائعة عن كتاب ${escapeHtml(s.bookTitle)}</h2>`,
     ...text.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
     `</article><nav>`,
-    ...BOOK_SUMMARIES.filter((o) => o.slug !== s.slug).map((o) => `<a href="${summaryPath(o)}">ملخص كتاب ${escapeHtml(o.bookTitle)}</a> `),
+    ...publishedSummaries().filter((o) => o.slug !== s.slug).map((o) => `<a href="${summaryPath(o)}">ملخص كتاب ${escapeHtml(o.bookTitle)}</a> `),
     `<a href="/">تحويل PDF إلى صوت</a></nav></main>`,
   ].join("");
   const html = withHead(template, { title: s.title, description: s.description, keywords: s.keywords, url, ogType: "article", jsonLd, content });
@@ -2351,7 +2351,7 @@ function renderSummariesHubHtml(template: string): string {
       },
       {
         "@type": "ItemList",
-        itemListElement: BOOK_SUMMARIES.map((s, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE_URL}${summaryPath(s)}`, name: `ملخص كتاب ${s.bookTitle}` })),
+        itemListElement: publishedSummaries().map((s, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE_URL}${summaryPath(s)}`, name: `ملخص كتاب ${s.bookTitle}` })),
       },
       {
         "@type": "BreadcrumbList",
@@ -2364,9 +2364,9 @@ function renderSummariesHubHtml(template: string): string {
   };
   const content = [
     `<main dir="rtl"><h1>${escapeHtml(SUMMARIES_HUB.h1)}</h1><p>${escapeHtml(SUMMARIES_HUB.lead)}</p><ul>`,
-    ...BOOK_SUMMARIES.map((s) => `<li><a href="${summaryPath(s)}">ملخص كتاب ${escapeHtml(s.bookTitle)}</a> – ${escapeHtml(s.author)}. ${escapeHtml(s.lead)}</li>`),
+    ...publishedSummaries().map((s) => `<li><a href="${summaryPath(s)}">ملخص كتاب ${escapeHtml(s.bookTitle)}</a> – ${escapeHtml(s.author)}. ${escapeHtml(s.lead)}</li>`),
     `</ul>`,
-    UPCOMING_SUMMARIES.length ? `<h2>قريباً</h2><p>${UPCOMING_SUMMARIES.map(escapeHtml).join("، ")}</p>` : "",
+    upcomingSummaries().length ? `<h2>قريباً</h2><p>${upcomingSummaries().map(escapeHtml).join("، ")}</p>` : "",
     `<a href="/">تحويل PDF إلى صوت</a></main>`,
   ].join("");
   return withHead(template, { title: SUMMARIES_HUB.title, description: SUMMARIES_HUB.description, keywords: SUMMARIES_HUB.keywords, url, jsonLd, content });
@@ -2620,21 +2620,31 @@ async function startServer() {
     const landingHtml = new Map(LANDING_PAGES.map((p) => [p.slug, renderLandingHtml(indexTemplate, p)]));
     const homeHtml = renderHomeHtml(indexTemplate, "ar");
     const homeHtmlEn = renderHomeHtml(indexTemplate, "en");
-    const hubHtml = renderSummariesHubHtml(indexTemplate);
     const articlesHubHtml = renderArticlesHubHtml(indexTemplate);
     const articleHtml = new Map(ARTICLES.map((a) => [a.slug, renderArticleHtml(indexTemplate, a)]));
-    const summaryHtml = new Map(BOOK_SUMMARIES.map((s) => [s.slug, renderSummaryHtml(indexTemplate, s, summaryHasAudio(distPath, s))]));
+    // Summaries go live on their publishedAt date, so the pre-rendered hub and summary pages
+    // are rebuilt the first time they are asked for on a new (UTC) day
+    const buildSummaryPages = () => ({
+      day: todayIso(),
+      hubHtml: renderSummariesHubHtml(indexTemplate),
+      summaryHtml: new Map(publishedSummaries().map((s) => [s.slug, renderSummaryHtml(indexTemplate, s, summaryHasAudio(distPath, s))])),
+    });
+    let summaryPages = buildSummaryPages();
+    const currentSummaryPages = () => {
+      if (summaryPages.day !== todayIso()) summaryPages = buildSummaryPages();
+      return summaryPages;
+    };
 
     app.use((req, res, next) => {
       if (req.method !== "GET") return next();
       if (req.path === "/" || req.path === "/index.html") return res.type("html").send(homeHtml);
       if (req.path === "/en" || req.path === "/en/") return res.type("html").send(homeHtmlEn);
-      if (isSummariesHub(req.path)) return res.type("html").send(hubHtml);
+      if (isSummariesHub(req.path)) return res.type("html").send(currentSummaryPages().hubHtml);
       if (isArticlesHub(req.path)) return res.type("html").send(articlesHubHtml);
       const article = findArticle(req.path);
       if (article) return res.type("html").send(articleHtml.get(article.slug));
       const summary = findSummary(req.path);
-      if (summary) return res.type("html").send(summaryHtml.get(summary.slug));
+      if (summary) return res.type("html").send(currentSummaryPages().summaryHtml.get(summary.slug));
       const page = findLandingPage(req.path);
       if (!page) return next();
       res.type("html").send(landingHtml.get(page.slug));
@@ -2655,6 +2665,21 @@ async function startServer() {
       }
       if (!clip) return res.status(404).type("html").send(notFoundHtml);
       res.type("html").send(renderShareHtml(indexTemplate, id, clip));
+    });
+
+    // public/sitemap.xml lists the summaries published so far; add the ones that went live since
+    app.get("/sitemap.xml", (_req, res, next) => {
+      let xml: string;
+      try {
+        xml = fs.readFileSync(path.join(distPath, "sitemap.xml"), "utf8");
+      } catch {
+        return next();
+      }
+      const missing = publishedSummaries().filter((s) => !xml.includes(`<loc>${SITE_URL}${summaryPath(s)}</loc>`));
+      const entries = missing
+        .map((s) => `  <url>\n    <loc>${SITE_URL}${summaryPath(s)}</loc>\n    <lastmod>${s.publishedAt}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>\n`)
+        .join("");
+      res.type("application/xml").send(entries ? xml.replace("</urlset>", () => `${entries}</urlset>`) : xml);
     });
 
     app.use(express.static(distPath));
