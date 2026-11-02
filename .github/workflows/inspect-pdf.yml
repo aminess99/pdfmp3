@@ -2,7 +2,11 @@ name: Inspect a PDF
 
 # Debug tool: downloads a book PDF from a URL (or a page that links to it) and prints what
 # the site's readers would see: page count, damage, text per page. Run from the Actions tab.
+# Also runs when .github/inspect-pdf-url.txt changes (the URL is read from that file).
 on:
+  push:
+    paths:
+      - .github/inspect-pdf-url.txt
   workflow_dispatch:
     inputs:
       url:
@@ -27,6 +31,7 @@ jobs:
         env:
           URL: ${{ inputs.url }}
         run: |
+          [ -z "$URL" ] && URL=$(head -1 .github/inspect-pdf-url.txt | tr -d '\r')
           UA="Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36"
           curl -sSL -A "$UA" -c jar -b jar -o first "$URL" -D headers1 || true
           echo "--- first response"; grep -iE '^(HTTP|content-type|content-length|content-disposition|location)' headers1 || true
