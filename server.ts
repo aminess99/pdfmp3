@@ -569,7 +569,8 @@ async function ocrImagesOpenRouter(images: string[]): Promise<string | null> {
       if (r.ok) {
         const data: any = await r.json();
         const text = data.choices?.[0]?.message?.content;
-        if (typeof text === "string") return text;
+        if (typeof text === "string" && text.replace(/\s+/g, "").length > 0) return text;
+        console.warn(`[OCR] ${model} returned an empty reply`);
       } else {
         console.warn(`[OCR] ${model} returned ${r.status}:`, (await r.text()).slice(0, 300));
       }
@@ -589,30 +590,42 @@ app.post("/api/pdf/ocr-pages", async (req, res) => {
   const present = valid.filter(Boolean);
   if (present.length === 0) return res.json({ pages: valid.map(() => "") });
 
-  let raw: string | null = null;
-  const ai = getGeminiClient();
-  if (ai) {
-    for (const model of ["gemini-3.1-flash-lite", "gemini-flash-latest"]) {
-      try {
-        const response = await ai.models.generateContent({
-          model,
-          contents: [
-            ...present.map((u) => ({ inlineData: { mimeType: u.slice(5, u.indexOf(";")), data: u.slice(u.indexOf(",") + 1) } })),
-            { text: OCR_PAGES_PROMPT },
-          ],
-          config: { temperature: 0 },
-        } as any);
-        if (typeof response.text === "string") {
-          raw = response.text;
-          break;
+  // A reply with almost no text for a whole group of pages is a failed read (some models
+  // answer empty in a second), not blank pages: try the next model
+  const sepCount = (t: string) => t.split(OCR_PAGE_SEPARATOR).length - 1;
+  const looksRead = (t: string | null): t is string =>
+    typeof t === "string" && (t.replace(new RegExp(OCR_PAGE_SEPARATOR, "g"), "").replace(/\s+/g, "").length >= 40 * present.length || (present.length > 1 && sepCount(t) >= present.length - 1 && t.replace(/\s+/g, "").length > 60));
+
+  // OpenRouter's gemini-2.5-flash first: tested on real scanned Arabic books
+  let raw: string | null = await ocrImagesOpenRouter(present);
+  if (!looksRead(raw)) {
+    const ai = getGeminiClient();
+    if (ai) {
+      for (const model of ["gemini-flash-latest", "gemini-3.1-flash-lite"]) {
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents: [
+              ...present.map((u) => ({ inlineData: { mimeType: u.slice(5, u.indexOf(";")), data: u.slice(u.indexOf(",") + 1) } })),
+              { text: OCR_PAGES_PROMPT },
+            ],
+            config: { temperature: 0 },
+          } as any);
+          if (looksRead(response.text ?? null)) {
+            raw = response.text as string;
+            break;
+          }
+          console.warn(`[OCR] Gemini ${model} returned almost no text (${(response.text || "").length} chars)`);
+        } catch (err: any) {
+          console.warn(`[OCR] Gemini ${model} failed:`, err?.message || err);
         }
-      } catch (err: any) {
-        console.warn(`[OCR] Gemini ${model} failed:`, err?.message || err);
       }
     }
   }
-  if (raw === null) raw = await ocrImagesOpenRouter(present);
+  // Every model read (almost) nothing: genuinely blank pages, or keep what we got
   if (raw === null) return res.status(502).json({ error: "تعذّر المسح الضوئي الآن، حاول بعد قليل." });
+  // Markdown the model may add (bold, headings) would be read aloud
+  raw = raw.replace(/\*\*|__|^#{1,6}\s+/gm, "");
 
   const parts = raw.split(OCR_PAGE_SEPARATOR).map((p) => p.trim());
   // Map the model's pages back to the requested ones (pages that failed to render stay empty)
