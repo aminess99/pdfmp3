@@ -230,6 +230,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'لماذا نشعر أحياناً أن من حولنا لا يفهموننا؟ أنماط الشخصية الأربعة بالألوان، وكيف تفهم كل نمط وتتواصل معه في العمل والبيت.',
     publishedAt: '2026-11-02',
     textId: 'surrounded-by-idiots',
+    hasCover: true,
   },
   {
     slug: 'الرجال-من-المريخ-والنساء-من-الزهرة',
@@ -246,6 +247,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'لماذا يختلف الرجال والنساء في التعبير والتعامل مع الضغط؟ أفكار الكتاب عن فهم الشريك وتحسين التواصل، مع قراءة نقدية.',
     publishedAt: '2026-11-02',
     textId: 'men-mars-women-venus',
+    hasCover: true,
   },
   {
     slug: 'الداء-والدواء',
@@ -262,6 +264,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'جواب ابن القيم لمن ابتُلي بذنب لم يستطع تركه: الدعاء، والتوبة، وآثار الذنوب على القلب والحياة، وكيف يُعالج القلب ويُحفظ.',
     publishedAt: '2026-11-02',
     textId: 'the-disease-and-the-cure',
+    hasCover: true,
   },
   {
     slug: 'قوة-عقلك-الباطن',
@@ -278,6 +281,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'هل يستطيع عقلك الباطن أن يغيّر حياتك؟ أفكار الكتاب عن التوكيدات والتخيل والنوم، مع قراءة نقدية تفرّق بين النافع والمبالغ فيه.',
     publishedAt: '2026-11-02',
     textId: 'power-of-subconscious',
+    hasCover: true,
   },
   {
     slug: 'كيف-تكسب-الأصدقاء-وتؤثر-في-الناس',
@@ -294,6 +298,7 @@ export const BOOK_SUMMARIES: BookSummary[] = [
     lead: 'المبادئ التي علّمت الملايين فن التعامل مع الناس: كيف تكسب محبتهم، وتقنعهم بوجهة نظرك، وتصلح أخطاءهم دون أن تجرحهم.',
     publishedAt: '2026-11-02',
     textId: 'how-to-win-friends',
+    hasCover: true,
   },
 ];
 
