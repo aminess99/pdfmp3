@@ -3,6 +3,7 @@ import { LANDING_PAGES, landingPath } from '../data/landingPages';
 import { tr, DIR, HOME_PATH, OTHER_LANG_PATH, isEn } from '../lib/i18n';
 import { DIALECT_COUNT } from '../data/voices';
 import { SUMMARIES_HUB_PATH } from '../data/summaries';
+import { ARTICLES_HUB_PATH } from '../data/articles';
 
 interface FooterProps {
   onNavigate: (id: string) => void;
@@ -27,6 +28,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal }) => (
         ) : (
           <>
             <a href={SUMMARIES_HUB_PATH} className="text-brand-soft hover:text-indigo-200">ملخصات كتب صوتية</a>
+            <a href={ARTICLES_HUB_PATH} className="text-brand-soft hover:text-indigo-200">المقالات</a>
             {LANDING_PAGES.map((page) => (
               <a key={page.slug} href={landingPath(page)} className="text-brand-soft hover:text-indigo-200">
                 {page.linkLabel}

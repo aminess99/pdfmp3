@@ -19,6 +19,9 @@ import { SharePage } from './components/SharePage';
 import { SummaryPage } from './components/SummaryPage';
 import { SummariesHub, SummariesShowcase } from './components/SummariesHub';
 import { findSummary, isSummariesHub } from './data/summaries';
+import { findArticle, isArticlesHub } from './data/articles';
+import { ArticlePage } from './components/ArticlePage';
+import { ArticlesHub } from './components/ArticlesHub';
 import { SHARE_PATH_RE } from './lib/shares';
 import { REQUIRE_AUTH_EVENT, OUT_OF_CREDITS_EVENT, SUBSCRIBE_EVENT, CREDITS_CHANGED_EVENT, fetchCredits } from './lib/apiFetch';
 import { toast } from './lib/toast';
@@ -36,7 +39,9 @@ export default function App() {
   const [shareId] = useState(() => window.location.pathname.match(SHARE_PATH_RE)?.[1] || null);
   const [summary] = useState(() => findSummary(window.location.pathname));
   const [isHub] = useState(() => isSummariesHub(window.location.pathname));
-  const [isNotFound] = useState(() => !landingPage && !shareId && !summary && !isHub && !['/', '/index.html', '/en', '/en/'].includes(window.location.pathname));
+  const [article] = useState(() => findArticle(window.location.pathname));
+  const [isArticlesIndex] = useState(() => isArticlesHub(window.location.pathname));
+  const [isNotFound] = useState(() => !landingPage && !shareId && !summary && !isHub && !article && !isArticlesIndex && !['/', '/index.html', '/en', '/en/'].includes(window.location.pathname));
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({
     isOpen: false,
     mode: 'login',
@@ -195,13 +200,13 @@ export default function App() {
   }, []);
 
   // Public content pages (shared clips, book summaries), the same for guests and signed-in users
-  if (shareId || summary || isHub) {
+  if (shareId || summary || isHub || article || isArticlesIndex) {
     return (
       <div className="min-h-screen bg-ink text-slate-100 font-body">
         <Toaster />
         <SiteHeader onOpenAuth={handleOpenAuth} onNavigate={handleNavigate} />
         <main>
-          {shareId ? <SharePage shareId={shareId} /> : summary ? <SummaryPage summary={summary} /> : <SummariesHub />}
+          {shareId ? <SharePage shareId={shareId} /> : summary ? <SummaryPage summary={summary} /> : article ? <ArticlePage article={article} /> : isArticlesIndex ? <ArticlesHub /> : <SummariesHub />}
         </main>
         <Footer onNavigate={handleNavigate} onOpenLegal={(type) => setLegalModal({ isOpen: true, type })} />
         {authModal.isOpen && (

@@ -10,6 +10,8 @@ import { getFirestore, Firestore, FieldValue, Timestamp } from 'firebase-admin/f
 import firebaseConfig from '../src/lib/firebaseConfig';
 import { SAMPLE_BOOKS } from '../src/data/sampleBooks';
 import { VOICES } from '../src/data/voices';
+import { ARTICLES } from '../src/data/articles';
+import { articleText, articleNarration } from '../src/data/articleTexts';
 
 export const FREE_SECONDS = 30 * 60;
 
@@ -60,7 +62,12 @@ export const secondsForText = (text: string): number =>
   Math.max(3, Math.ceil((text.trim().split(/\s+/).filter(Boolean).length / 130) * 60));
 
 // Texts anyone may hear without an account: the demo books and the voice samples
-const PUBLIC_TEXTS = [...SAMPLE_BOOKS.map((b) => b.sampleText), ...VOICES.map((v) => v.sampleText)]
+// ...and the articles, which anyone can listen to (each piece is generated once, then cached)
+const PUBLIC_TEXTS = [
+  ...SAMPLE_BOOKS.map((b) => b.sampleText),
+  ...VOICES.map((v) => v.sampleText),
+  ...ARTICLES.flatMap((a) => articleNarration(articleText(a))),
+]
   .filter(Boolean)
   .map((t) => t.replace(/\s+/g, ' ').trim());
 

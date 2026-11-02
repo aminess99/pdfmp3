@@ -10,6 +10,8 @@ import { LANDING_PAGES, LandingPage, findLandingPage, landingPath } from "./src/
 import { isAdminUser, overview as adminOverview, usersTable as adminUsersTable, recentPayments as adminRecentPayments, giftMinutes as adminGiftMinutes } from "./server/admin";
 import { libraryEnabled, listBooks, getBook, saveBook, deleteBook, isValidBookId } from "./server/library";
 import { summaryText } from "./src/data/summaryTexts";
+import { ARTICLES, ARTICLES_HUB, ARTICLES_HUB_PATH, Article, articlePath, findArticle, isArticlesHub, splitLinks } from "./src/data/articles";
+import { articleText } from "./src/data/articleTexts";
 import { BOOK_SUMMARIES, BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, UPCOMING_SUMMARIES, findSummary, isSummariesHub, summaryAudioUrl, summaryCoverUrl, summaryPath } from "./src/data/summaries";
 import { HOME_CONTENT, HOME_SEO } from "./src/data/homeContent";
 import firebaseConfig from "./src/lib/firebaseConfig";
@@ -2370,6 +2372,93 @@ function renderSummariesHubHtml(template: string): string {
   return withHead(template, { title: SUMMARIES_HUB.title, description: SUMMARIES_HUB.description, keywords: SUMMARIES_HUB.keywords, url, jsonLd, content });
 }
 
+// Article paragraph -> HTML, with its [text](/path) links
+const richHtml = (text: string): string =>
+  splitLinks(text)
+    .map((p) => ("href" in p ? `<a href="${escapeHtml(p.href)}">${escapeHtml(p.text)}</a>` : escapeHtml(p.text)))
+    .join("");
+
+function renderArticleHtml(template: string, a: Article): string {
+  const url = `${SITE_URL}${articlePath(a)}`;
+  const hubUrl = `${SITE_URL}${ARTICLES_HUB_PATH}`;
+  const text = articleText(a);
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        "@id": `${url}#article`,
+        headline: a.h1,
+        description: a.description,
+        inLanguage: "ar",
+        datePublished: a.publishedAt,
+        dateModified: a.updatedAt,
+        url,
+        mainEntityOfPage: url,
+        image: `${SITE_URL}/brand/og.png`,
+        author: { "@type": "Organization", name: "Hakawati AI", url: `${SITE_URL}/` },
+        publisher: { "@type": "Organization", name: "Hakawati AI", logo: { "@type": "ImageObject", url: `${SITE_URL}/brand/logo.png` } },
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}/` },
+          { "@type": "ListItem", position: 2, name: ARTICLES_HUB.h1, item: hubUrl },
+          { "@type": "ListItem", position: 3, name: a.h1, item: url },
+        ],
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: text.faqs.map((f) => ({ "@type": "Question", name: f.question, acceptedAnswer: { "@type": "Answer", text: f.answer } })),
+      },
+    ],
+  };
+  const content = [
+    `<main dir="rtl"><article>`,
+    `<nav><a href="/">الرئيسية</a> › <a href="${ARTICLES_HUB_PATH}">${escapeHtml(ARTICLES_HUB.h1)}</a></nav>`,
+    `<h1>${escapeHtml(a.h1)}</h1>`,
+    `<p>${escapeHtml(a.lead)}</p>`,
+    `<p>فريق Hakawati AI · <time datetime="${a.updatedAt}">${a.updatedAt}</time></p>`,
+    ...text.sections.map(
+      (sec) =>
+        `<h2>${escapeHtml(sec.heading)}</h2>` +
+        sec.paragraphs.map((t) => `<p>${richHtml(t)}</p>`).join("") +
+        (sec.steps ? `<ol>${sec.steps.map((st) => `<li>${richHtml(st)}</li>`).join("")}</ol>` : "")
+    ),
+    `<h2>أسئلة شائعة</h2>`,
+    ...text.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    `</article><nav>`,
+    ...ARTICLES.filter((o) => o.slug !== a.slug).map((o) => `<a href="${articlePath(o)}">${escapeHtml(o.h1)}</a> `),
+    `<a href="${SUMMARIES_HUB_PATH}">${escapeHtml(SUMMARIES_HUB.h1)}</a> <a href="/">تحويل PDF إلى صوت</a></nav></main>`,
+  ].join("");
+  return withHead(template, { title: a.title, description: a.description, keywords: a.keywords, url, ogType: "article", jsonLd, content });
+}
+
+function renderArticlesHubHtml(template: string): string {
+  const url = `${SITE_URL}${ARTICLES_HUB_PATH}`;
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "CollectionPage", "@id": `${url}#webpage`, url, name: ARTICLES_HUB.title, description: ARTICLES_HUB.description, inLanguage: "ar" },
+      { "@type": "ItemList", itemListElement: ARTICLES.map((a, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE_URL}${articlePath(a)}`, name: a.h1 })) },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}/` },
+          { "@type": "ListItem", position: 2, name: ARTICLES_HUB.h1, item: url },
+        ],
+      },
+    ],
+  };
+  const content = [
+    `<main dir="rtl"><h1>${escapeHtml(ARTICLES_HUB.h1)}</h1><p>${escapeHtml(ARTICLES_HUB.lead)}</p><ul>`,
+    ...ARTICLES.map((a) => `<li><a href="${articlePath(a)}">${escapeHtml(a.h1)}</a>. ${escapeHtml(a.lead)}</li>`),
+    `</ul><a href="/">تحويل PDF إلى صوت</a></main>`,
+  ].join("");
+  return withHead(template, { title: ARTICLES_HUB.title, description: ARTICLES_HUB.description, keywords: "مقالات الكتب الصوتية, تحويل النص الى صوت, تحويل pdf الى صوت", url, jsonLd, content });
+}
+
 // The home page is a client-rendered app, so put its text into #root for crawlers
 // that read raw HTML (React replaces it on load with the same content). The same
 // template serves Arabic at / and English at /en, with matching head tags and JSON-LD.
@@ -2397,7 +2486,7 @@ function renderHomeHtml(template: string, lang: "ar" | "en"): string {
     `<nav>`,
     `<a href="${en ? "/" : "/en"}">${en ? "العربية" : "English"}</a> `,
     ...(en ? [] : LANDING_PAGES.map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `)),
-    ...(en ? [] : [`<a href="${SUMMARIES_HUB_PATH}">${escapeHtml(SUMMARIES_HUB.h1)}</a> `]),
+    ...(en ? [] : [`<a href="${SUMMARIES_HUB_PATH}">${escapeHtml(SUMMARIES_HUB.h1)}</a> `, `<a href="${ARTICLES_HUB_PATH}">${escapeHtml(ARTICLES_HUB.h1)}</a> `]),
     `</nav></main>`,
   ].join("");
 
@@ -2532,6 +2621,8 @@ async function startServer() {
     const homeHtml = renderHomeHtml(indexTemplate, "ar");
     const homeHtmlEn = renderHomeHtml(indexTemplate, "en");
     const hubHtml = renderSummariesHubHtml(indexTemplate);
+    const articlesHubHtml = renderArticlesHubHtml(indexTemplate);
+    const articleHtml = new Map(ARTICLES.map((a) => [a.slug, renderArticleHtml(indexTemplate, a)]));
     const summaryHtml = new Map(BOOK_SUMMARIES.map((s) => [s.slug, renderSummaryHtml(indexTemplate, s, summaryHasAudio(distPath, s))]));
 
     app.use((req, res, next) => {
@@ -2539,6 +2630,9 @@ async function startServer() {
       if (req.path === "/" || req.path === "/index.html") return res.type("html").send(homeHtml);
       if (req.path === "/en" || req.path === "/en/") return res.type("html").send(homeHtmlEn);
       if (isSummariesHub(req.path)) return res.type("html").send(hubHtml);
+      if (isArticlesHub(req.path)) return res.type("html").send(articlesHubHtml);
+      const article = findArticle(req.path);
+      if (article) return res.type("html").send(articleHtml.get(article.slug));
       const summary = findSummary(req.path);
       if (summary) return res.type("html").send(summaryHtml.get(summary.slug));
       const page = findLandingPage(req.path);
