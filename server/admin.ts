@@ -8,13 +8,7 @@ import { listBooks } from './library';
 // Matches the measured OpenRouter price of google/gemini-3.8-flash-lite-tts
 const COST_PER_MINUTE_USD = Number(process.env.TTS_COST_PER_MINUTE || 0.0107);
 
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'aminefiverr1996@gmail.com')
-  .split(',')
-  .map((e) => e.trim().toLowerCase())
-  .filter(Boolean);
-
-export const isAdminUser = (user: { email?: string; emailVerified?: boolean } | null): boolean =>
-  Boolean(user?.email && user.emailVerified && ADMIN_EMAILS.includes(user.email.toLowerCase()));
+export { isAdminUser } from './credits';
 
 const millis = (t: unknown): number => (t instanceof Timestamp ? t.toMillis() : 0);
 

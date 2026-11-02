@@ -42,6 +42,20 @@ function db(): Firestore {
   return getFirestore(getAdminApp()!, firebaseConfig.firestoreDatabaseId || '(default)');
 }
 
+// Site admins (verified emails in ADMIN_EMAILS) get every subscriber feature and unlimited minutes
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'aminefiverr1996@gmail.com')
+  .split(',')
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
+
+export const isAdminUser = (user: { email?: string; emailVerified?: boolean } | null): boolean =>
+  Boolean(user?.email && user.emailVerified && ADMIN_EMAILS.includes(user.email.toLowerCase()));
+
+// Admin uids seen on a verified token (every gated route verifies the token first)
+const adminUids = new Set<string>();
+export const isAdminUid = (uid: string): boolean => adminUids.has(uid);
+const ADMIN_UNTIL = Date.UTC(2100, 0, 1);
+
 // Firebase ID token from "Authorization: Bearer <token>" -> the user, or null
 export async function userFromRequest(req: Request): Promise<{ uid: string; email?: string; emailVerified?: boolean } | null> {
   const app = getAdminApp();
@@ -49,7 +63,9 @@ export async function userFromRequest(req: Request): Promise<{ uid: string; emai
   if (!app || !header.startsWith('Bearer ')) return null;
   try {
     const decoded = await getAuth(app).verifyIdToken(header.slice(7));
-    return { uid: decoded.uid, email: decoded.email, emailVerified: decoded.email_verified };
+    const user = { uid: decoded.uid, email: decoded.email, emailVerified: decoded.email_verified };
+    if (isAdminUser(user)) adminUids.add(user.uid);
+    return user;
   } catch {
     return null;
   }
@@ -89,6 +105,8 @@ export async function getBalance(uid: string): Promise<number> {
 
 // Atomically take `seconds` from the balance; ok=false (nothing taken) when it is too low
 export async function charge(uid: string, seconds: number): Promise<{ ok: boolean; remaining: number }> {
+  // Admins listen without using minutes (the balance is left as it is)
+  if (adminUids.has(uid)) return { ok: true, remaining: await getBalance(uid) };
   const ref = db().collection('credits').doc(uid);
   return db().runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -107,6 +125,7 @@ export async function charge(uid: string, seconds: number): Promise<{ ok: boolea
 }
 
 export async function refund(uid: string, seconds: number): Promise<void> {
+  if (adminUids.has(uid)) return; // nothing was taken
   try {
     await db()
       .collection('credits')
@@ -198,6 +217,7 @@ export async function customerIdFor(uid: string): Promise<string | null> {
 const subscriberCache = new Map<string, { at: number; until: number }>();
 
 export async function subscriberUntil(uid: string): Promise<number> {
+  if (adminUids.has(uid)) return ADMIN_UNTIL;
   const hit = subscriberCache.get(uid);
   if (hit && Date.now() - hit.at < 60_000) return hit.until;
   const snap = await db().collection('credits').doc(uid).get();

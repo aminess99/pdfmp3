@@ -372,7 +372,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
               {tr("رصيدك", "Your balance")}
               {isSubscriber && <span className="px-1.5 py-0.5 rounded-md bg-brand/20 text-brand-soft text-[11px] font-semibold">{tr("مشترك", "Subscriber")}</span>}
             </span>
-            <strong className="text-white">{balanceSeconds === null ? '—' : minutesAr(Math.floor(balanceSeconds / 60))}</strong>
+            <strong className="text-white">{isAdmin ? tr('بلا حد (أدمن)', 'Unlimited (admin)') : balanceSeconds === null ? '—' : minutesAr(Math.floor(balanceSeconds / 60))}</strong>
           </span>
           <span className="flex flex-wrap gap-x-4 gap-y-1">
             <button type="button" onClick={openCheckout} className="text-sm text-brand-soft hover:text-indigo-200 cursor-pointer">
