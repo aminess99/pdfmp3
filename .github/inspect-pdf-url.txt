@@ -1,1 +1,2 @@
-https://foulabook.com/book/downloading/853940369 run3
+https://foulabook.com/book/downloading/853940369
+google/gemini-2.5-flash,google/gemini-3.8-flash
