@@ -82,6 +82,10 @@ export interface ConversionJob {
   createdAt: string;
   // Open the studio straight on this panel (from the dashboard's tools page)
   initialPanel?: 'summary' | 'key_points';
+  // Long PDFs are read in the background (lib/bookStream.ts): the next page to read
+  // (1-based; past totalPages when done) and the front-matter pages skipped at the start
+  nextPageToRead?: number;
+  skippedFrontPages?: number;
 }
 
 export interface Testimonial {

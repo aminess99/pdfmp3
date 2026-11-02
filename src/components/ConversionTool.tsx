@@ -40,6 +40,8 @@ import { Dialect, Voice, AudioStyle, SampleBook, ConversionJob, BookChapter, Lis
 import { extractTextFromPDFFile, purifyTextWithAI, startProgressivePdfExtraction, ProgressivePdfSession, cleanArabicExtractedText } from '../lib/pdfUtils';
 import { extractTextFromEpubFile } from '../lib/epubUtils';
 import { detectArabicChapters, detectArabicChaptersWithAI, estimateDurationMinutes } from '../lib/chapterUtils';
+import { RunningHeadFilter, cleanPages, findContentStart } from '../lib/bookCleaner';
+import { ChapterAssembler, PAGES_PER_BATCH, runBookStream } from '../lib/bookStream';
 import { audioEngine } from '../lib/audioEngine';
 import { useAuth } from '../lib/AuthContext';
 import { db, doc, setDoc, serverTimestamp } from '../lib/firebase';
@@ -136,6 +138,11 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   const conversionIntervalRef = useRef<any>(null);
   const extractionCancelledRef = useRef<boolean>(false);
   const progressiveSessionRef = useRef<ProgressivePdfSession | null>(null);
+  // Long PDFs: the first pages read on upload, where the content starts, and what the
+  // background reader (lib/bookStream.ts) picks up after the first batch
+  const bookPrepRef = useRef<{ headPages: string[]; heads: RunningHeadFilter; nextPage: number } | null>(null);
+  const [skippedFrontPages, setSkippedFrontPages] = useState(0);
+  const [fromFirstPage, setFromFirstPage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // "Try a sample" starts converting once the sample text is in state
@@ -188,6 +195,20 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     }
   };
 
+  // The text of the first batch of pages, from the real start of the book (or page one)
+  const applyFirstBatch = (fromStart: boolean) => {
+    const prep = bookPrepRef.current;
+    if (!prep) return;
+    const start = fromStart ? 0 : findContentStart(prep.headPages);
+    const batch = prep.headPages.slice(start, start + PAGES_PER_BATCH);
+    prep.heads = new RunningHeadFilter();
+    prep.heads.learn(prep.headPages);
+    const { text } = cleanPages(batch, prep.heads);
+    prep.nextPage = start + batch.length + 1;
+    setSkippedFrontPages(start);
+    setExtractedText(text || progressiveSessionRef.current?.initialText || '');
+  };
+
   // Upload and process PDF or ePub
   const handleFileUpload = async (file: File) => {
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
@@ -204,6 +225,9 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     }
 
     setSelectedFile(file);
+    bookPrepRef.current = null;
+    progressiveSessionRef.current = null;
+    setSkippedFrontPages(0);
     setSelectedChapterMode('all');
     setSelectedSampleBook(null);
     setConversionError(null);
@@ -226,12 +250,22 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
           throw new Error(tr("لم يتم العثور على نصوص قابلة للقراءة في كتاب ePub.", "No readable text was found in this ePub."));
         }
       } else {
-        // Fast progressive reader for PDF
+        // Fast progressive reader for PDF: read the opening pages, skip the cover, imprint
+        // and contents, and keep the first batch; the rest is read while the user listens
         const session = await startProgressivePdfExtraction(file, 6);
 
         progressiveSessionRef.current = session;
         setPageCount(session.totalPages);
-        setExtractedText(session.initialText);
+        setFromFirstPage(false);
+        const headPages = await session.readPageTexts(1, Math.min(session.totalPages, 30));
+        if (headPages.length > 0) {
+          bookPrepRef.current = { headPages, heads: new RunningHeadFilter(), nextPage: 1 };
+          applyFirstBatch(false);
+        } else {
+          bookPrepRef.current = null;
+          setSkippedFrontPages(0);
+          setExtractedText(session.initialText);
+        }
         setExtractionProgress(100);
       }
     } catch (err: any) {
@@ -296,6 +330,10 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     try {
       const ocrRes = await extractTextFromPDFFile(selectedFile, (pct) => setExtractionProgress(pct), true);
       if (ocrRes.text) {
+        // The scan returns the whole book at once: nothing left to read in the background
+        bookPrepRef.current = null;
+        progressiveSessionRef.current = null;
+        setSkippedFrontPages(0);
         setExtractedText(ocrRes.text);
         setPageCount(ocrRes.pagesCount);
         setExtractionProgress(100);
@@ -369,6 +407,18 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     setConversionError(null);
 
     let processedText = extractedText;
+    // A summary or key points need the whole book, not only the first batch of pages
+    const session = progressiveSessionRef.current;
+    const prep = bookPrepRef.current;
+    if (listeningMode !== 'full' && inputMode === 'pdf' && session && prep && prep.nextPage <= session.totalPages) {
+      setConvertingChapterStatus(tr('جاري قراءة بقية الكتاب...', 'Reading the rest of the book...'));
+      try {
+        const rest = cleanPages(await session.readPageTexts(prep.nextPage, session.totalPages), prep.heads).text;
+        if (rest) processedText = `${extractedText}\n\n${rest}`;
+      } catch (e) {
+        console.warn('Reading the rest of the book failed:', e);
+      }
+    }
     const baseFileName = inputMode === 'text'
       ? (customTitle.trim() || tr("نص عربي مخصص", "Custom Arabic text"))
       : (selectedFile ? selectedFile.name : selectedSampleBook ? selectedSampleBook.title : tr("كتاب PDF عربي", "Arabic PDF book"));
@@ -381,7 +431,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            text: extractedText,
+            text: processedText,
             mode: 'summary',
             bookTitle: baseFileName,
           }),
@@ -404,7 +454,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            text: extractedText,
+            text: processedText,
             mode: 'key_points',
             bookTitle: baseFileName,
           }),
@@ -452,8 +502,24 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
               : pageCount;
 
             let finalChapters: BookChapter[] = [];
+            const jobId = `job_${Date.now()}`;
 
-            if (listeningMode === 'full') {
+            // A long PDF in "whole book" mode: chapters of the first batch now, the rest in
+            // the background while the listener is already in the studio
+            const session = progressiveSessionRef.current;
+            const prep = bookPrepRef.current;
+            const stream =
+              listeningMode === 'full' && !targetChapter && inputMode === 'pdf' && selectedFile && session && prep
+                ? { session, prep, more: prep.nextPage <= session.totalPages, assembler: new ChapterAssembler(jobId, tr('بداية الكتاب', 'Beginning')) }
+                : null;
+            if (stream) {
+              const first = [...stream.assembler.push(activeText), ...(stream.more ? stream.assembler.cut() : stream.assembler.flush())];
+              if (first.length) finalChapters = first;
+            }
+
+            if (finalChapters.length > 0) {
+              // already built from the first batch
+            } else if (listeningMode === 'full') {
               finalChapters = targetChapter ? [targetChapter] : detectedChapters.length > 0 ? detectedChapters : [
                 {
                   id: `chap_${Date.now()}_1`,
@@ -493,14 +559,19 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
               ];
             }
 
-            const isStreaming = Boolean(progressiveSessionRef.current && listeningMode === 'full');
-
             const newJob: ConversionJob = {
-              id: `job_${Date.now()}`,
+              id: jobId,
               fileName,
               fileSize,
               totalPages: calculatedPages,
-              processedPages: isStreaming ? progressiveSessionRef.current!.initialPagesRead : calculatedPages,
+              processedPages: stream ? Math.min(calculatedPages, stream.prep.nextPage - 1) : calculatedPages,
+              ...(stream
+                ? {
+                    nextPageToRead: stream.prep.nextPage,
+                    skippedFrontPages: skippedFrontPages,
+                    isStreamingBackground: stream.more,
+                  }
+                : {}),
               selectedDialect,
               selectedVoice,
               selectedStyle,
@@ -558,6 +629,16 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
 
             audioEngine.stop();
             onConversionStart(newJob);
+            if (stream?.more) {
+              runBookStream({
+                job: newJob,
+                readPageTexts: stream.session.readPageTexts,
+                fromPage: stream.prep.nextPage,
+                totalPages: stream.session.totalPages,
+                assembler: stream.assembler,
+                heads: stream.prep.heads,
+              });
+            }
           }, 400);
           return 100;
         }
@@ -659,6 +740,24 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                       {tr("تغيير الملف", "Change file")}
                     </button>
                   </p>
+                  {bookPrepRef.current && (skippedFrontPages > 0 || fromFirstPage) && (
+                    <p className="text-xs text-slate-400">
+                      {fromFirstPage
+                        ? tr('سيُقرأ الكتاب من الصفحة الأولى.', 'The book will be read from page one.')
+                        : tr(`سيبدأ الاستماع من الصفحة ${skippedFrontPages + 1}، وتخطّينا الغلاف وصفحة الحقوق والفهرس.`, `Listening starts on page ${skippedFrontPages + 1}; we skipped the cover, imprint and contents.`)}{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !fromFirstPage;
+                          setFromFirstPage(next);
+                          applyFirstBatch(next);
+                        }}
+                        className="text-brand-soft hover:underline cursor-pointer"
+                      >
+                        {fromFirstPage ? tr('ابدأ من بداية المحتوى', 'Start where the content begins') : tr('ابدأ من الصفحة الأولى', 'Start from page one')}
+                      </button>
+                    </p>
+                  )}
                   <button type="button" onClick={handleForceOcr} className="text-xs text-slate-400 hover:text-white cursor-pointer">
                     {tr("النص غير واضح؟ جرّب المسح العميق", "Text looks wrong? Try a deep scan")}
                   </button>

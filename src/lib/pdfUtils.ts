@@ -279,6 +279,9 @@ export interface ProgressivePdfSession {
   initialText: string;
   initialPagesRead: number;
   readPagesRange: (startPage: number, endPage: number) => Promise<string>;
+  // Raw text of each page in [startPage, endPage] (1-based, inclusive), uncleaned, for
+  // page-level cleanup and the background reader (lib/bookCleaner.ts, lib/bookStream.ts)
+  readPageTexts: (startPage: number, endPage: number) => Promise<string[]>;
   error?: string;
 }
 
@@ -342,6 +345,20 @@ export async function startProgressivePdfExtraction(
       return cleanArabicExtractedText(chunkTexts.join('\n\n'));
     };
 
+    const readPageTexts = async (startPage: number, endPage: number): Promise<string[]> => {
+      const texts: string[] = [];
+      for (let i = Math.max(1, startPage); i <= Math.min(totalPages, endPage); i++) {
+        try {
+          const page = await pdfDoc.getPage(i);
+          texts.push(pageItemsToText((await page.getTextContent()).items) || '');
+        } catch (err) {
+          console.warn(`Read page ${i} error:`, err);
+          texts.push('');
+        }
+      }
+      return texts;
+    };
+
     if (hasMeaningfulArabic(initialText) || initialText.length > 30) {
       return {
         success: true,
@@ -349,6 +366,7 @@ export async function startProgressivePdfExtraction(
         initialText,
         initialPagesRead: pagesToReadInitial,
         readPagesRange,
+        readPageTexts,
       };
     }
   } catch (err) {
@@ -363,6 +381,7 @@ export async function startProgressivePdfExtraction(
     initialText: standardRes.text,
     initialPagesRead: standardRes.pagesCount,
     readPagesRange: async () => '',
+    readPageTexts: async () => [],
     error: standardRes.error,
   };
 }

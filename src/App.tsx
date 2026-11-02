@@ -29,6 +29,7 @@ import { findLandingPage } from './data/landingPages';
 import { HOME_SECTIONS } from './data/homeContent';
 import { ConversionJob, Voice } from './types';
 import { audioEngine } from './lib/audioEngine';
+import { BOOK_STREAM_EVENT, BookStreamUpdate } from './lib/bookStream';
 import { useVoices } from './lib/useVoices';
 import { useAuth } from './lib/AuthContext';
 import { tr, HOME_PATH, isEn } from './lib/i18n';
@@ -156,20 +157,26 @@ export default function App() {
     };
   }, []);
 
-  // Listen to background progressive chapter updates
+  // Long PDFs are read in the background (lib/bookStream.ts): add the new chapters to the
+  // book open in the studio
   React.useEffect(() => {
-    const handleJobUpdated = (e: any) => {
-      if (e.detail && e.detail.id) {
-        setActiveJob((prev) => {
-          if (prev && prev.id === e.detail.id) {
-            return { ...e.detail };
-          }
-          return prev;
-        });
-      }
+    const onStream = (e: Event) => {
+      const u = (e as CustomEvent<BookStreamUpdate>).detail;
+      setActiveJob((prev) =>
+        prev && prev.id === u.jobId
+          ? {
+              ...prev,
+              chapters: u.chapters,
+              nextPageToRead: u.nextPageToRead,
+              processedPages: Math.min(u.totalPages, u.nextPageToRead - 1),
+              totalPages: u.totalPages,
+              isStreamingBackground: !u.done,
+            }
+          : prev
+      );
     };
-    window.addEventListener('audio_job_updated', handleJobUpdated);
-    return () => window.removeEventListener('audio_job_updated', handleJobUpdated);
+    window.addEventListener(BOOK_STREAM_EVENT, onStream);
+    return () => window.removeEventListener(BOOK_STREAM_EVENT, onStream);
   }, []);
 
   const handlePreviewVoiceSample = (voice: Voice) => {

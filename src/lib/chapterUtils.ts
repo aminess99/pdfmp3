@@ -30,19 +30,16 @@ export function estimateDurationMinutes(wordCount: number): number {
  * Recognizes Arabic chapter markers (الفصل، الباب، المقدمة، الخاتمة، المبحث)
  * or creates balanced logical chapters for long unstructured texts.
  */
-export function detectArabicChapters(fullText: string, defaultTitle?: string): BookChapter[] {
-  if (!fullText || !fullText.trim()) return [];
-
-  const cleanText = fullText.trim();
-  const words = cleanText.split(/\s+/).filter(Boolean);
-
-  // Regex pattern matching common Arabic chapter headers at line starts (excluding dot leaders)
+// Chapter headings ("الفصل الأول", "الباب الثاني", "المقدمة", ...) at line starts, skipping
+// table-of-contents lines with dot leaders. Shared by detectArabicChapters and the
+// background book reader (lib/bookStream.ts).
+export function findChapterHeadings(text: string): { index: number; fullMatch: string; title: string }[] {
   const chapterPattern = /(?:^|\n)\s*(?:[-–—*#\s]*)?(?:(الفصل\s+(?:الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|الحادي عشر|الثاني عشر|\d+)[^\n.]*)|(الباب\s+(?:الأول|الثاني|الثالث|الرابع|الخامس|\d+)[^\n.]*)|(النقطة\s+(?:الأولى|الثانية|الثالثة|الرابعة|الخامسة|السادسة|السابعة|\d+)[^\n.]*)|(المحور\s+(?:الأول|الثاني|الثالث|الرابع|الخامس|\d+)[^\n.]*)|(الدرس\s+(?:الأول|الثاني|الثالث|الرابع|الخامس|\d+)[^\n.]*)|(المقدمة|مقدمة الكتاب|مقدمة المؤلف|التمهيد)|(الخاتمة|خاتمة الكتاب|الخلاصة)|(المبحث\s+(?:الأول|الثاني|الثالث|\d+)[^\n.]*)|(الجزء\s+(?:الأول|الثاني|الثالث|\d+)[^\n.]*)|(Chapter\s+\d+[^\n.]*))\s*(?:[-–—*#\s]*)?(?:\n|$)/gi;
 
   const matches: { index: number; fullMatch: string; title: string }[] = [];
   let match: RegExpExecArray | null;
 
-  while ((match = chapterPattern.exec(cleanText)) !== null) {
+  while ((match = chapterPattern.exec(text)) !== null) {
     const rawTitle = (match[1] || match[2] || match[3] || match[4] || match[5] || match[6] || match[7] || match[8] || match[9] || match[10] || match[0])
       .trim()
       .replace(/^[#*\-–—\s]+|[#*\-–—\s]+$/g, '');
@@ -58,6 +55,17 @@ export function detectArabicChapters(fullText: string, defaultTitle?: string): B
       title: rawTitle,
     });
   }
+
+  return matches;
+}
+
+export function detectArabicChapters(fullText: string, defaultTitle?: string): BookChapter[] {
+  if (!fullText || !fullText.trim()) return [];
+
+  const cleanText = fullText.trim();
+  const words = cleanText.split(/\s+/).filter(Boolean);
+
+  const matches = findChapterHeadings(cleanText);
 
   // Case 1: Explicit Arabic chapter headings detected (at least 2 chapters)
   if (matches.length >= 2) {

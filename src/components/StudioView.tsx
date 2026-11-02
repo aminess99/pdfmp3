@@ -39,6 +39,8 @@ import { voiceLabel, voiceInitial, genderLabel, dialectLabel } from '../lib/voic
 import { tr, DIR } from '../lib/i18n';
 import { VoiceOptionGroups, groupVoicesByDialect } from './VoiceOptions';
 import { apiFetch, requireSubscription } from '../lib/apiFetch';
+import { startProgressivePdfExtraction } from '../lib/pdfUtils';
+import { BOOK_STREAM_EVENT, BookStreamUpdate, ChapterAssembler, isStreaming, runBookStream } from '../lib/bookStream';
 
 interface StudioViewProps {
   job: ConversionJob;
@@ -211,6 +213,49 @@ export const StudioView: React.FC<StudioViewProps> = ({
     } catch {}
   }, [positionKey, activeChapterIndex, activeSentenceIndex]);
 
+  // Waiting at the end of what has been read so far (long PDFs, lib/bookStream.ts)
+  const [waitingForMore, setWaitingForMore] = useState(false);
+  useEffect(() => {
+    if (!waitingForMore) return;
+    if (chapters && activeChapterIndex < chapters.length - 1) {
+      setWaitingForMore(false);
+      setActiveChapterIndex((prev) => prev + 1);
+      setActiveSentenceIndex(0);
+      setProgressPercent(0);
+    } else if (!job.isStreamingBackground) {
+      setWaitingForMore(false);
+      setIsPlaying(false);
+      setProgressPercent(100);
+    }
+  }, [waitingForMore, chapters?.length, job.isStreamingBackground]);
+
+  // Reading stopped before the end (the page was closed): pick the same file again to finish
+  const unreadPages = job.nextPageToRead && job.totalPages ? Math.max(0, job.totalPages - job.nextPageToRead + 1) : 0;
+  const [resuming, setResuming] = useState(false);
+  const resumeReading = async (file: File) => {
+    setResuming(true);
+    try {
+      const session = await startProgressivePdfExtraction(file, 1);
+      if (session.totalPages !== job.totalPages) {
+        toast(tr('هذا ليس ملف الكتاب نفسه. اختر الملف الذي رفعته أول مرة.', 'That isn’t the same book file. Choose the file you uploaded the first time.'), 'error');
+        return;
+      }
+      const list = job.chapters || [];
+      const last = list[list.length - 1];
+      const assembler = new ChapterAssembler(job.id, last ? tr(`${last.title} (تابع)`, `${last.title} (continued)`) : tr('بداية الكتاب', 'Beginning'), list.length);
+      window.dispatchEvent(
+        new CustomEvent<BookStreamUpdate>(BOOK_STREAM_EVENT, {
+          detail: { jobId: job.id, chapters: list, nextPageToRead: job.nextPageToRead!, totalPages: job.totalPages, done: false },
+        })
+      );
+      runBookStream({ job: { ...job, isStreamingBackground: true }, readPageTexts: session.readPageTexts, fromPage: job.nextPageToRead!, totalPages: session.totalPages, assembler });
+    } catch {
+      toast(tr('تعذّرت قراءة الملف.', 'Couldn’t read the file.'), 'error');
+    } finally {
+      setResuming(false);
+    }
+  };
+
   // Start playback whenever chapter or job changes
   useEffect(() => {
     audioEngine.stop();
@@ -285,6 +330,10 @@ export const StudioView: React.FC<StudioViewProps> = ({
               setActiveSentenceIndex(0);
               setProgressPercent(0);
             }
+          } else if (job.isStreamingBackground) {
+            // The rest of the book is still being read: continue as soon as it arrives
+            setWaitingForMore(true);
+            toast(tr('وصلت إلى آخر جزء جاهز، ويكمل الاستماع تلقائياً بعد لحظات.', 'You reached the end of what is ready; listening continues in a moment.'), 'info');
           } else {
             setIsPlaying(false);
             setProgressPercent(100);
@@ -651,11 +700,26 @@ export const StudioView: React.FC<StudioViewProps> = ({
           </button>
         );
       })}
-      {job.isStreamingBackground && (
-        <div className="mt-3 p-3.5 rounded-xl bg-card text-[13px] text-slate-400">
-          {job.backgroundStatus || tr("ابدأ الاستماع الآن، وتُجهَّز الفصول التالية في الخلفية.", "Start listening now; the next chapters are prepared in the background.")}
+      {job.isStreamingBackground ? (
+        <div role="status" className="mt-3 p-3.5 rounded-xl bg-card text-[13px] text-slate-400 flex flex-col gap-2">
+          <span>
+            {tr('جاري تجهيز بقية الكتاب', 'Preparing the rest of the book')}: {Math.min(job.totalPages, (job.nextPageToRead || 1) - 1)} {tr('من', 'of')} {job.totalPages} {tr('صفحة', 'pages')}
+          </span>
+          <span className="h-1.5 rounded-full bg-line overflow-hidden">
+            <span className="block h-full bg-accent" style={{ width: `${Math.round((Math.min(job.totalPages, (job.nextPageToRead || 1) - 1) / Math.max(1, job.totalPages)) * 100)}%` }} />
+          </span>
         </div>
-      )}
+      ) : unreadPages > 0 && !isStreaming(job.id) ? (
+        <div className="mt-3 p-3.5 rounded-xl bg-card border border-line text-[13px] text-slate-300 flex flex-col gap-2">
+          <span>
+            {tr(`جُهّزت ${job.totalPages - unreadPages} من ${job.totalPages} صفحة. لإكمال بقية الكتاب، اختر ملفه مرة أخرى.`, `${job.totalPages - unreadPages} of ${job.totalPages} pages are ready. To finish the book, choose its file again.`)}
+          </span>
+          <label className={`self-start min-h-10 px-3 rounded-lg border border-line text-brand-soft hover:text-white flex items-center cursor-pointer ${resuming ? 'opacity-60 pointer-events-none' : ''}`}>
+            {resuming ? tr('جاري القراءة...', 'Reading...') : tr('اختر ملف الكتاب', 'Choose the book file')}
+            <input type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(e) => e.target.files?.[0] && resumeReading(e.target.files[0])} />
+          </label>
+        </div>
+      ) : null}
     </>
   );
 
