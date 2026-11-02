@@ -86,7 +86,11 @@ export class RunningHeadFilter {
 
 // Footnote markers glued to a word: "كلمة(1)", "كلمة (٢)", "كلمة¹"
 const stripFootnoteMarks = (t: string) =>
-  t.replace(/(?<=[؀-ۿA-Za-z.,،؛:!?؟»"')])\s?[([]\s*[0-9٠-٩]{1,3}\s*[)\]]/g, '').replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]+/g, '');
+  t
+    // links and site names stamped on pages (forum watermarks)
+    .replace(/\S*(?:https?:\/\/|www\.)\S*/gi, ' ')
+    .replace(/\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|info|me)\b\S*/gi, ' ')
+    .replace(/(?<=[؀-ۿA-Za-z.,،؛:!?؟»"')])\s?[([]\s*[0-9٠-٩]{1,3}\s*[)\]]/g, '').replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]+/g, '');
 
 // The listenable text of a run of pages: non-content pages dropped, heads and markers removed
 export function cleanPages(pages: string[], heads: RunningHeadFilter): { text: string; skipped: number } {

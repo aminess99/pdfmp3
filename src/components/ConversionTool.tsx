@@ -207,7 +207,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     const { text } = cleanPages(batch, prep.heads);
     prep.nextPage = start + batch.length + 1;
     setSkippedFrontPages(start);
-    setExtractedText(text || progressiveSessionRef.current?.initialText || '');
+    setExtractedText(text);
   };
 
   // Reads the opening pages of a PDF session and keeps the first batch to listen to

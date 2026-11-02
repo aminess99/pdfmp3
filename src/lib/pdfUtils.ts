@@ -289,6 +289,13 @@ export interface ProgressivePdfSession {
   error?: string;
 }
 
+// Arabic words on a page, ignoring links and lines repeated as a watermark
+function realArabicWords(text: string): number {
+  const lines = text.split('\n').map((l) => l.replace(/\S*(?:https?:\/\/|www\.|\.(?:com|net|org|info|me))\S*/gi, ' ').trim()).filter(Boolean);
+  const unique = [...new Set(lines)];
+  return unique.join(' ').split(/\s+/).filter((w) => /[\u0600-\u06FF]{2,}/.test(w)).length;
+}
+
 // ---- Progressive OCR for scanned books ----
 // Pages are rendered to JPEG in the browser and sent a few at a time to /api/pdf/ocr-pages,
 // so a 300-page scan costs only the pages that are actually listened to.
@@ -466,17 +473,21 @@ export async function startProgressivePdfExtraction(
       return texts;
     };
 
-    // No text layer in the opening pages: a scanned book, read it by OCR as the user listens
-    if (!hasMeaningfulArabic(initialText) && typeof document !== 'undefined') {
-      let digital = '';
-      for (let i = pagesToReadInitial + 1; i <= Math.min(totalPages, 15) && !hasMeaningfulArabic(digital); i++) {
+    // No real text layer in the opening pages: a scanned book, read it by OCR as the user
+    // listens. Watermarks stamped on scans ("uploaded by X", a forum URL) don't count as text.
+    if (typeof document !== 'undefined') {
+      const scanTo = Math.min(totalPages, 15);
+      let substantial = 0;
+      for (let i = 1; i <= scanTo; i++) {
         try {
-          digital = pageItemsToText((await (await pdfDoc.getPage(i)).getTextContent()).items);
+          const t = pageItemsToText((await (await pdfDoc.getPage(i)).getTextContent()).items);
+          if (realArabicWords(t) >= 40) substantial++;
         } catch {
           // keep looking
         }
+        if (substantial >= 2) break;
       }
-      if (!hasMeaningfulArabic(digital)) {
+      if (substantial < (totalPages <= 4 ? 1 : 2)) {
         const readOcr = makeOcrReader(pdfDoc, totalPages);
         return {
           success: true,
