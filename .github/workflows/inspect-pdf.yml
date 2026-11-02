@@ -31,7 +31,7 @@ jobs:
         env:
           URL: ${{ inputs.url }}
         run: |
-          [ -z "$URL" ] && URL=$(head -1 .github/inspect-pdf-url.txt | tr -d '\r')
+          [ -z "$URL" ] && URL=$(head -1 .github/inspect-pdf-url.txt | awk '{print $1}')
           UA="Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36"
           curl -sSL -A "$UA" -c jar -b jar -o first "$URL" -D headers1 || true
           echo "--- first response"; grep -iE '^(HTTP|content-type|content-length|content-disposition|location)' headers1 || true
