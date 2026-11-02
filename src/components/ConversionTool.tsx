@@ -37,7 +37,7 @@ import {
 import { DIALECTS, VOICES, AUDIO_STYLES } from '../data/voices';
 import { SAMPLE_BOOKS } from '../data/sampleBooks';
 import { Dialect, Voice, AudioStyle, SampleBook, ConversionJob, BookChapter, ListeningMode } from '../types';
-import { purifyTextWithAI, startOcrPdfSession, startProgressivePdfExtraction, ProgressivePdfSession, cleanArabicExtractedText } from '../lib/pdfUtils';
+import { extractTextFromPDFFile, purifyTextWithAI, startOcrPdfSession, startProgressivePdfExtraction, ProgressivePdfSession, cleanArabicExtractedText } from '../lib/pdfUtils';
 import { extractTextFromEpubFile } from '../lib/epubUtils';
 import { detectArabicChapters, detectArabicChaptersWithAI, estimateDurationMinutes } from '../lib/chapterUtils';
 import { RunningHeadFilter, classifyPage, cleanPages, findContentStart } from '../lib/bookCleaner';
@@ -196,9 +196,9 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   };
 
   // The text of the first batch of pages, from the real start of the book (or page one)
-  const applyFirstBatch = (fromStart: boolean) => {
+  const applyFirstBatch = (fromStart: boolean): string => {
     const prep = bookPrepRef.current;
-    if (!prep) return;
+    if (!prep) return '';
     const start = fromStart ? 0 : findContentStart(prep.headPages);
     // OCR pages were already paid for: keep them all
     const batch = progressiveSessionRef.current?.ocr ? prep.headPages.slice(start) : prep.headPages.slice(start, start + PAGES_PER_BATCH);
@@ -208,6 +208,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     prep.nextPage = start + batch.length + 1;
     setSkippedFrontPages(start);
     setExtractedText(text);
+    return text;
   };
 
   // Reads the opening pages of a PDF session and keeps the first batch to listen to
@@ -236,16 +237,31 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
       // stamped text (ads, watermarks), so read it by OCR instead
       const contentPages = headPages.filter((p) => classifyPage(p) === 'content').length;
       if (file && headPages.length >= 6 && contentPages < headPages.length * 0.3) {
-        return prepareSession(await startOcrPdfSession(file));
+        return prepareSession(await startOcrPdfSession(file), file);
       }
     }
+    let text = '';
     if (headPages.length > 0) {
       bookPrepRef.current = { headPages, heads: new RunningHeadFilter(), nextPage: 1 };
-      applyFirstBatch(false);
+      text = applyFirstBatch(false);
     } else {
       bookPrepRef.current = null;
       setSkippedFrontPages(0);
-      setExtractedText(session.initialText);
+      text = session.initialText;
+      setExtractedText(text);
+    }
+    // Nothing readable page by page (a damaged PDF the browser can't page through, or only
+    // ad pages): send the whole file to the server's deep scan instead
+    if (!text.trim() && file) {
+      setExtractionStatusText(tr('جاري المسح العميق للملف كاملاً، قد يستغرق دقيقة...', 'Deep-scanning the whole file, this can take a minute...'));
+      setExtractionProgress(30);
+      const whole = await extractTextFromPDFFile(file, (pct) => setExtractionProgress(pct), true);
+      if (!whole.text.trim()) throw new Error(whole.error || tr('لم نجد نصاً قابلاً للقراءة في هذا الملف.', 'No readable text was found in this file.'));
+      bookPrepRef.current = null;
+      progressiveSessionRef.current = null;
+      setSkippedFrontPages(0);
+      setExtractedText(whole.text);
+      if (whole.pagesCount > session.totalPages) setPageCount(whole.pagesCount);
     }
     setExtractionProgress(100);
   };
@@ -358,7 +374,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     try {
       // Read by OCR a few pages at a time, like a scanned book
       bookPrepRef.current = null;
-      await prepareSession(await startOcrPdfSession(selectedFile));
+      await prepareSession(await startOcrPdfSession(selectedFile), selectedFile);
     } catch (e: any) {
       setConversionError(e.message || tr("تعذر استكمال المسح الضوئي.", "The scan could not be completed."));
     } finally {
