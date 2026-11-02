@@ -39,8 +39,8 @@ import { voiceLabel, voiceInitial, genderLabel, dialectLabel } from '../lib/voic
 import { tr, DIR } from '../lib/i18n';
 import { VoiceOptionGroups, groupVoicesByDialect } from './VoiceOptions';
 import { apiFetch, requireSubscription } from '../lib/apiFetch';
-import { startProgressivePdfExtraction } from '../lib/pdfUtils';
-import { BOOK_STREAM_EVENT, BookStreamUpdate, ChapterAssembler, isStreaming, runBookStream } from '../lib/bookStream';
+import { startOcrPdfSession, startProgressivePdfExtraction } from '../lib/pdfUtils';
+import { BOOK_STREAM_EVENT, BookStreamUpdate, ChapterAssembler, isStreaming, runBookStream, setListenerPosition } from '../lib/bookStream';
 
 interface StudioViewProps {
   job: ConversionJob;
@@ -229,13 +229,19 @@ export const StudioView: React.FC<StudioViewProps> = ({
     }
   }, [waitingForMore, chapters?.length, job.isStreamingBackground]);
 
+  // Tell the background reader where the listener is (scanned books read just ahead of it)
+  useEffect(() => {
+    setListenerPosition(job.id, activeChapterIndex);
+  }, [job.id, activeChapterIndex]);
+  useEffect(() => () => setListenerPosition(job.id, null), [job.id]);
+
   // Reading stopped before the end (the page was closed): pick the same file again to finish
   const unreadPages = job.nextPageToRead && job.totalPages ? Math.max(0, job.totalPages - job.nextPageToRead + 1) : 0;
   const [resuming, setResuming] = useState(false);
   const resumeReading = async (file: File) => {
     setResuming(true);
     try {
-      const session = await startProgressivePdfExtraction(file, 1);
+      const session = job.scannedBook ? await startOcrPdfSession(file) : await startProgressivePdfExtraction(file, 1);
       if (session.totalPages !== job.totalPages) {
         toast(tr('هذا ليس ملف الكتاب نفسه. اختر الملف الذي رفعته أول مرة.', 'That isn’t the same book file. Choose the file you uploaded the first time.'), 'error');
         return;
@@ -248,7 +254,15 @@ export const StudioView: React.FC<StudioViewProps> = ({
           detail: { jobId: job.id, chapters: list, nextPageToRead: job.nextPageToRead!, totalPages: job.totalPages, done: false },
         })
       );
-      runBookStream({ job: { ...job, isStreamingBackground: true }, readPageTexts: session.readPageTexts, fromPage: job.nextPageToRead!, totalPages: session.totalPages, assembler });
+      runBookStream({
+        job: { ...job, isStreamingBackground: true, scannedBook: session.ocr || job.scannedBook },
+        readPageTexts: session.readPageTexts,
+        fromPage: job.nextPageToRead!,
+        totalPages: session.totalPages,
+        assembler,
+        batchSize: session.pagesPerBatch,
+        lazy: session.ocr,
+      });
     } catch {
       toast(tr('تعذّرت قراءة الملف.', 'Couldn’t read the file.'), 'error');
     } finally {
@@ -703,7 +717,10 @@ export const StudioView: React.FC<StudioViewProps> = ({
       {job.isStreamingBackground ? (
         <div role="status" className="mt-3 p-3.5 rounded-xl bg-card text-[13px] text-slate-400 flex flex-col gap-2">
           <span>
-            {tr('جاري تجهيز بقية الكتاب', 'Preparing the rest of the book')}: {Math.min(job.totalPages, (job.nextPageToRead || 1) - 1)} {tr('من', 'of')} {job.totalPages} {tr('صفحة', 'pages')}
+            {job.scannedBook
+              ? tr('كتاب مصوّر: نمسح صفحاته ضوئياً أولاً بأول أثناء استماعك', 'Scanned book: pages are scanned as you listen')
+              : tr('جاري تجهيز بقية الكتاب', 'Preparing the rest of the book')}
+            :{' '}{Math.min(job.totalPages, (job.nextPageToRead || 1) - 1)} {tr('من', 'of')} {job.totalPages} {tr('صفحة', 'pages')}
           </span>
           <span className="h-1.5 rounded-full bg-line overflow-hidden">
             <span className="block h-full bg-accent" style={{ width: `${Math.round((Math.min(job.totalPages, (job.nextPageToRead || 1) - 1) / Math.max(1, job.totalPages)) * 100)}%` }} />

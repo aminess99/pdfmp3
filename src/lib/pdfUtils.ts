@@ -282,7 +282,114 @@ export interface ProgressivePdfSession {
   // Raw text of each page in [startPage, endPage] (1-based, inclusive), uncleaned, for
   // page-level cleanup and the background reader (lib/bookCleaner.ts, lib/bookStream.ts)
   readPageTexts: (startPage: number, endPage: number) => Promise<string[]>;
+  // Scanned book: pages are read by OCR a few at a time, only as far as the listener needs
+  ocr?: boolean;
+  // Pages per background batch (lib/bookStream.ts)
+  pagesPerBatch?: number;
   error?: string;
+}
+
+// ---- Progressive OCR for scanned books ----
+// Pages are rendered to JPEG in the browser and sent a few at a time to /api/pdf/ocr-pages,
+// so a 300-page scan costs only the pages that are actually listened to.
+export const OCR_PAGES_PER_REQUEST = 4;
+const OCR_PARALLEL_REQUESTS = 3;
+export const OCR_PAGES_PER_BATCH = OCR_PAGES_PER_REQUEST * OCR_PARALLEL_REQUESTS;
+
+async function renderPageJpeg(pdfDoc: any, pageNumber: number): Promise<string> {
+  const page = await pdfDoc.getPage(pageNumber);
+  const base = page.getViewport({ scale: 1 });
+  // About 1400px wide: sharp enough for Arabic diacritics, small enough to upload quickly
+  const scale = Math.min(2.5, Math.max(1, 1400 / base.width));
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.floor(viewport.width);
+  canvas.height = Math.floor(viewport.height);
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport } as any).promise;
+  const url = canvas.toDataURL('image/jpeg', 0.72);
+  canvas.width = canvas.height = 0;
+  page.cleanup?.();
+  return url;
+}
+
+async function ocrPageGroup(pdfDoc: any, pages: number[]): Promise<string[]> {
+  const images: string[] = [];
+  for (const n of pages) {
+    try {
+      images.push(await renderPageJpeg(pdfDoc, n));
+    } catch (err) {
+      console.warn(`Render page ${n} error:`, err);
+      images.push('');
+    }
+  }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await apiFetch('/api/pdf/ocr-pages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.pages)) {
+          return pages.map((_, i) => normalizeArabicPdfText(String(data.pages[i] || '')));
+        }
+      }
+      if (res.status === 401 || res.status === 403) break;
+    } catch (err) {
+      console.warn('OCR request error:', err);
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  throw new Error(tr('تعذّر المسح الضوئي لهذه الصفحات.', 'These pages could not be scanned.'));
+}
+
+function makeOcrReader(pdfDoc: any, totalPages: number) {
+  return async (startPage: number, endPage: number): Promise<string[]> => {
+    const all: number[] = [];
+    for (let i = Math.max(1, startPage); i <= Math.min(totalPages, endPage); i++) all.push(i);
+    const groups: number[][] = [];
+    for (let i = 0; i < all.length; i += OCR_PAGES_PER_REQUEST) groups.push(all.slice(i, i + OCR_PAGES_PER_REQUEST));
+    const out: string[][] = new Array(groups.length);
+    for (let i = 0; i < groups.length; i += OCR_PARALLEL_REQUESTS) {
+      const wave = groups.slice(i, i + OCR_PARALLEL_REQUESTS);
+      const res = await Promise.all(wave.map((g) => ocrPageGroup(pdfDoc, g)));
+      res.forEach((r, j) => (out[i + j] = r));
+    }
+    return out.flat();
+  };
+}
+
+async function openPdf(file: File): Promise<any> {
+  const arrayBuffer = await file.arrayBuffer();
+  return pdfjsLib.getDocument({
+    data: arrayBuffer,
+    stopAtErrors: false,
+    useSystemFonts: true,
+    cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
+    cMapPacked: true,
+    standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/standard_fonts/`,
+  } as any).promise;
+}
+
+// A session that reads the book by OCR (scanned pages, or the user asked for a deep scan)
+export async function startOcrPdfSession(file: File): Promise<ProgressivePdfSession> {
+  const pdfDoc = await openPdf(file);
+  const totalPages = pdfDoc.numPages;
+  const readPageTexts = makeOcrReader(pdfDoc, totalPages);
+  return {
+    success: true,
+    totalPages,
+    initialText: '',
+    initialPagesRead: 0,
+    readPagesRange: async (a, b) => cleanArabicExtractedText((await readPageTexts(a, b)).join('\n\n')),
+    readPageTexts,
+    ocr: true,
+    pagesPerBatch: OCR_PAGES_PER_BATCH,
+  };
 }
 
 /**
@@ -358,6 +465,31 @@ export async function startProgressivePdfExtraction(
       }
       return texts;
     };
+
+    // No text layer in the opening pages: a scanned book, read it by OCR as the user listens
+    if (!hasMeaningfulArabic(initialText) && typeof document !== 'undefined') {
+      let digital = '';
+      for (let i = pagesToReadInitial + 1; i <= Math.min(totalPages, 15) && !hasMeaningfulArabic(digital); i++) {
+        try {
+          digital = pageItemsToText((await (await pdfDoc.getPage(i)).getTextContent()).items);
+        } catch {
+          // keep looking
+        }
+      }
+      if (!hasMeaningfulArabic(digital)) {
+        const readOcr = makeOcrReader(pdfDoc, totalPages);
+        return {
+          success: true,
+          totalPages,
+          initialText: '',
+          initialPagesRead: 0,
+          readPagesRange: async (a, b) => cleanArabicExtractedText((await readOcr(a, b)).join('\n\n')),
+          readPageTexts: readOcr,
+          ocr: true,
+          pagesPerBatch: OCR_PAGES_PER_BATCH,
+        };
+      }
+    }
 
     if (hasMeaningfulArabic(initialText) || initialText.length > 30) {
       return {

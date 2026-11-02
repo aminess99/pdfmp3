@@ -37,7 +37,7 @@ import {
 import { DIALECTS, VOICES, AUDIO_STYLES } from '../data/voices';
 import { SAMPLE_BOOKS } from '../data/sampleBooks';
 import { Dialect, Voice, AudioStyle, SampleBook, ConversionJob, BookChapter, ListeningMode } from '../types';
-import { extractTextFromPDFFile, purifyTextWithAI, startProgressivePdfExtraction, ProgressivePdfSession, cleanArabicExtractedText } from '../lib/pdfUtils';
+import { purifyTextWithAI, startOcrPdfSession, startProgressivePdfExtraction, ProgressivePdfSession, cleanArabicExtractedText } from '../lib/pdfUtils';
 import { extractTextFromEpubFile } from '../lib/epubUtils';
 import { detectArabicChapters, detectArabicChaptersWithAI, estimateDurationMinutes } from '../lib/chapterUtils';
 import { RunningHeadFilter, cleanPages, findContentStart } from '../lib/bookCleaner';
@@ -200,13 +200,48 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     const prep = bookPrepRef.current;
     if (!prep) return;
     const start = fromStart ? 0 : findContentStart(prep.headPages);
-    const batch = prep.headPages.slice(start, start + PAGES_PER_BATCH);
+    // OCR pages were already paid for: keep them all
+    const batch = progressiveSessionRef.current?.ocr ? prep.headPages.slice(start) : prep.headPages.slice(start, start + PAGES_PER_BATCH);
     prep.heads = new RunningHeadFilter();
     prep.heads.learn(prep.headPages);
     const { text } = cleanPages(batch, prep.heads);
     prep.nextPage = start + batch.length + 1;
     setSkippedFrontPages(start);
     setExtractedText(text || progressiveSessionRef.current?.initialText || '');
+  };
+
+  // Reads the opening pages of a PDF session and keeps the first batch to listen to
+  const prepareSession = async (session: ProgressivePdfSession) => {
+    progressiveSessionRef.current = session;
+    setPageCount(session.totalPages);
+    setFromFirstPage(false);
+    let headPages: string[];
+    if (session.ocr) {
+      // Scanned: OCR only the opening pages now, more only until real content shows up
+      setExtractionStatusText(tr('كتاب مصوّر: جاري المسح الضوئي للصفحات الأولى...', 'Scanned book: scanning the first pages...'));
+      headPages = [];
+      const step = session.pagesPerBatch || 12;
+      while (headPages.length < Math.min(session.totalPages, 36)) {
+        const from = headPages.length + 1;
+        headPages.push(...(await session.readPageTexts(from, Math.min(session.totalPages, from + step - 1))));
+        setExtractionProgress(Math.min(90, 15 + headPages.length * 2));
+        if (extractionCancelledRef.current) return;
+        const start = findContentStart(headPages);
+        const words = headPages.slice(start).join(' ').split(/\s+/).filter(Boolean).length;
+        if (words >= 250) break;
+      }
+    } else {
+      headPages = await session.readPageTexts(1, Math.min(session.totalPages, 30));
+    }
+    if (headPages.length > 0) {
+      bookPrepRef.current = { headPages, heads: new RunningHeadFilter(), nextPage: 1 };
+      applyFirstBatch(false);
+    } else {
+      bookPrepRef.current = null;
+      setSkippedFrontPages(0);
+      setExtractedText(session.initialText);
+    }
+    setExtractionProgress(100);
   };
 
   // Upload and process PDF or ePub
@@ -253,20 +288,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         // Fast progressive reader for PDF: read the opening pages, skip the cover, imprint
         // and contents, and keep the first batch; the rest is read while the user listens
         const session = await startProgressivePdfExtraction(file, 6);
-
-        progressiveSessionRef.current = session;
-        setPageCount(session.totalPages);
-        setFromFirstPage(false);
-        const headPages = await session.readPageTexts(1, Math.min(session.totalPages, 30));
-        if (headPages.length > 0) {
-          bookPrepRef.current = { headPages, heads: new RunningHeadFilter(), nextPage: 1 };
-          applyFirstBatch(false);
-        } else {
-          bookPrepRef.current = null;
-          setSkippedFrontPages(0);
-          setExtractedText(session.initialText);
-        }
-        setExtractionProgress(100);
+        await prepareSession(session);
       }
     } catch (err: any) {
       console.warn('File extraction note:', err);
@@ -328,16 +350,9 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     setExtractionProgress(10);
     setExtractionStatusText(tr('جاري المسح الضوئي العميق (OCR)...', 'Running a deep scan (OCR)...'));
     try {
-      const ocrRes = await extractTextFromPDFFile(selectedFile, (pct) => setExtractionProgress(pct), true);
-      if (ocrRes.text) {
-        // The scan returns the whole book at once: nothing left to read in the background
-        bookPrepRef.current = null;
-        progressiveSessionRef.current = null;
-        setSkippedFrontPages(0);
-        setExtractedText(ocrRes.text);
-        setPageCount(ocrRes.pagesCount);
-        setExtractionProgress(100);
-      }
+      // Read by OCR a few pages at a time, like a scanned book
+      bookPrepRef.current = null;
+      await prepareSession(await startOcrPdfSession(selectedFile));
     } catch (e: any) {
       setConversionError(e.message || tr("تعذر استكمال المسح الضوئي.", "The scan could not be completed."));
     } finally {
@@ -413,7 +428,9 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     if (listeningMode !== 'full' && inputMode === 'pdf' && session && prep && prep.nextPage <= session.totalPages) {
       setConvertingChapterStatus(tr('جاري قراءة بقية الكتاب...', 'Reading the rest of the book...'));
       try {
-        const rest = cleanPages(await session.readPageTexts(prep.nextPage, session.totalPages), prep.heads).text;
+        // A scanned book is read by OCR: cap it so one summary cannot scan hundreds of pages
+        const end = session.ocr ? Math.min(session.totalPages, prep.nextPage + 119) : session.totalPages;
+        const rest = cleanPages(await session.readPageTexts(prep.nextPage, end), prep.heads).text;
         if (rest) processedText = `${extractedText}\n\n${rest}`;
       } catch (e) {
         console.warn('Reading the rest of the book failed:', e);
@@ -569,6 +586,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                 ? {
                     nextPageToRead: stream.prep.nextPage,
                     skippedFrontPages: skippedFrontPages,
+                    scannedBook: stream.session.ocr || undefined,
                     isStreamingBackground: stream.more,
                   }
                 : {}),
@@ -637,6 +655,8 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                 totalPages: stream.session.totalPages,
                 assembler: stream.assembler,
                 heads: stream.prep.heads,
+                batchSize: stream.session.pagesPerBatch,
+                lazy: stream.session.ocr,
               });
             }
           }, 400);

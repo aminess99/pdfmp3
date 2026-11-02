@@ -524,6 +524,107 @@ app.post("/api/pdf/extract", async (req, res) => {
   }
 });
 
+// Progressive OCR for scanned books: a few page images per request (lib/pdfUtils.ts), so only
+// the pages a listener reaches are paid for. Returns the text of each page, in order.
+const OCR_PAGE_SEPARATOR = "<<<صفحة>>>";
+const OCR_PAGES_PROMPT = `أمامك صور صفحات متتالية من كتاب عربي ممسوح ضوئياً. استخرج نص كل صفحة بدقة كما هو مكتوب، دون تلخيص أو إعادة صياغة أو إضافة.
+- افصل بين الصفحات بسطر يحتوي فقط على ${OCR_PAGE_SEPARATOR}، وأخرج الصفحات بنفس ترتيب الصور، صفحة لكل صورة.
+- لا تكتب: أرقام الصفحات، ولا العنوان أو اسم المؤلف المكرر أعلى الصفحة أو أسفلها، ولا أرقام الحواشي داخل النص مثل (1).
+- الحواشي في أسفل الصفحة لا تكتبها.
+- إذا كانت الصفحة غلافاً، أو صفحة حقوق وطباعة ونشر، أو فهرساً، أو إعلاناً عن كتب أخرى، أو فارغة، أو صورة بلا نص؛ فاتركها فارغة (لا تكتب شيئاً بين الفاصلين).
+- اكتب العناوين (مثل الفصل الأول أو المقدمة) كل عنوان في سطر مستقل.
+- أخرج النص فقط، دون أي تعليق منك.`;
+
+async function ocrImagesOpenRouter(images: string[]): Promise<string | null> {
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!key) return null;
+  // Vision models only: a text-only fallback would invent the page
+  for (const model of [process.env.OPENROUTER_OCR_MODEL, "google/gemini-2.5-flash", "google/gemini-2.5-flash-lite"].filter(Boolean) as string[]) {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 90000);
+      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+          "X-Title": "Hakawati AI",
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          max_tokens: 2500 * images.length,
+          messages: [
+            {
+              role: "user",
+              content: [{ type: "text", text: OCR_PAGES_PROMPT }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))],
+            },
+          ],
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(t);
+      if (r.ok) {
+        const data: any = await r.json();
+        const text = data.choices?.[0]?.message?.content;
+        if (typeof text === "string") return text;
+      } else {
+        console.warn(`[OCR] ${model} returned ${r.status}:`, (await r.text()).slice(0, 300));
+      }
+    } catch (err: any) {
+      console.warn(`[OCR] ${model} failed:`, err?.message || err);
+    }
+  }
+  return null;
+}
+
+app.post("/api/pdf/ocr-pages", async (req, res) => {
+  const images: unknown = req.body?.images;
+  if (!Array.isArray(images) || images.length === 0 || images.length > 6) {
+    return res.status(400).json({ error: "صور الصفحات مطلوبة (6 كحد أقصى)." });
+  }
+  const valid = images.map((u) => (typeof u === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(u) && u.length < 4_000_000 ? u : ""));
+  const present = valid.filter(Boolean);
+  if (present.length === 0) return res.json({ pages: valid.map(() => "") });
+
+  let raw: string | null = null;
+  const ai = getGeminiClient();
+  if (ai) {
+    for (const model of ["gemini-3.1-flash-lite", "gemini-flash-latest"]) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: [
+            ...present.map((u) => ({ inlineData: { mimeType: u.slice(5, u.indexOf(";")), data: u.slice(u.indexOf(",") + 1) } })),
+            { text: OCR_PAGES_PROMPT },
+          ],
+          config: { temperature: 0 },
+        } as any);
+        if (typeof response.text === "string") {
+          raw = response.text;
+          break;
+        }
+      } catch (err: any) {
+        console.warn(`[OCR] Gemini ${model} failed:`, err?.message || err);
+      }
+    }
+  }
+  if (raw === null) raw = await ocrImagesOpenRouter(present);
+  if (raw === null) return res.status(502).json({ error: "تعذّر المسح الضوئي الآن، حاول بعد قليل." });
+
+  const parts = raw.split(OCR_PAGE_SEPARATOR).map((p) => p.trim());
+  // Map the model's pages back to the requested ones (pages that failed to render stay empty)
+  let k = 0;
+  const pages = valid.map((u) => (u ? parts[k++] || "" : ""));
+  // The model ignored the separator: keep the text rather than lose it
+  if (parts.length === 1 && present.length > 1) {
+    pages.fill("");
+    pages[valid.findIndex(Boolean)] = parts[0];
+  }
+  res.json({ pages });
+});
+
 // Local High-Fidelity Arabic Extractive Summary Fallback (Activates if AI free quota is exceeded)
 function localExtractArabicSummary(text: string, bookTitle?: string): string {
   const cleanTitle = bookTitle 

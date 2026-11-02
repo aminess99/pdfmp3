@@ -111,6 +111,16 @@ export function persistJob(job: ConversionJob): void {
   saveBookToServer(job);
 }
 
+// Which chapter the studio is playing, per book: lets a paid (OCR) read stay just ahead of
+// the listener instead of scanning the whole book, and cut a chapter early when they catch up
+const listenerAt = new Map<string, number>();
+export function setListenerPosition(jobId: string, chapterIndex: number | null): void {
+  if (chapterIndex === null) listenerAt.delete(jobId);
+  else listenerAt.set(jobId, chapterIndex);
+}
+// Chapters kept ready ahead of the listener in a lazy read
+const LAZY_CHAPTERS_AHEAD = 2;
+
 const running = new Map<string, { cancelled: boolean }>();
 
 export const isStreaming = (jobId: string) => running.has(jobId);
@@ -128,6 +138,9 @@ export async function runBookStream(opts: {
   totalPages: number;
   assembler: ChapterAssembler;
   heads?: RunningHeadFilter;
+  batchSize?: number;
+  // Read only as far ahead of the listener as needed (scanned books: every page costs)
+  lazy?: boolean;
 }): Promise<void> {
   const { readPageTexts, totalPages, assembler } = opts;
   const heads = opts.heads || new RunningHeadFilter();
@@ -153,12 +166,22 @@ export async function runBookStream(opts: {
 
   try {
     while (page <= totalPages && !state.cancelled) {
-      const end = Math.min(totalPages, page + PAGES_PER_BATCH - 1);
+      if (opts.lazy) {
+        // Wait while enough is ready; resumes as the listener moves on
+        while (!state.cancelled && chapters.length - 1 - (listenerAt.get(opts.job.id) ?? 0) >= LAZY_CHAPTERS_AHEAD) {
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+        if (state.cancelled) break;
+      }
+      const end = Math.min(totalPages, page + (opts.batchSize || PAGES_PER_BATCH) - 1);
       const pages = await readPageTexts(page, end);
       const { text } = cleanPages(pages, heads);
       page = end + 1;
       const added = assembler.push(text);
       if (page > totalPages) added.push(...assembler.flush());
+      // The listener is on the last ready chapter: hand over what is read now rather than
+      // make them wait for the whole chapter
+      else if (!added.length && (listenerAt.get(opts.job.id) ?? 0) >= chapters.length - 1) added.push(...assembler.cut());
       if (added.length) chapters = [...chapters, ...added];
       emit(page > totalPages);
       // Give the player room on slow phones

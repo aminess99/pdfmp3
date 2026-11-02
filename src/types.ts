@@ -86,6 +86,8 @@ export interface ConversionJob {
   // (1-based; past totalPages when done) and the front-matter pages skipped at the start
   nextPageToRead?: number;
   skippedFrontPages?: number;
+  // Scanned book read by OCR as the listener goes (lib/bookStream.ts lazy mode)
+  scannedBook?: boolean;
 }
 
 export interface Testimonial {
