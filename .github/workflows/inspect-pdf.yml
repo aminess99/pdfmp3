@@ -67,12 +67,42 @@ jobs:
           }
           JS
           node inspect.mjs || true
+      - name: Try the site's OCR on the opening pages
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          [ -z "$OPENROUTER_API_KEY" ] && { echo "no OPENROUTER_API_KEY secret"; exit 0; }
+          # Same rendering size as the browser (about 1400px wide) and the same prompt as server.ts
+          pdftoppm -f 1 -l 12 -scale-to-x 1400 -scale-to-y -1 -jpeg -jpegopt quality=72 book.pdf pg
+          ls -la pg-*.jpg | awk '{print $5, $9}'
+          cat > ocr.mjs <<'JS'
+          import fs from 'fs';
+          const src = fs.readFileSync('server.ts', 'utf8');
+          const sep = src.match(/OCR_PAGE_SEPARATOR = "([^"]+)"/)[1];
+          const prompt = src.match(/const OCR_PAGES_PROMPT = `([\s\S]*?)`;/)[1].replaceAll('${OCR_PAGE_SEPARATOR}', sep);
+          const files = fs.readdirSync('.').filter((f) => /^pg-\d+\.jpg$/.test(f)).sort();
+          for (let i = 0; i < files.length; i += 4) {
+            const group = files.slice(i, i + 4);
+            const t0 = Date.now();
+            const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'google/gemini-2.5-flash', temperature: 0, max_tokens: 2500 * group.length,
+                messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, ...group.map((f) => ({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + fs.readFileSync(f).toString('base64') } }))] }],
+              }),
+            });
+            const d = await r.json();
+            const out = d.choices?.[0]?.message?.content || JSON.stringify(d).slice(0, 300);
+            console.log(`\n===== pages ${group.join(',')} | ${((Date.now() - t0) / 1000).toFixed(1)}s | usage ${JSON.stringify(d.usage || {})}`);
+            out.split(sep).forEach((p, k) => console.log(`--- [${group[k] || '?'}] ${p.trim().length} chars\n${p.trim().slice(0, 400)}`));
+          }
+          JS
+          node ocr.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: inspected-pdf
-          path: |
-            book.pdf
-            first
+          path: first
           retention-days: 3
           if-no-files-found: ignore
