@@ -296,6 +296,10 @@ function realArabicWords(text: string): number {
   return unique.join(' ').split(/\s+/).filter((w) => /[\u0600-\u06FF]{2,}/.test(w)).length;
 }
 
+// Download-site / forum pages added to scanned books ("click here", "to download", Facebook)
+const FORUM_AD_RE = /اضغط\s+هنا|انقر\s+هنا|لتحميل|للتحميل|تحميل\s+(?:كتب|المزيد)|منتدى|منتديات|الفيسبوك|فيسبوك|فيس\s+بوك|تليجرام|تلغرام|قناتنا|حصريات|زوروا|موقعنا/g;
+export const looksLikeForumAd = (text: string): boolean => (text.match(FORUM_AD_RE) || []).length >= 2;
+
 // ---- Progressive OCR for scanned books ----
 // Pages are rendered to JPEG in the browser and sent a few at a time to /api/pdf/ocr-pages,
 // so a 300-page scan costs only the pages that are actually listened to.
@@ -481,13 +485,13 @@ export async function startProgressivePdfExtraction(
       for (let i = 1; i <= scanTo; i++) {
         try {
           const t = pageItemsToText((await (await pdfDoc.getPage(i)).getTextContent()).items);
-          if (realArabicWords(t) >= 40) substantial++;
+          if (realArabicWords(t) >= 40 && !looksLikeForumAd(t)) substantial++;
         } catch {
           // keep looking
         }
-        if (substantial >= 2) break;
       }
-      if (substantial < (totalPages <= 4 ? 1 : 2)) {
+      // A digital book has text on most pages; a scan has at most a few (ads, credits)
+      if (substantial < (scanTo <= 4 ? 1 : Math.max(2, Math.ceil(scanTo * 0.4)))) {
         const readOcr = makeOcrReader(pdfDoc, totalPages);
         return {
           success: true,

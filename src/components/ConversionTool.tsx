@@ -40,7 +40,7 @@ import { Dialect, Voice, AudioStyle, SampleBook, ConversionJob, BookChapter, Lis
 import { purifyTextWithAI, startOcrPdfSession, startProgressivePdfExtraction, ProgressivePdfSession, cleanArabicExtractedText } from '../lib/pdfUtils';
 import { extractTextFromEpubFile } from '../lib/epubUtils';
 import { detectArabicChapters, detectArabicChaptersWithAI, estimateDurationMinutes } from '../lib/chapterUtils';
-import { RunningHeadFilter, cleanPages, findContentStart } from '../lib/bookCleaner';
+import { RunningHeadFilter, classifyPage, cleanPages, findContentStart } from '../lib/bookCleaner';
 import { ChapterAssembler, PAGES_PER_BATCH, runBookStream } from '../lib/bookStream';
 import { audioEngine } from '../lib/audioEngine';
 import { useAuth } from '../lib/AuthContext';
@@ -211,7 +211,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   };
 
   // Reads the opening pages of a PDF session and keeps the first batch to listen to
-  const prepareSession = async (session: ProgressivePdfSession) => {
+  const prepareSession = async (session: ProgressivePdfSession, file?: File): Promise<void> => {
     progressiveSessionRef.current = session;
     setPageCount(session.totalPages);
     setFromFirstPage(false);
@@ -232,6 +232,12 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
       }
     } else {
       headPages = await session.readPageTexts(1, Math.min(session.totalPages, 30));
+      // Hardly any real pages in the opening of a long book: its pages are images with a little
+      // stamped text (ads, watermarks), so read it by OCR instead
+      const contentPages = headPages.filter((p) => classifyPage(p) === 'content').length;
+      if (file && headPages.length >= 6 && contentPages < headPages.length * 0.3) {
+        return prepareSession(await startOcrPdfSession(file));
+      }
     }
     if (headPages.length > 0) {
       bookPrepRef.current = { headPages, heads: new RunningHeadFilter(), nextPage: 1 };
@@ -288,7 +294,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         // Fast progressive reader for PDF: read the opening pages, skip the cover, imprint
         // and contents, and keep the first batch; the rest is read while the user listens
         const session = await startProgressivePdfExtraction(file, 6);
-        await prepareSession(session);
+        await prepareSession(session, file);
       }
     } catch (err: any) {
       console.warn('File extraction note:', err);

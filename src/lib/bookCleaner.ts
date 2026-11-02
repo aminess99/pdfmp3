@@ -1,4 +1,4 @@
-import { cleanArabicExtractedText } from './pdfUtils';
+import { cleanArabicExtractedText, looksLikeForumAd } from './pdfUtils';
 
 // Page-level cleanup for books read page by page (lib/bookStream.ts): finds where the real
 // content starts, drops front/back matter pages (cover, copyright, contents, publisher ads),
@@ -36,6 +36,7 @@ export function classifyPage(text: string): PageKind {
   const imprintHits = (text.match(IMPRINT_RE) || []).length;
   if (imprintHits >= 2 && w < 260) return 'imprint';
   if ((text.match(ADS_RE) || []).length >= 1 && w < 400) return 'ads';
+  if (looksLikeForumAd(text) && w < 500) return 'ads';
   return 'content';
 }
 
