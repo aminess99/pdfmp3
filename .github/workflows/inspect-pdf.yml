@@ -83,8 +83,10 @@ jobs:
           const sep = src.match(/OCR_PAGE_SEPARATOR = "([^"]+)"/)[1];
           const prompt = src.match(/const OCR_PAGES_PROMPT = `([\s\S]*?)`;/)[1].replaceAll('${OCR_PAGE_SEPARATOR}', sep);
           const files = fs.readdirSync('.').filter((f) => /^pg-\d+\.jpg$/.test(f)).sort();
-          for (const model of (process.env.OCR_MODELS || 'google/gemini-2.5-flash').split(',')) {
-          console.log(`\n################ ${model}`);
+          for (const spec of (process.env.OCR_MODELS || 'google/gemini-2.5-flash').split(',')) {
+          // "model@effort" sets the reasoning effort (minimal, low, ...)
+          const [model, effort] = spec.split('@');
+          console.log(`\n################ ${spec}`);
           for (let i = 0; i < files.length; i += 4) {
             const group = files.slice(i, i + 4);
             const t0 = Date.now();
@@ -92,7 +94,7 @@ jobs:
               method: 'POST',
               headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                model, temperature: 0, max_tokens: 2500 * group.length,
+                model, temperature: 0, ...(effort ? { reasoning: { effort } } : {}), max_tokens: 2500 * group.length,
                 messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, ...group.map((f) => ({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + fs.readFileSync(f).toString('base64') } }))] }],
               }),
             });
