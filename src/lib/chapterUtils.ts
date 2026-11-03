@@ -57,7 +57,9 @@ export function findChapterHeadings(text: string): { index: number; fullMatch: s
       const next = after.match(/^[ \t]*\n?[ \t]*([^\n]+)(\n|$)/);
       const line = next?.[1]?.trim() || '';
       const n = line.split(/\s+/).filter(Boolean).length;
-      if (line && n >= 1 && n <= 12 && !/[.!؛:]$/.test(line) && !/^(?:الفصل|الباب|الجزء)\s/.test(line)) {
+      // A name has real words: not a page number ("١٦"), not punctuation
+      const hasWords = (line.match(/[\u0621-\u064A]{2,}/g) || []).length >= 1;
+      if (line && hasWords && n >= 1 && n <= 12 && !/[.!؛:]$/.test(line) && !/^(?:الفصل|الباب|الجزء)\s/.test(line)) {
         title = `${rawTitle}: ${line.replace(/[.،]+$/, '')}`;
         fullMatch += next![0];
       }

@@ -66,7 +66,9 @@ export class ChapterAssembler {
       .filter((t) => t.norm.length >= 3);
   }
 
-  private make(title: string, text: string): BookChapter {
+  private make(title: string, rawText: string): BookChapter {
+    // A bare "الفصل الأول" line inside a chapter is a running head left by OCR, not text
+    const text = rawText.replace(/^[ \t]*(?:الفصل|الباب|الجزء|المبحث)\s+\S+(?:\s+عشر)?[ \t]*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
     const w = countWords(text);
     this.count++;
     return {
@@ -159,8 +161,11 @@ export class ChapterAssembler {
     let carry = '';
     for (const h of heads) {
       if (h.index < cursor) continue;
-      // A title already used is a recurring section inside chapters, not a new chapter
-      const used = normTitle(h.title);
+      // A title already used is a recurring section inside chapters, not a new chapter. For
+      // "الفصل الأول ..." the chapter number decides: a running head "الفصل الأول" at the top
+      // of every page of that chapter is the same chapter
+      const numbered = h.title.match(/^(?:الفصل|الباب|الجزء|المبحث)\s+\S+(?:\s+عشر)?/);
+      const used = normTitle(numbered ? numbered[0] : h.title);
       if (used && this.usedTitles.has(used)) continue;
       if (used) this.usedTitles.add(used);
       const before = combined.slice(cursor, h.index).trim();

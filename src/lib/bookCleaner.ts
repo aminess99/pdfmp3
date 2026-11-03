@@ -151,7 +151,9 @@ export function cleanPages(pages: string[], heads: RunningHeadFilter): { text: s
       skipped++;
       return;
     }
-    kept.push(collapseRepeats(stripFootnoteMarks(heads.strip(p))));
+    // Lines that are only a page number ("١٦", "- 17 -") are not read
+    const noPageNumbers = heads.strip(p).replace(/^[\s\-–—(]*[0-9٠-٩]{1,4}[\s\-–—)]*$/gm, '');
+    kept.push(collapseRepeats(stripFootnoteMarks(noPageNumbers)));
   });
   const last = [...kinds].reverse().find((k) => k !== 'blank');
   if (last) heads.afterContents = last === 'contents';
