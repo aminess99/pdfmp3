@@ -9,7 +9,7 @@ import { VOICES } from '../../src/data/voices';
 const BASE = process.env.BASE_URL || 'http://localhost:4789';
 const out = path.join(process.argv[2] || 'promo-out', 'narr');
 fs.mkdirSync(out, { recursive: true });
-const segments = JSON.parse(fs.readFileSync(path.join(__dirname, 'segments.json'), 'utf8'));
+const segments = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'scripts/promo/segments.json'), 'utf8'));
 const voice = (id: string) => VOICES.find((v) => v.id === id)!;
 
 async function speak(text: string, voiceId: string, file: string) {
