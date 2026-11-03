@@ -536,7 +536,7 @@ const OCR_PAGES_PROMPT = `أمامك صور صفحات متتالية من كت�
 - اكتب العناوين (مثل الفصل الأول أو المقدمة) كل عنوان في سطر مستقل.
 - أخرج النص فقط، دون أي تعليق منك.`;
 
-async function ocrImagesOpenRouter(images: string[]): Promise<string | null> {
+async function ocrImagesOpenRouter(images: string[], info: { model?: string } = {}): Promise<string | null> {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return null;
   // Vision models only: a text-only fallback would invent the page
@@ -569,7 +569,10 @@ async function ocrImagesOpenRouter(images: string[]): Promise<string | null> {
       if (r.ok) {
         const data: any = await r.json();
         const text = data.choices?.[0]?.message?.content;
-        if (typeof text === "string" && text.replace(/\s+/g, "").length > 0) return text;
+        if (typeof text === "string" && text.replace(/\s+/g, "").length > 0) {
+          info.model = model;
+          return text;
+        }
         console.warn(`[OCR] ${model} returned an empty reply`);
       } else {
         console.warn(`[OCR] ${model} returned ${r.status}:`, (await r.text()).slice(0, 300));
@@ -582,6 +585,7 @@ async function ocrImagesOpenRouter(images: string[]): Promise<string | null> {
 }
 
 app.post("/api/pdf/ocr-pages", async (req, res) => {
+  const t0 = Date.now();
   const images: unknown = req.body?.images;
   if (!Array.isArray(images) || images.length === 0 || images.length > 6) {
     return res.status(400).json({ error: "صور الصفحات مطلوبة (6 كحد أقصى)." });
@@ -601,7 +605,8 @@ app.post("/api/pdf/ocr-pages", async (req, res) => {
     typeof t === "string" && (t.replace(new RegExp(OCR_PAGE_SEPARATOR, "g"), "").replace(/\s+/g, "").length >= 40 * present.length || (present.length > 1 && sepCount(t) >= present.length - 1 && t.replace(/\s+/g, "").length > 60));
 
   // OpenRouter's gemini-2.5-flash first: tested on real scanned Arabic books
-  let raw: string | null = await ocrImagesOpenRouter(present);
+  const used: { model?: string } = {};
+  let raw: string | null = await ocrImagesOpenRouter(present, used);
   if (!looksRead(raw)) {
     const ai = getGeminiClient();
     if (ai) {
@@ -617,6 +622,7 @@ app.post("/api/pdf/ocr-pages", async (req, res) => {
           } as any);
           if (looksRead(response.text ?? null)) {
             raw = response.text as string;
+            used.model = `gemini-direct:${model}`;
             break;
           }
           console.warn(`[OCR] Gemini ${model} returned almost no text (${(response.text || "").length} chars)`);
@@ -635,6 +641,11 @@ app.post("/api/pdf/ocr-pages", async (req, res) => {
   // Map the model's pages back to the requested ones (pages that failed to render stay empty)
   let k = 0;
   const pages = valid.map((u) => (u ? parts[k++] || "" : ""));
+  // One line per request, to see what each scan really returned
+  console.log(
+    `[OCR] ${present.length} pages, image KB ${present.map((u) => Math.round(u.length / 1365)).join("/")}, model ${used.model || "none"}, ` +
+      `reply ${raw.length} chars, page chars ${pages.map((p) => p.length).join("/")}, ${Date.now() - t0} ms`
+  );
   // The model ignored the separator: keep the text rather than lose it
   if (parts.length === 1 && present.length > 1) {
     pages.fill("");
