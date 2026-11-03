@@ -8,11 +8,10 @@ const path = require('path');
 
 const BASE = process.env.BASE_URL || 'http://localhost:4789';
 const SUMMARIES = '/' + encodeURIComponent('ملخصات-كتب-صوتية');
-// The page is laid out at 1280x720 and drawn at 1.5x, so the 1920x1080 video shows large,
-// sharp UI (a full-HD layout looks tiny on a phone screen)
+// The page is laid out at 1280x720 (a full-HD layout looks tiny on a phone screen); the
+// recording is that size and the editor scales it to 1920x1080
 const W = 1280;
 const H = 720;
-const SCALE = 1.5;
 
 const book = path.resolve(process.argv[2]);
 const out = path.join(process.argv[3] || 'promo-out', 'clips');
@@ -52,8 +51,7 @@ async function scene(name, fn) {
   const browser = scene.browser;
   const ctx = await browser.newContext({
     viewport: { width: W, height: H },
-    deviceScaleFactor: SCALE,
-    recordVideo: { dir: out, size: { width: W * SCALE, height: H * SCALE } },
+    recordVideo: { dir: out, size: { width: W, height: H } },
     locale: 'ar',
   });
   await ctx.addInitScript(CURSOR);
@@ -129,9 +127,9 @@ async function scene(name, fn) {
     await page.evaluate(() => document.getElementById('voices')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     await wait(1500);
     mark('voices');
-    for (let i = 0; i < 45; i++) {
-      await page.mouse.wheel(0, 16);
-      await wait(110);
+    for (let i = 0; i < 30; i++) {
+      await page.mouse.wheel(0, 9);
+      await wait(150);
     }
     await wait(600);
     mark('voicesEnd');
@@ -199,8 +197,8 @@ async function scene(name, fn) {
     await until(async () => !(await page.getByText('يقرأ الكتاب ويصيغ الإجابة').count()), 90000);
     await wait(2500);
     mark('askReady');
-    await page.keyboard.press('Escape');
-    await wait(600);
+    await click(page.getByRole('button', { name: 'إغلاق' }).last());
+    await wait(700);
 
     // Download
     await click(page.getByRole('button', { name: /^تحميل$/ }).first());
