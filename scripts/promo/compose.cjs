@@ -71,7 +71,7 @@ function cut(clip, from, to, target, file) {
   // Captions as transparent PNGs (the browser shapes Arabic properly; ffmpeg's text filter may not)
   async function caption(text, file) {
     await page.setContent(`<html><head>${fonts}<style>body{margin:0;background:transparent;width:1920px;height:1080px;font-family:Tajawal,sans-serif}
-      .c{position:absolute;bottom:64px;left:50%;transform:translateX(-50%);max-width:1500px;padding:18px 40px;border-radius:18px;background:rgba(11,12,26,.82);color:#fff;font-size:48px;font-weight:800;line-height:1.45;text-align:center;direction:rtl;box-shadow:0 8px 30px rgba(0,0,0,.35)}
+      .c{position:absolute;bottom:64px;left:50%;transform:translateX(-50%);max-width:1500px;padding:18px 40px;border-radius:18px;background:rgba(11,12,26,.94);border:2px solid rgba(34,211,238,.55);color:#fff;font-size:48px;font-weight:800;line-height:1.45;text-align:center;direction:rtl;box-shadow:0 8px 30px rgba(0,0,0,.35)}
       </style></head><body><div class="c">${text}</div></body></html>`);
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: file, omitBackground: true });
