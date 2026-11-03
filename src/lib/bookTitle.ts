@@ -25,3 +25,14 @@ export function cleanBookTitle(rawName: string): string {
 
   return cleaned || rawName;
 }
+
+// A file name that says nothing about the book ("69fb610a9299e.pdf", "1234.pdf", "scan_01.pdf"):
+// the title is then read from the book itself
+export function isMeaninglessName(rawName: string): boolean {
+  const t = cleanBookTitle(rawName);
+  if (t === 'كتاب صوتي عربي' || t === 'كتاب صوتي') return true;
+  const letters = t.replace(/[^\p{L}]/gu, '');
+  if (letters.length < 3) return true;
+  // Mostly hex / digits / generic scanner names
+  return /^(?:scan|document|doc|file|book|img|image|pdf|untitled|new)[\s_-]*\d*$/i.test(t) || /^[a-f0-9\s]{8,}$/i.test(t);
+}

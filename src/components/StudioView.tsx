@@ -789,7 +789,11 @@ export const StudioView: React.FC<StudioViewProps> = ({
           <span className="hidden sm:inline">{isUserLoggedIn ? tr('مكتبتي', 'My library') : tr('رجوع', 'Back')}</span>
         </button>
         <div className="flex items-center gap-3 min-w-0">
-          <span aria-hidden="true" className="hidden sm:block w-9 h-12 rounded-md bg-gradient-to-br from-indigo-900 to-slate-900 border border-indigo-800 shrink-0" />
+          {job.coverImage ? (
+            <img src={job.coverImage} alt="" aria-hidden="true" className="hidden sm:block w-9 h-12 rounded-md object-cover border border-line shrink-0" />
+          ) : (
+            <span aria-hidden="true" className="hidden sm:block w-9 h-12 rounded-md bg-gradient-to-br from-indigo-900 to-slate-900 border border-indigo-800 shrink-0" />
+          )}
           <span className="flex flex-col leading-tight min-w-0">
             <span className="font-display font-extrabold text-base sm:text-lg text-white truncate">{cleanTitle}</span>
             <span className="text-[13px] text-slate-400 truncate">
@@ -1002,9 +1006,13 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
             {panel === 'listen' && hideText && (
               <div className="h-full flex flex-col items-center justify-center gap-4 text-center">
-                <span aria-hidden="true" className="w-[200px] h-[280px] rounded-xl bg-gradient-to-br from-indigo-900 to-slate-900 border border-indigo-800 flex items-end justify-center p-5 font-display font-extrabold text-xl text-indigo-100">
-                  {cleanTitle}
-                </span>
+                {job.coverImage ? (
+                  <img src={job.coverImage} alt="" aria-hidden="true" className="w-[200px] h-[280px] rounded-xl object-cover border border-line shadow-lg shadow-black/40" />
+                ) : (
+                  <span aria-hidden="true" className="w-[200px] h-[280px] rounded-xl bg-gradient-to-br from-indigo-900 to-slate-900 border border-indigo-800 flex items-end justify-center p-5 font-display font-extrabold text-xl text-indigo-100">
+                    {cleanTitle}
+                  </span>
+                )}
                 <span className="text-slate-400">{currentChapter?.title || tr("وضع الاستماع فقط", "Listening mode")}</span>
               </div>
             )}

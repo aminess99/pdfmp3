@@ -90,6 +90,8 @@ export interface ConversionJob {
   scannedBook?: boolean;
   // Chapter names from the book's contents page (shown as the chapters still to come)
   tocTitles?: string[];
+  // Small JPEG of the book's cover page (data URL), shown in the library and the studio
+  coverImage?: string;
 }
 
 export interface Testimonial {

@@ -739,6 +739,49 @@ app.post("/api/pdf/filter-paragraphs", async (req, res) => {
   res.json({ drop: [], headings: [] });
 });
 
+// A title (and author) for a book whose file name says nothing ("69fb610a9299e.pdf") or for
+// pasted text without a title: read from the opening text (src/components/ConversionTool.tsx)
+app.post("/api/pdf/book-title", async (req, res) => {
+  const text = String(req.body?.text ?? "").slice(0, 3000);
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!text.trim() || !key) return res.json({ title: "", author: "" });
+  const prompt = `هذا بداية نص كتاب أو مقال (قد تحتوي على الغلاف وصفحة العنوان). ما عنوانه؟ وما اسم مؤلفه إن ذُكر؟
+- إذا كان العنوان مكتوباً في النص فانقله كما هو.
+- إذا لم يُذكر عنوان، فاقترح عنواناً عربياً قصيراً (2 إلى 6 كلمات) يصف موضوع النص بدقة، دون مبالغة.
+- لا تذكر مؤلفاً غير مكتوب في النص.
+أجب بـ JSON فقط: {"title": "...", "author": "..."} (اترك author فارغاً إذا لم يُذكر).
+
+النص:
+${text}`;
+  for (const model of ["google/gemini-2.5-flash", "google/gemini-2.5-flash-lite"]) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+          "X-Title": "Hakawati AI",
+        },
+        body: JSON.stringify({ model, temperature: 0, max_tokens: 300, response_format: { type: "json_object" }, messages: [{ role: "user", content: prompt }] }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!r.ok) continue;
+      const data: any = await r.json();
+      const content = String(data.choices?.[0]?.message?.content || "");
+      const json = JSON.parse(content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1));
+      const clean = (v: unknown, max: number) => String(v ?? "").replace(/[\r\n]+/g, " ").replace(/[<>]/g, "").trim().slice(0, max);
+      return res.json({ title: clean(json.title, 90), author: clean(json.author, 60) });
+    } catch (err: any) {
+      console.warn(`[book-title] ${model} failed:`, err?.message || err);
+    }
+  }
+  res.json({ title: "", author: "" });
+});
+
 // The book's own chapter names from its contents page(s) (src/components/ConversionTool.tsx):
 // shown in the studio as the chapters still to come, and used to recognise headings in the text
 app.post("/api/pdf/toc", async (req, res) => {

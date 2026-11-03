@@ -511,11 +511,15 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                           type="button"
                           onClick={() => openBook(book)}
                           aria-busy={openingId === book.id}
-                          className={`relative aspect-[3/4] rounded-[10px] border border-line flex items-end p-3.5 text-start font-display font-extrabold text-base text-indigo-50 cursor-pointer hover:border-line-strong ${openingId === book.id ? 'animate-pulse' : ''}`}
+                          className={`relative aspect-[3/4] rounded-[10px] border border-line flex items-end p-3.5 text-start font-display font-extrabold text-base text-indigo-50 cursor-pointer hover:border-line-strong overflow-hidden ${openingId === book.id ? 'animate-pulse' : ''}`}
                           style={{ background: `linear-gradient(160deg, ${COVER_HUES[i % COVER_HUES.length]}, #0b0f19)` }}
                           aria-label={tr(`استمع إلى ${title}`, `Listen to ${title}`)}
                         >
-                          <span className="line-clamp-3">{title}</span>
+                          {book.coverImage ? (
+                            <img src={book.coverImage} alt="" className="absolute inset-0 w-full h-full object-cover rounded-[10px]" loading="lazy" />
+                          ) : (
+                            <span className="line-clamp-3">{title}</span>
+                          )}
                           <span className="absolute top-2.5 end-2.5 w-9 h-9 rounded-full bg-brand text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                             <Play className="w-4 h-4 fill-current" />
                           </span>

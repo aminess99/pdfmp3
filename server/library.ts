@@ -48,6 +48,8 @@ function metaOf(book: any, updatedAt: number) {
     durationInSeconds: book.durationInSeconds,
     listeningMode: book.listeningMode,
     createdAt: book.createdAt,
+    // The small cover thumbnail, for the library grid
+    coverImage: book.coverImage,
     // Chapter list without the text, for the grid and the progress bar
     chapters: Array.isArray(book.chapters)
       ? book.chapters.map((c: any) => ({
@@ -97,8 +99,11 @@ export function saveBook(uid: string, book: any): { ok: true } | { ok: false; st
   }
   // Blob URLs and transient flags mean nothing on another device
   const { audioUrl, isStreamingBackground, backgroundStatus, ...rest } = book;
+  // Only a small JPEG thumbnail is kept as the cover
+  const cover = typeof rest.coverImage === 'string' && /^data:image\/jpeg;base64,/.test(rest.coverImage) && rest.coverImage.length <= 150_000 ? rest.coverImage : undefined;
   const clean = {
     ...rest,
+    coverImage: cover,
     status: 'completed',
     progress: 100,
     chapters: Array.isArray(rest.chapters) ? rest.chapters.map(({ audioUrl: _a, ...c }: any) => c) : [],

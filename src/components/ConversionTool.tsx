@@ -41,6 +41,7 @@ import { extractTextFromPDFFile, purifyTextWithAI, startOcrPdfSession, startProg
 import { extractTextFromEpubFile } from '../lib/epubUtils';
 import { detectArabicChapters, detectArabicChaptersWithAI, estimateDurationMinutes } from '../lib/chapterUtils';
 import { RunningHeadFilter, classifyPage, cleanPages, findContentStart } from '../lib/bookCleaner';
+import { isMeaninglessName } from '../lib/bookTitle';
 import { smartFilter, smartFilterWithHeadings, FoundHeading } from '../lib/smartFilter';
 import { parseTocLines } from '../lib/chapterUtils';
 import { ChapterAssembler, PAGES_PER_BATCH, runBookStream } from '../lib/bookStream';
@@ -61,6 +62,26 @@ import { saveBookToServer } from '../lib/library';
 // "320 KB" under a megabyte, "2.4 MB" above it
 const formatFileSize = (bytes: number): string =>
   bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+// A title for a book or text whose name says nothing: the AI reader, else its first line
+async function suggestTitle(text: string): Promise<string> {
+  const opening = String(text || '').trim().slice(0, 3000);
+  if (!opening) return '';
+  try {
+    const res = await apiFetch('/api/pdf/book-title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: opening }) }, { silent: true });
+    if (res.ok) {
+      const data = await res.json();
+      const title = String(data.title || '').trim();
+      const author = String(data.author || '').trim();
+      if (title) return author ? `${title} - ${author}` : title;
+    }
+  } catch {
+    // fall back to the first line
+  }
+  const first = opening.split('\n').map((l) => l.trim()).find((l) => l.split(/\s+/).length >= 2) || '';
+  const words = first.split(/\s+/).slice(0, 7).join(' ');
+  return words.length >= 4 ? words.replace(/[.،,:؛]+$/, '') : '';
+}
 
 // The book's chapter names from its contents page: the AI reader first, simple line parsing if
 // it is unavailable
@@ -157,6 +178,9 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   const progressiveSessionRef = useRef<ProgressivePdfSession | null>(null);
   // Long PDFs: the first pages read on upload, where the content starts, and what the
   // background reader (lib/bookStream.ts) picks up after the first batch
+  // The book's cover image and, when the file name says nothing, its title read from the book
+  const coverRef = useRef<string | undefined>(undefined);
+  const detectedTitleRef = useRef<string>('');
   const bookPrepRef = useRef<{ headPages: string[]; heads: RunningHeadFilter; nextPage: number; headings?: FoundHeading[]; toc?: string[] } | null>(null);
   const [skippedFrontPages, setSkippedFrontPages] = useState(0);
   const [fromFirstPage, setFromFirstPage] = useState(false);
@@ -230,6 +254,8 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
 
   // Reads the opening pages of a PDF session and keeps the first batch to listen to
   const prepareSession = async (session: ProgressivePdfSession, file?: File): Promise<void> => {
+    // The cover is rendered alongside the reading (small, from the first designed page)
+    const coverPromise = session.renderCover ? session.renderCover().catch(() => undefined) : Promise.resolve(undefined);
     progressiveSessionRef.current = session;
     setPageCount(session.totalPages);
     setFromFirstPage(false);
@@ -291,6 +317,12 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
       setExtractedText(whole.text);
       if (whole.pagesCount > session.totalPages) setPageCount(whole.pagesCount);
     }
+    coverRef.current = (await coverPromise) || coverRef.current;
+    // A file name like "69fb610a9299e.pdf": read the title (and author) from the opening pages
+    if (file && isMeaninglessName(file.name) && !detectedTitleRef.current) {
+      const opening = (bookPrepRef.current?.headPages || []).slice(0, 6).join('\n').trim() || text;
+      detectedTitleRef.current = await suggestTitle(opening);
+    }
     setExtractionProgress(100);
   };
 
@@ -310,6 +342,8 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     }
 
     setSelectedFile(file);
+    coverRef.current = undefined;
+    detectedTitleRef.current = '';
     bookPrepRef.current = null;
     progressiveSessionRef.current = null;
     setSkippedFrontPages(0);
@@ -486,9 +520,13 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         console.warn('Reading the rest of the book failed:', e);
       }
     }
+    // Pasted text without a title gets one from its content; a file named "69fb610a9299e.pdf"
+    // gets the title read from the book
     const baseFileName = inputMode === 'text'
-      ? (customTitle.trim() || tr("نص عربي مخصص", "Custom Arabic text"))
-      : (selectedFile ? selectedFile.name : selectedSampleBook ? selectedSampleBook.title : tr("كتاب PDF عربي", "Arabic PDF book"));
+      ? (customTitle.trim() || (await suggestTitle(extractedText)) || tr("نص عربي مخصص", "Custom Arabic text"))
+      : selectedFile
+        ? (detectedTitleRef.current || selectedFile.name)
+        : selectedSampleBook ? selectedSampleBook.title : tr("كتاب PDF عربي", "Arabic PDF book");
 
     // If summary mode, transform to executive summary first
     if (listeningMode === 'summary') {
@@ -639,6 +677,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
             const newJob: ConversionJob = {
               id: jobId,
               fileName,
+              ...(inputMode === 'pdf' && selectedFile && coverRef.current ? { coverImage: coverRef.current } : {}),
               fileSize,
               totalPages: calculatedPages,
               processedPages: stream ? Math.min(calculatedPages, stream.prep.nextPage - 1) : calculatedPages,

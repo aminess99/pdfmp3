@@ -303,6 +303,8 @@ export interface ProgressivePdfSession {
   ocr?: boolean;
   // Pages per background batch (lib/bookStream.ts)
   pagesPerBatch?: number;
+  // A small JPEG of the book's cover (first designed page among the first three), if any
+  renderCover?: () => Promise<string | undefined>;
   error?: string;
 }
 
@@ -316,6 +318,44 @@ function realArabicWords(text: string): number {
 // Download-site / forum pages added to scanned books ("click here", "to download", Facebook)
 const FORUM_AD_RE = /اضغط\s+هنا|انقر\s+هنا|لتحميل|للتحميل|تحميل\s+(?:كتب|المزيد)|منتدى|منتديات|الفيسبوك|فيسبوك|فيس\s+بوك|تليجرام|تلغرام|قناتنا|حصريات|زوروا|موقعنا/g;
 export const looksLikeForumAd = (text: string): boolean => (text.match(FORUM_AD_RE) || []).length >= 2;
+
+// The book's cover for the library: the first of the opening pages that looks designed (mostly
+// colour or picture), not a white page of text. Rendered small (about 30 KB).
+async function findCoverImage(pdfDoc: any): Promise<string | undefined> {
+  for (let n = 1; n <= Math.min(3, pdfDoc.numPages); n++) {
+    try {
+      const page = await pdfDoc.getPage(n);
+      const base = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: 360 / base.width });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport } as any).promise;
+      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      let inked = 0;
+      let total = 0;
+      for (let i = 0; i < data.length; i += 4 * 7) {
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        // Dark or coloured pixels; a printed text page is mostly white with a little black
+        if ((r + g + b) / 3 < 200 || max - min > 45) inked++;
+        total++;
+      }
+      if (inked / total >= 0.35) {
+        const url = canvas.toDataURL('image/jpeg', 0.72);
+        canvas.width = canvas.height = 0;
+        return url;
+      }
+      canvas.width = canvas.height = 0;
+    } catch {
+      // try the next page
+    }
+  }
+  return undefined;
+}
 
 // Mostly single Arabic letters separated by spaces: an unusable text layer
 function looksGarbled(text: string): boolean {
@@ -485,6 +525,7 @@ export async function startOcrPdfSession(file: File): Promise<ProgressivePdfSess
     readPageTexts,
     ocr: true,
     pagesPerBatch: OCR_PAGES_PER_BATCH,
+    renderCover: () => findCoverImage(pdfDoc),
   };
 }
 
@@ -584,6 +625,7 @@ export async function startProgressivePdfExtraction(
         readPageTexts: readHybrid,
         ocr: mostlyScanned,
         pagesPerBatch: mostlyScanned ? OCR_PAGES_PER_BATCH : undefined,
+        renderCover: () => findCoverImage(pdfDoc),
       };
     }
 
