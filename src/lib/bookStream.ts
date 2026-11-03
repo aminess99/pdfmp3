@@ -60,7 +60,10 @@ export class ChapterAssembler {
 
   // Chapter names from the book's contents page
   setToc(titles: string[]): void {
-    this.toc = titles.map((t) => ({ norm: normTitle(t), title: t })).filter((t) => t.norm.length >= 3);
+    this.toc = titles
+      .map((t) => t.replace(/[.،]+\s*$/, '').trim())
+      .map((t) => ({ norm: normTitle(t), title: t }))
+      .filter((t) => t.norm.length >= 3);
   }
 
   private make(title: string, text: string): BookChapter {
@@ -94,6 +97,27 @@ export class ChapterAssembler {
         (t.norm.length >= 8 && key.includes(t.norm) && key.length <= t.norm.length + 20) ||
         (key.length >= 8 && t.norm.includes(key) && key.length >= t.norm.length * 0.6)
     );
+  }
+
+  private completeFromToc(title: string, after: string): { title: string; consumed: number } | null {
+    if (!this.toc.length) return null;
+    const m = title.match(/^((?:الفصل|الباب|الجزء|المبحث)\s+\S+(?:\s+عشر)?\s*:\s*)?(.+)$/);
+    const prefix = m?.[1] || '';
+    const name = normTitle(m?.[2] || title);
+    if (name.length < 6) return null;
+    const entry = this.toc.find((t) => t.norm.startsWith(name + ' ') && t.norm.length > name.length);
+    if (!entry) return null;
+    const rest = entry.norm.slice(name.length).trim().split(' ');
+    // The next words of the text must be the rest of the name
+    const wordRe = /\s*(\S+)/y;
+    let pos = 0;
+    for (const want of rest) {
+      wordRe.lastIndex = pos;
+      const w = wordRe.exec(after);
+      if (!w || normTitle(w[1]) !== want) return null;
+      pos = wordRe.lastIndex;
+    }
+    return { title: `${prefix}${entry.title}`, consumed: pos };
   }
 
   // Lines that are headings by the AI reader or by the contents page
@@ -151,6 +175,13 @@ export class ChapterAssembler {
       title = h.title;
       this.sawHeading = true;
       cursor = h.index + h.fullMatch.length;
+      // A name broken over two lines ("احرص على أن يكون خزان" / "الحب ممتلئاً دائماً"): when the
+      // contents has the full name, take it, and drop its remaining words from the text
+      const completed = this.completeFromToc(title, combined.slice(cursor));
+      if (completed) {
+        title = completed.title;
+        cursor += completed.consumed;
+      }
     }
     this.title = title;
     const rest = combined.slice(cursor).trim();
