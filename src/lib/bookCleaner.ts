@@ -19,6 +19,22 @@ const ADS_RE = /صدر\s+(?:للمؤلف|للكاتب|حديثاً|حديثا|ع
 // Where a book's content usually begins
 const START_RE = /^(?:\s*[-–—*#]*\s*)(?:المقدمة|مقدمة(?:\s+\S+){0,3}|التمهيد|تمهيد|توطئة|استهلال|الفصل\s+(?:الأول|1|١)|الباب\s+(?:الأول|1|١)|الجزء\s+(?:الأول|1|١))\s*$/m;
 
+// Branch / address / phone lists (bookstore branches, distributors)
+const ADDRESS_RE = /شارع|طريق|هاتف|تليفون|تلفون|فاكس|ص\.\s*ب|صندوق بريد|المملكة العربية السعودية|الإمارات العربية المتحدة|فروعنا|فرع|مركز|برج|مول|جوال|\+?\d[\d\s-]{6,}/g;
+
+// Words repeated in a loop ("تليفون تليفون تليفون ..."), which OCR models sometimes produce
+// on table-like pages: collapse the run to one occurrence
+export const collapseRepeats = (t: string): string =>
+  t
+    .replace(/(^|\s)(\S+(?:\s+\S+){0,2}?)(?:\s+\2){3,}(?=\s|$)/g, '$1$2')
+    .replace(/(^|\s)(\S+)(?:\s+\2){2,}(?=\s|$)/g, '$1$2');
+
+// Very few distinct words for its length: a repetition loop or a list, not prose
+function lowVariety(text: string): boolean {
+  const ws = text.split(/\s+/).filter(Boolean);
+  return ws.length >= 40 && new Set(ws).size / ws.length < 0.3;
+}
+
 export type PageKind = 'content' | 'blank' | 'imprint' | 'contents' | 'ads';
 
 // A table-of-contents page: many short lines that end in a page number
@@ -33,6 +49,9 @@ export function classifyPage(text: string): PageKind {
   const w = words(text);
   if (w < 12) return 'blank';
   if (CONTENTS_RE.test(text) || looksLikeContents(text)) return 'contents';
+  if (lowVariety(text)) return 'blank';
+  // Mostly addresses and phone numbers: a branches / distributors page
+  if ((text.match(ADDRESS_RE) || []).length >= 8 && (text.match(ADDRESS_RE) || []).length / w >= 0.08) return 'imprint';
   const imprintHits = (text.match(IMPRINT_RE) || []).length;
   if (imprintHits >= 2 && w < 260) return 'imprint';
   if ((text.match(ADS_RE) || []).length >= 1 && w < 400) return 'ads';
@@ -103,7 +122,7 @@ export function cleanPages(pages: string[], heads: RunningHeadFilter): { text: s
       skipped++;
       continue;
     }
-    kept.push(stripFootnoteMarks(heads.strip(p)));
+    kept.push(collapseRepeats(stripFootnoteMarks(heads.strip(p))));
   }
   return { text: cleanArabicExtractedText(kept.join('\n\n')), skipped };
 }
