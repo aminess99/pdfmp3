@@ -4,6 +4,10 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { tr } from './i18n';
 import { apiFetch } from './apiFetch';
 
+// pdf.js support files (character maps, fonts, image decoders), served by our own server from
+// the installed pdfjs-dist (server.ts /pdfjs), so they always match the library version
+const PDFJS_ASSETS = typeof location !== 'undefined' ? `${location.origin}/pdfjs` : '/pdfjs';
+
 // Configure pdfjs worker locally from bundle, with unpkg fallback
 try {
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker || `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
@@ -183,9 +187,13 @@ export async function extractTextFromPDFFile(
         data: arrayBuffer,
         stopAtErrors: false,
         useSystemFonts: true,
-        cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
+        cMapUrl: `${PDFJS_ASSETS}/cmaps/`,
         cMapPacked: true,
-        standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/standard_fonts/`,
+        standardFontDataUrl: `${PDFJS_ASSETS}/standard_fonts/`,
+    // Decoders for JBIG2 and JPEG 2000 page images, the formats most scanned books use.
+    // Without them those pages render blank and OCR reads nothing.
+    wasmUrl: `${PDFJS_ASSETS}/wasm/`,
+    iccUrl: `${PDFJS_ASSETS}/iccs/`,
       } as any);
 
       const pdfDoc = await loadingTask.promise;
@@ -433,9 +441,13 @@ async function openPdf(file: File): Promise<any> {
     data: arrayBuffer,
     stopAtErrors: false,
     useSystemFonts: true,
-    cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
+    cMapUrl: `${PDFJS_ASSETS}/cmaps/`,
     cMapPacked: true,
-    standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/standard_fonts/`,
+    standardFontDataUrl: `${PDFJS_ASSETS}/standard_fonts/`,
+    // Decoders for JBIG2 and JPEG 2000 page images, the formats most scanned books use.
+    // Without them those pages render blank and OCR reads nothing.
+    wasmUrl: `${PDFJS_ASSETS}/wasm/`,
+    iccUrl: `${PDFJS_ASSETS}/iccs/`,
   } as any).promise;
 }
 
@@ -471,9 +483,13 @@ export async function startProgressivePdfExtraction(
       data: arrayBuffer,
       stopAtErrors: false,
       useSystemFonts: true,
-      cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
+      cMapUrl: `${PDFJS_ASSETS}/cmaps/`,
       cMapPacked: true,
-      standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/standard_fonts/`,
+      standardFontDataUrl: `${PDFJS_ASSETS}/standard_fonts/`,
+    // Decoders for JBIG2 and JPEG 2000 page images, the formats most scanned books use.
+    // Without them those pages render blank and OCR reads nothing.
+    wasmUrl: `${PDFJS_ASSETS}/wasm/`,
+    iccUrl: `${PDFJS_ASSETS}/iccs/`,
     } as any);
 
     const pdfDoc = await loadingTask.promise;

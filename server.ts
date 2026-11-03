@@ -292,6 +292,16 @@ async function callOpenRouter(
   return null;
 }
 
+// pdf.js support files for the browser (src/lib/pdfUtils.ts): character maps, standard fonts,
+// and the JBIG2 / JPEG 2000 decoders scanned books need. Served from the installed package so
+// they always match the library version.
+{
+  const pdfjsRoot = path.join(process.cwd(), "node_modules", "pdfjs-dist");
+  for (const dir of ["cmaps", "standard_fonts", "wasm", "iccs"]) {
+    app.use(`/pdfjs/${dir}`, express.static(path.join(pdfjsRoot, dir), { maxAge: "30d", immutable: true, fallthrough: false }));
+  }
+}
+
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", app: "Hakawati AI", timestamp: new Date().toISOString() });
