@@ -342,6 +342,8 @@ async function ocrPageGroup(pdfDoc: any, pages: number[]): Promise<string[]> {
       images.push('');
     }
   }
+  // No page could be rendered (damaged pages): nothing to send
+  if (images.every((u) => !u)) return pages.map(() => '');
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await apiFetch('/api/pdf/ocr-pages', {
@@ -364,10 +366,9 @@ async function ocrPageGroup(pdfDoc: any, pages: number[]): Promise<string[]> {
   throw new Error(tr('تعذّر المسح الضوئي لهذه الصفحات.', 'These pages could not be scanned.'));
 }
 
-function makeOcrReader(pdfDoc: any, totalPages: number) {
-  return async (startPage: number, endPage: number): Promise<string[]> => {
-    const all: number[] = [];
-    for (let i = Math.max(1, startPage); i <= Math.min(totalPages, endPage); i++) all.push(i);
+// OCR the given pages (any order), a few per request and several requests at once
+async function ocrPages(pdfDoc: any, all: number[]): Promise<string[]> {
+  {
     const groups: number[][] = [];
     for (let i = 0; i < all.length; i += OCR_PAGES_PER_REQUEST) groups.push(all.slice(i, i + OCR_PAGES_PER_REQUEST));
     const out: string[][] = new Array(groups.length);
@@ -377,6 +378,52 @@ function makeOcrReader(pdfDoc: any, totalPages: number) {
       res.forEach((r, j) => (out[i + j] = r));
     }
     return out.flat();
+  }
+}
+
+function makeOcrReader(pdfDoc: any, totalPages: number) {
+  return async (startPage: number, endPage: number): Promise<string[]> => {
+    const all: number[] = [];
+    for (let i = Math.max(1, startPage); i <= Math.min(totalPages, endPage); i++) all.push(i);
+    return ocrPages(pdfDoc, all);
+  };
+}
+
+// A page's own text, and whether it must be read by OCR instead: little real text (none, or
+// only a watermark) on a page that carries an image, i.e. a scanned page
+const IMAGE_OPS = new Set(
+  ['paintImageXObject', 'paintInlineImageXObject', 'paintImageMaskXObject', 'paintJpegXObject', 'paintImageXObjectRepeat', 'paintInlineImageXObjectGroup']
+    .map((k) => (pdfjsLib.OPS as any)[k])
+    .filter((v) => v !== undefined)
+);
+const MIN_TEXT_WORDS = 25;
+
+async function readPageLayer(pdfDoc: any, n: number): Promise<{ text: string; needsOcr: boolean }> {
+  try {
+    const page = await pdfDoc.getPage(n);
+    const text = pageItemsToText((await page.getTextContent()).items) || '';
+    // Real text, or a digital forum ad page (dropped later): no OCR needed
+    if (realArabicWords(text) >= MIN_TEXT_WORDS || looksLikeForumAd(text)) return { text, needsOcr: false };
+    const ops = await page.getOperatorList();
+    const hasImage = ops.fnArray.some((fn: number) => IMAGE_OPS.has(fn));
+    return { text, needsOcr: hasImage };
+  } catch (err) {
+    console.warn(`Read page ${n} error:`, err);
+    return { text: '', needsOcr: true };
+  }
+}
+
+// Reads each page the best way for that page: its text layer when it has real text, OCR when
+// it is a scan. One book can mix both (digital pages, scanned inserts, watermarked scans).
+function makeHybridReader(pdfDoc: any, totalPages: number) {
+  return async (startPage: number, endPage: number): Promise<string[]> => {
+    const nums: number[] = [];
+    for (let i = Math.max(1, startPage); i <= Math.min(totalPages, endPage); i++) nums.push(i);
+    const layers = await Promise.all(nums.map((n) => readPageLayer(pdfDoc, n)));
+    const toOcr = nums.filter((_, i) => layers[i].needsOcr);
+    const scanned = toOcr.length ? await ocrPages(pdfDoc, toOcr) : [];
+    const byPage = new Map(toOcr.map((n, i) => [n, scanned[i]]));
+    return nums.map((n, i) => (layers[i].needsOcr ? byPage.get(n) || '' : layers[i].text));
   };
 }
 
@@ -483,33 +530,25 @@ export async function startProgressivePdfExtraction(
       return texts;
     };
 
-    // No real text layer in the opening pages: a scanned book, read it by OCR as the user
-    // listens. Watermarks stamped on scans ("uploaded by X", a forum URL) don't count as text.
+    // Every page is read the best way for that page (text layer or OCR). The opening pages
+    // only decide how the rest is paced: a mostly scanned book is read just ahead of the
+    // listener and in smaller batches, since its pages cost money to read.
     if (typeof document !== 'undefined') {
       const scanTo = Math.min(totalPages, 15);
-      let substantial = 0;
-      for (let i = 1; i <= scanTo; i++) {
-        try {
-          const t = pageItemsToText((await (await pdfDoc.getPage(i)).getTextContent()).items);
-          if (realArabicWords(t) >= 40 && !looksLikeForumAd(t)) substantial++;
-        } catch {
-          // keep looking
-        }
-      }
-      // A digital book has text on most pages; a scan has at most a few (ads, credits)
-      if (substantial < (scanTo <= 4 ? 1 : Math.max(2, Math.ceil(scanTo * 0.4)))) {
-        const readOcr = makeOcrReader(pdfDoc, totalPages);
-        return {
-          success: true,
-          totalPages,
-          initialText: '',
-          initialPagesRead: 0,
-          readPagesRange: async (a, b) => cleanArabicExtractedText((await readOcr(a, b)).join('\n\n')),
-          readPageTexts: readOcr,
-          ocr: true,
-          pagesPerBatch: OCR_PAGES_PER_BATCH,
-        };
-      }
+      const layers = await Promise.all(Array.from({ length: scanTo }, (_, i) => readPageLayer(pdfDoc, i + 1)));
+      const scannedShare = layers.filter((l) => l.needsOcr).length / Math.max(1, scanTo);
+      const readHybrid = makeHybridReader(pdfDoc, totalPages);
+      const mostlyScanned = scannedShare >= 0.3;
+      return {
+        success: true,
+        totalPages,
+        initialText,
+        initialPagesRead: pagesToReadInitial,
+        readPagesRange: async (a, b) => cleanArabicExtractedText((await readHybrid(a, b)).join('\n\n')),
+        readPageTexts: readHybrid,
+        ocr: mostlyScanned,
+        pagesPerBatch: mostlyScanned ? OCR_PAGES_PER_BATCH : undefined,
+      };
     }
 
     if (hasMeaningfulArabic(initialText) || initialText.length > 30) {

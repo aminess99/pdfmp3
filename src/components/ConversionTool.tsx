@@ -233,12 +233,6 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
       }
     } else {
       headPages = await session.readPageTexts(1, Math.min(session.totalPages, 30));
-      // Hardly any real pages in the opening of a long book: its pages are images with a little
-      // stamped text (ads, watermarks), so read it by OCR instead
-      const contentPages = headPages.filter((p) => classifyPage(p) === 'content').length;
-      if (file && headPages.length >= 6 && contentPages < headPages.length * 0.3) {
-        return prepareSession(await startOcrPdfSession(file), file);
-      }
     }
     let text = '';
     if (headPages.length > 0) {
