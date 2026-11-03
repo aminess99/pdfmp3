@@ -59,6 +59,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    // Recording builds only (VITE_DEMO_MODE=1, scripts/promo): "?demo=1" shows the signed-in app
+    // with a stand-in user, so the promo video can film the library and the tools. Never set
+    // on the real site.
+    if (import.meta.env.VITE_DEMO_MODE === '1') {
+      try {
+        if (new URLSearchParams(location.search).has('demo')) sessionStorage.setItem('demo_user', '1');
+        if (sessionStorage.getItem('demo_user')) {
+          setUser({ uid: 'demo', name: 'حكواتي', email: 'demo@hakawatiai.com', role: 'user' });
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // fall through to the normal sign-in
+      }
+    }
+
     // 1. Check local session fallback
     try {
       const cached = localStorage.getItem('pdf_audio_user');
