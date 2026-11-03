@@ -59,15 +59,41 @@ export function classifyPage(text: string): PageKind {
   return 'content';
 }
 
+// A page that is a list of short lines rather than paragraphs (a long table of contents
+// continues over pages that no longer carry the "المحتويات" heading)
+export function looksLikeListPage(text: string): boolean {
+  const ls = lines(text);
+  if (ls.length < 5) return false;
+  const counts = ls.map(words);
+  const avg = counts.reduce((a, b) => a + b, 0) / ls.length;
+  const shortShare = counts.filter((c) => c <= 9).length / ls.length;
+  const sentences = (text.match(/[.!](?:\s|$)/g) || []).length;
+  return avg <= 7 && shortShare >= 0.75 && sentences <= ls.length * 0.15;
+}
+
+// Kinds of consecutive pages: like classifyPage, but a list page right after a contents page
+// is more contents. `afterContents` carries the state over from the previous batch.
+export function classifySequence(pages: string[], afterContents = false): PageKind[] {
+  let prevContents = afterContents;
+  return pages.map((p) => {
+    let kind = classifyPage(p);
+    if (kind === 'content' && prevContents && looksLikeListPage(p)) kind = 'contents';
+    // Blank pages don't end a contents run; anything else decides it
+    if (kind !== 'blank') prevContents = kind === 'contents';
+    return kind;
+  });
+}
+
 // Index of the first page with real content among the first pages of a book. Prefers an
 // explicit start (introduction, chapter one); otherwise the first substantial prose page.
 export function findContentStart(pages: string[], scanLimit = 25): number {
   const n = Math.min(pages.length, scanLimit);
+  const kinds = classifySequence(pages.slice(0, n));
   for (let i = 0; i < n; i++) {
-    if (classifyPage(pages[i]) === 'content' && START_RE.test(pages[i])) return i;
+    if (kinds[i] === 'content' && START_RE.test(pages[i])) return i;
   }
   for (let i = 0; i < n; i++) {
-    if (classifyPage(pages[i]) === 'content' && words(pages[i]) >= 80) return i;
+    if (kinds[i] === 'content' && words(pages[i]) >= 80) return i;
   }
   return 0;
 }
@@ -77,6 +103,8 @@ export function findContentStart(pages: string[], scanLimit = 25): number {
 export class RunningHeadFilter {
   private counts = new Map<string, number>();
   private seenPages = 0;
+  // The last classified page was part of the contents (carried across batches)
+  afterContents = false;
 
   learn(pages: string[]): void {
     for (const p of pages) {
@@ -117,13 +145,16 @@ export function cleanPages(pages: string[], heads: RunningHeadFilter): { text: s
   heads.learn(pages);
   let skipped = 0;
   const kept: string[] = [];
-  for (const p of pages) {
-    if (classifyPage(p) !== 'content') {
+  const kinds = classifySequence(pages, heads.afterContents);
+  pages.forEach((p, i) => {
+    if (kinds[i] !== 'content') {
       skipped++;
-      continue;
+      return;
     }
     kept.push(collapseRepeats(stripFootnoteMarks(heads.strip(p))));
-  }
+  });
+  const last = [...kinds].reverse().find((k) => k !== 'blank');
+  if (last) heads.afterContents = last === 'contents';
   return { text: cleanArabicExtractedText(kept.join('\n\n')), skipped };
 }
 

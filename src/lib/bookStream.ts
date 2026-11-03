@@ -39,6 +39,9 @@ export class ChapterAssembler {
   private count: number;
   private knownLines = new Map<string, string>(); // normalized heading line -> title
   private toc: { norm: string; title: string }[] = [];
+  // Titles already used for a chapter: a heading seen again ("أفكار تستحق التذكر" after every
+  // chapter) is a recurring section, not a new chapter
+  private usedTitles = new Set<string>();
 
   constructor(private readonly jobId: string, fallbackTitle: string, existingChapters = 0, continuing = false) {
     this.title = fallbackTitle;
@@ -81,6 +84,18 @@ export class ChapterAssembler {
     return tr(partTitle(this.partNumber), partTitle(this.partNumber, false));
   }
 
+  // The contents entry a (normalized) line matches: exactly, or closely for longer names
+  // ("الفصل الأول: كنز في داخلك" vs "كنز في داخلك")
+  private tocMatch(key: string): { norm: string; title: string } | undefined {
+    if (!key) return undefined;
+    return this.toc.find(
+      (t) =>
+        t.norm === key ||
+        (t.norm.length >= 8 && key.includes(t.norm) && key.length <= t.norm.length + 20) ||
+        (key.length >= 8 && t.norm.includes(key) && key.length >= t.norm.length * 0.6)
+    );
+  }
+
   // Lines that are headings by the AI reader or by the contents page
   private lineHeadings(text: string): { index: number; fullMatch: string; title: string }[] {
     if (!this.knownLines.size && !this.toc.length) return [];
@@ -94,15 +109,11 @@ export class ChapterAssembler {
         // A heading stored backwards ("كلخدا يف زنك") matches when read the other way
         const rkey = normTitle([...trimmed].reverse().join(''));
         let title = this.knownLines.get(key) || this.knownLines.get(rkey);
+        // With a real contents list, a heading the AI reader found must be in it to be a chapter
+        if (title && this.toc.length >= 3 && !this.tocMatch(normTitle(title)) && !this.tocMatch(key) && !this.tocMatch(rkey)) title = undefined;
         if (!title && key.length >= 3) {
           // Exact match, or a close one for longer names ("الفصل الأول: كنز في داخلك" vs "كنز في داخلك")
-          const hit = this.toc.find(
-            (t) =>
-              t.norm === key ||
-              t.norm === rkey ||
-              (t.norm.length >= 8 && key.includes(t.norm) && key.length <= t.norm.length + 20) ||
-              (key.length >= 8 && t.norm.includes(key) && key.length >= t.norm.length * 0.6)
-          );
+          const hit = this.tocMatch(key) || this.tocMatch(rkey);
           if (hit) title = hit.title;
         }
         if (title) out.push({ index: pos, fullMatch: line, title });
@@ -124,6 +135,10 @@ export class ChapterAssembler {
     let carry = '';
     for (const h of heads) {
       if (h.index < cursor) continue;
+      // A title already used is a recurring section inside chapters, not a new chapter
+      const used = normTitle(h.title);
+      if (used && this.usedTitles.has(used)) continue;
+      if (used) this.usedTitles.add(used);
       const before = combined.slice(cursor, h.index).trim();
       const body = carry ? `${carry}\n\n${before}`.trim() : before;
       if (countWords(body) >= MIN_CHAPTER_WORDS) {

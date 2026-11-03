@@ -40,7 +40,7 @@ import { Dialect, Voice, AudioStyle, SampleBook, ConversionJob, BookChapter, Lis
 import { extractTextFromPDFFile, purifyTextWithAI, startOcrPdfSession, startProgressivePdfExtraction, ProgressivePdfSession, cleanArabicExtractedText } from '../lib/pdfUtils';
 import { extractTextFromEpubFile } from '../lib/epubUtils';
 import { detectArabicChapters, detectArabicChaptersWithAI, estimateDurationMinutes } from '../lib/chapterUtils';
-import { RunningHeadFilter, classifyPage, cleanPages, findContentStart } from '../lib/bookCleaner';
+import { RunningHeadFilter, classifyPage, classifySequence, cleanPages, findContentStart } from '../lib/bookCleaner';
 import { isMeaninglessName } from '../lib/bookTitle';
 import { smartFilter, smartFilterWithHeadings, FoundHeading } from '../lib/smartFilter';
 import { parseTocLines } from '../lib/chapterUtils';
@@ -285,7 +285,9 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
       // cases) and find the chapter headings; meanwhile, read the chapter names from the
       // book's contents page, if it has one
       const prep = bookPrepRef.current;
-      const contents = headPages.filter((p) => classifyPage(p) === 'contents').join('\n');
+      // All contents pages, including the ones that continue a long contents list
+      const kinds = classifySequence(headPages);
+      const contents = headPages.filter((_, i) => kinds[i] === 'contents').join('\n');
       if (text.trim()) {
         setExtractionStatusText(tr('جاري تنقية النص والتعرف على الفصول...', 'Cleaning the text and finding the chapters...'));
         const [filtered, toc] = await Promise.all([smartFilterWithHeadings(text), contents ? readTocTitles(contents) : Promise.resolve([] as string[])]);
