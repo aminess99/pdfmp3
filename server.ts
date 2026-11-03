@@ -667,6 +667,73 @@ app.post("/api/pdf/ocr-pages", async (req, res) => {
   res.json({ pages });
 });
 
+// AI editor for book text before it is read aloud (src/lib/smartFilter.ts): gets the start of
+// each paragraph and answers with the numbers of paragraphs a listener doesn't need. It only
+// selects; it never rewrites, so the book's words can't be changed.
+const FILTER_PROMPT = `أنت محرر كتب صوتية. أمامك فقرات مرقّمة من كتاب (أول كلمات كل فقرة وعدد كلماتها) سيُقرأ بصوت عالٍ لمستمع.
+حدّد أرقام الفقرات التي لا يحتاجها المستمع، مثل:
+- بيانات الناشر والطبعة والحقوق ورقم الإيداع وردمك والمطبعة وتصميم الغلاف
+- العناوين والفروع وأرقام الهواتف والبريد الإلكتروني والروابط والمواقع
+- الإعلانات عن كتب أخرى أو مواقع أو منتديات أو قنوات، وعبارات التحميل والعلامات المائية
+- الفهارس وجداول المحتويات وقوائم المراجع والمصادر وفهارس الأعلام
+- أرقام الصفحات والعناوين المتكررة أعلى الصفحات أو أسفلها، والحواشي وهوامش التوثيق
+- الأسطر المشوّهة أو غير المفهومة أو المكررة بلا معنى
+لا تحذف أي فقرة من متن الكتاب: المقدمة والتمهيد والإهداء وعناوين الفصول والفقرات والاقتباسات والأمثلة والحوار والشعر.
+عند الشك أبقِ الفقرة.
+أجب بـ JSON فقط بهذا الشكل: {"drop": [أرقام الفقرات]}، أو {"drop": []} إذا لم يكن هناك ما يُحذف.`;
+
+app.post("/api/pdf/filter-paragraphs", async (req, res) => {
+  const paragraphs: unknown = req.body?.paragraphs;
+  if (!Array.isArray(paragraphs) || paragraphs.length === 0 || paragraphs.length > 150) {
+    return res.status(400).json({ error: "paragraphs required (1-150)" });
+  }
+  const list = paragraphs
+    .map((p: any, i) => `${i + 1}. (${Number(p?.words) || 0} كلمة) ${String(p?.text ?? "").slice(0, 200).replace(/\s+/g, " ")}`)
+    .join("\n");
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!key) return res.json({ drop: [] });
+  const t0 = Date.now();
+  for (const model of [process.env.OPENROUTER_FILTER_MODEL, "google/gemini-2.5-flash-lite", "google/gemini-2.5-flash"].filter(Boolean) as string[]) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+          "X-Title": "Hakawati AI",
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          max_tokens: 800,
+          response_format: { type: "json_object" },
+          messages: [{ role: "user", content: `${FILTER_PROMPT}\n\nالفقرات:\n${list}` }],
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!r.ok) {
+        console.warn(`[filter] ${model} returned ${r.status}`);
+        continue;
+      }
+      const data: any = await r.json();
+      const content = String(data.choices?.[0]?.message?.content || "");
+      const json = JSON.parse(content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1));
+      const drop = (Array.isArray(json.drop) ? json.drop : [])
+        .map((n: unknown) => Number(n))
+        .filter((n: number) => Number.isInteger(n) && n >= 1 && n <= paragraphs.length);
+      console.log(`[filter] ${paragraphs.length} paragraphs, dropped ${drop.length} (${drop.slice(0, 20).join(",")}) via ${model}, ${Date.now() - t0} ms`);
+      return res.json({ drop });
+    } catch (err: any) {
+      console.warn(`[filter] ${model} failed:`, err?.message || err);
+    }
+  }
+  res.json({ drop: [] });
+});
+
 // Local High-Fidelity Arabic Extractive Summary Fallback (Activates if AI free quota is exceeded)
 function localExtractArabicSummary(text: string, bookTitle?: string): string {
   const cleanTitle = bookTitle 

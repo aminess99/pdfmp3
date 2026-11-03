@@ -41,6 +41,7 @@ import { extractTextFromPDFFile, purifyTextWithAI, startOcrPdfSession, startProg
 import { extractTextFromEpubFile } from '../lib/epubUtils';
 import { detectArabicChapters, detectArabicChaptersWithAI, estimateDurationMinutes } from '../lib/chapterUtils';
 import { RunningHeadFilter, classifyPage, cleanPages, findContentStart } from '../lib/bookCleaner';
+import { smartFilter } from '../lib/smartFilter';
 import { ChapterAssembler, PAGES_PER_BATCH, runBookStream } from '../lib/bookStream';
 import { audioEngine } from '../lib/audioEngine';
 import { useAuth } from '../lib/AuthContext';
@@ -238,6 +239,12 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     if (headPages.length > 0) {
       bookPrepRef.current = { headPages, heads: new RunningHeadFilter(), nextPage: 1 };
       text = applyFirstBatch(false);
+      // AI editor pass: drop what a listener doesn't need (the rules above catch the common cases)
+      if (text.trim()) {
+        setExtractionStatusText(tr('جاري تنقية النص مما لا يحتاجه المستمع...', 'Removing what a listener doesn’t need...'));
+        text = await smartFilter(text);
+        setExtractedText(text);
+      }
     } else {
       bookPrepRef.current = null;
       setSkippedFrontPages(0);
@@ -450,7 +457,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
       try {
         // A scanned book is read by OCR: cap it so one summary cannot scan hundreds of pages
         const end = session.ocr ? Math.min(session.totalPages, prep.nextPage + 119) : session.totalPages;
-        const rest = cleanPages(await session.readPageTexts(prep.nextPage, end), prep.heads).text;
+        const rest = await smartFilter(cleanPages(await session.readPageTexts(prep.nextPage, end), prep.heads).text);
         if (rest) processedText = `${extractedText}\n\n${rest}`;
       } catch (e) {
         console.warn('Reading the rest of the book failed:', e);
@@ -790,7 +797,9 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                         onClick={() => {
                           const next = !fromFirstPage;
                           setFromFirstPage(next);
-                          applyFirstBatch(next);
+                          const raw = applyFirstBatch(next);
+                          // "From page one" means everything; otherwise the editor pass applies
+                          if (!next && raw.trim()) smartFilter(raw).then((t) => setExtractedText(t));
                         }}
                         className="text-brand-soft hover:underline cursor-pointer"
                       >

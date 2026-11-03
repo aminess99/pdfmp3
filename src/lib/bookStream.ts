@@ -2,6 +2,7 @@ import type { BookChapter, ConversionJob } from '../types';
 import { findChapterHeadings, estimateDurationMinutes } from './chapterUtils';
 import { RunningHeadFilter, cleanPages } from './bookCleaner';
 import { saveBookToServer } from './library';
+import { smartFilter } from './smartFilter';
 import { tr } from './i18n';
 
 // Reads a long PDF in the background while the listener is already in the studio: the first
@@ -175,7 +176,7 @@ export async function runBookStream(opts: {
       }
       const end = Math.min(totalPages, page + (opts.batchSize || PAGES_PER_BATCH) - 1);
       const pages = await readPageTexts(page, end);
-      const { text } = cleanPages(pages, heads);
+      const text = await smartFilter(cleanPages(pages, heads).text);
       page = end + 1;
       const added = assembler.push(text);
       if (page > totalPages) added.push(...assembler.flush());
