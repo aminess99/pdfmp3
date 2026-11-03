@@ -269,8 +269,11 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
       const step = session.pagesPerBatch || 12;
       while (headPages.length < Math.min(session.totalPages, 36)) {
         const from = headPages.length + 1;
-        headPages.push(...(await session.readPageTexts(from, Math.min(session.totalPages, from + step - 1))));
-        setExtractionProgress(Math.min(90, 15 + headPages.length * 2));
+        const to = Math.min(session.totalPages, from + step - 1);
+        setExtractionStatusText(tr(`كتاب مصوّر: جاري المسح الضوئي للصفحات ${from}–${to} من ${session.totalPages}...`, `Scanned book: scanning pages ${from}–${to} of ${session.totalPages}...`));
+        setExtractionProgress(Math.min(70, 10 + headPages.length * 2));
+        headPages.push(...(await session.readPageTexts(from, to)));
+        setExtractionProgress(Math.min(75, 15 + headPages.length * 2));
         if (extractionCancelledRef.current) return;
         const start = findContentStart(headPages);
         const words = headPages.slice(start).join(' ').split(/\s+/).filter(Boolean).length;
@@ -296,6 +299,22 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         text = filtered.text;
         prep.headings = filtered.headings;
         prep.toc = toc;
+        setExtractedText(text);
+      }
+      // The opening pages can be nearly all front matter (cover, branches, a long contents):
+      // count what is left after cleaning, and read on until there is real text to start with
+      const MIN_START_WORDS = 260; // about two minutes of listening
+      prep.headings = prep.headings || [];
+      for (let tries = 0; tries < 3 && text.split(/\s+/).filter(Boolean).length < MIN_START_WORDS && prep.nextPage <= session.totalPages; tries++) {
+        if (extractionCancelledRef.current) return;
+        const from = prep.nextPage;
+        const to = Math.min(session.totalPages, from + (session.pagesPerBatch || PAGES_PER_BATCH) - 1);
+        setExtractionStatusText(tr(`جاري قراءة الصفحات ${from}–${to} من ${session.totalPages}...`, `Reading pages ${from}–${to} of ${session.totalPages}...`));
+        setExtractionProgress(Math.min(90, 75 + tries * 5));
+        const more = await smartFilterWithHeadings(cleanPages(await session.readPageTexts(from, to), prep.heads).text);
+        prep.headings.push(...more.headings);
+        prep.nextPage = to + 1;
+        if (more.text.trim()) text = text.trim() ? `${text}\n\n${more.text}` : more.text;
         setExtractedText(text);
       }
     } else {
