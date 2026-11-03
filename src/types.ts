@@ -88,6 +88,8 @@ export interface ConversionJob {
   skippedFrontPages?: number;
   // Scanned book read by OCR as the listener goes (lib/bookStream.ts lazy mode)
   scannedBook?: boolean;
+  // Chapter names from the book's contents page (shown as the chapters still to come)
+  tocTitles?: string[];
 }
 
 export interface Testimonial {

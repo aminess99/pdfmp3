@@ -32,7 +32,7 @@ export const collapseRepeats = (t: string): string =>
 // Very few distinct words for its length: a repetition loop or a list, not prose
 function lowVariety(text: string): boolean {
   const ws = text.split(/\s+/).filter(Boolean);
-  return ws.length >= 40 && new Set(ws).size / ws.length < 0.3;
+  return ws.length >= 40 && new Set(ws).size / ws.length < 0.15;
 }
 
 export type PageKind = 'content' | 'blank' | 'imprint' | 'contents' | 'ads';

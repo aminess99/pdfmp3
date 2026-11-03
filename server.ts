@@ -542,7 +542,8 @@ const OCR_PAGES_PROMPT = `أمامك صور صفحات متتالية من كت�
 - لا تكتب: أرقام الصفحات، ولا العنوان أو اسم المؤلف المكرر أعلى الصفحة أو أسفلها، ولا أرقام الحواشي داخل النص مثل (1).
 - الحواشي في أسفل الصفحة لا تكتبها.
 - تجاهل العلامات المائية والأختام المكررة على الصفحات: روابط المواقع والمنتديات، وعبارات مثل "حصريات" أو "تحميل" أو اسم من رفع الكتاب.
-- إذا كانت الصفحة غلافاً، أو صفحة حقوق وطباعة ونشر، أو فهرساً، أو إعلاناً عن كتب أخرى، أو قائمة فروع وعناوين وأرقام هواتف، أو فارغة، أو صورة بلا نص؛ فاتركها فارغة (لا تكتب شيئاً بين الفاصلين).
+- اكتب صفحة الفهرس (المحتويات) كما هي بعنوانها "المحتويات" أو "الفهرس" (نستخدمها لأسماء الفصول ولن تُقرأ للمستمع).
+- إذا كانت الصفحة غلافاً، أو صفحة حقوق وطباعة ونشر، أو إعلاناً عن كتب أخرى، أو قائمة فروع وعناوين وأرقام هواتف، أو فارغة، أو صورة بلا نص؛ فاتركها فارغة (لا تكتب شيئاً بين الفاصلين).
 - لا تكرر أي كلمة أو سطر أكثر مما هو مكتوب فعلاً في الصفحة.
 - اكتب العناوين (مثل الفصل الأول أو المقدمة) كل عنوان في سطر مستقل.
 - أخرج النص فقط، دون أي تعليق منك.`;
@@ -680,7 +681,8 @@ const FILTER_PROMPT = `أنت محرر كتب صوتية. أمامك فقرات 
 - الأسطر المشوّهة أو غير المفهومة أو المكررة بلا معنى
 لا تحذف أي فقرة من متن الكتاب: المقدمة والتمهيد والإهداء وعناوين الفصول والفقرات والاقتباسات والأمثلة والحوار والشعر.
 عند الشك أبقِ الفقرة.
-أجب بـ JSON فقط بهذا الشكل: {"drop": [أرقام الفقرات]}، أو {"drop": []} إذا لم يكن هناك ما يُحذف.`;
+وحدّد أيضاً الفقرات التي هي عنوان فصل أو باب أو قسم رئيسي في الكتاب (فقرة قصيرة هي العنوان وحده، مثل "الفصل الأول: كنز في داخلك" أو "كيف يعمل عقلك")، مع اسم الفصل كما هو مكتوب. لا تعدّ العناوين الفرعية الصغيرة داخل الفصل، ولا أسطر الفهرس، ولا العنوان المكرر أعلى الصفحات.
+أجب بـ JSON فقط بهذا الشكل: {"drop": [أرقام الفقرات المحذوفة], "headings": [{"n": رقم الفقرة, "title": "اسم الفصل"}]}، واترك أي قائمة فارغة إذا لم يوجد ما يناسبها.`;
 
 app.post("/api/pdf/filter-paragraphs", async (req, res) => {
   const paragraphs: unknown = req.body?.paragraphs;
@@ -708,7 +710,7 @@ app.post("/api/pdf/filter-paragraphs", async (req, res) => {
         body: JSON.stringify({
           model,
           temperature: 0,
-          max_tokens: 800,
+          max_tokens: 1500,
           response_format: { type: "json_object" },
           messages: [{ role: "user", content: `${FILTER_PROMPT}\n\nالفقرات:\n${list}` }],
         }),
@@ -725,13 +727,60 @@ app.post("/api/pdf/filter-paragraphs", async (req, res) => {
       const drop = (Array.isArray(json.drop) ? json.drop : [])
         .map((n: unknown) => Number(n))
         .filter((n: number) => Number.isInteger(n) && n >= 1 && n <= paragraphs.length);
-      console.log(`[filter] ${paragraphs.length} paragraphs, dropped ${drop.length} (${drop.slice(0, 20).join(",")}) via ${model}, ${Date.now() - t0} ms`);
-      return res.json({ drop });
+      const headings = (Array.isArray(json.headings) ? json.headings : [])
+        .map((h: any) => ({ n: Number(h?.n), title: String(h?.title ?? "").trim().slice(0, 120) }))
+        .filter((h: { n: number; title: string }) => Number.isInteger(h.n) && h.n >= 1 && h.n <= paragraphs.length && h.title && !drop.includes(h.n));
+      console.log(`[filter] ${paragraphs.length} paragraphs, dropped ${drop.length} (${drop.slice(0, 20).join(",")}), headings ${headings.length} via ${model}, ${Date.now() - t0} ms`);
+      return res.json({ drop, headings });
     } catch (err: any) {
       console.warn(`[filter] ${model} failed:`, err?.message || err);
     }
   }
-  res.json({ drop: [] });
+  res.json({ drop: [], headings: [] });
+});
+
+// The book's own chapter names from its contents page(s) (src/components/ConversionTool.tsx):
+// shown in the studio as the chapters still to come, and used to recognise headings in the text
+app.post("/api/pdf/toc", async (req, res) => {
+  const text = String(req.body?.text ?? "").slice(0, 8000);
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!text.trim() || !key) return res.json({ chapters: [] });
+  const prompt = `هذا نص صفحة الفهرس (المحتويات) من كتاب. استخرج عناوين فصوله وأبوابه بالترتيب كما هي مكتوبة، دون أرقام الصفحات ودون النقاط الفاصلة. تجاهل ما ليس فصلاً (مثل كلمة "المحتويات" نفسها). إذا لم يكن النص فهرساً فأرجع قائمة فارغة.
+أجب بـ JSON فقط: {"chapters": ["العنوان الأول", "العنوان الثاني"]}
+
+النص:
+${text}`;
+  for (const model of ["google/gemini-2.5-flash", "google/gemini-2.5-flash-lite"]) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+          "X-Title": "Hakawati AI",
+        },
+        body: JSON.stringify({ model, temperature: 0, max_tokens: 2000, response_format: { type: "json_object" }, messages: [{ role: "user", content: prompt }] }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!r.ok) continue;
+      const data: any = await r.json();
+      const content = String(data.choices?.[0]?.message?.content || "");
+      const json = JSON.parse(content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1));
+      const chapters = (Array.isArray(json.chapters) ? json.chapters : [])
+        .map((t: unknown) => String(t ?? "").trim().slice(0, 120))
+        .filter(Boolean)
+        .slice(0, 80);
+      console.log(`[toc] ${chapters.length} chapters via ${model}`);
+      return res.json({ chapters });
+    } catch (err: any) {
+      console.warn(`[toc] ${model} failed:`, err?.message || err);
+    }
+  }
+  res.json({ chapters: [] });
 });
 
 // Local High-Fidelity Arabic Extractive Summary Fallback (Activates if AI free quota is exceeded)

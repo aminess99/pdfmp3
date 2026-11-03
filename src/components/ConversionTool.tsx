@@ -41,7 +41,8 @@ import { extractTextFromPDFFile, purifyTextWithAI, startOcrPdfSession, startProg
 import { extractTextFromEpubFile } from '../lib/epubUtils';
 import { detectArabicChapters, detectArabicChaptersWithAI, estimateDurationMinutes } from '../lib/chapterUtils';
 import { RunningHeadFilter, classifyPage, cleanPages, findContentStart } from '../lib/bookCleaner';
-import { smartFilter } from '../lib/smartFilter';
+import { smartFilter, smartFilterWithHeadings, FoundHeading } from '../lib/smartFilter';
+import { parseTocLines } from '../lib/chapterUtils';
 import { ChapterAssembler, PAGES_PER_BATCH, runBookStream } from '../lib/bookStream';
 import { audioEngine } from '../lib/audioEngine';
 import { useAuth } from '../lib/AuthContext';
@@ -60,6 +61,21 @@ import { saveBookToServer } from '../lib/library';
 // "320 KB" under a megabyte, "2.4 MB" above it
 const formatFileSize = (bytes: number): string =>
   bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+// The book's chapter names from its contents page: the AI reader first, simple line parsing if
+// it is unavailable
+async function readTocTitles(contents: string): Promise<string[]> {
+  try {
+    const res = await apiFetch('/api/pdf/toc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: contents }) }, { silent: true });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.chapters) && data.chapters.length) return data.chapters.map(String);
+    }
+  } catch {
+    // fall through to the line parser
+  }
+  return parseTocLines(contents);
+}
 
 interface ConversionToolProps {
   onConversionStart: (job: ConversionJob) => void;
@@ -141,7 +157,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   const progressiveSessionRef = useRef<ProgressivePdfSession | null>(null);
   // Long PDFs: the first pages read on upload, where the content starts, and what the
   // background reader (lib/bookStream.ts) picks up after the first batch
-  const bookPrepRef = useRef<{ headPages: string[]; heads: RunningHeadFilter; nextPage: number } | null>(null);
+  const bookPrepRef = useRef<{ headPages: string[]; heads: RunningHeadFilter; nextPage: number; headings?: FoundHeading[]; toc?: string[] } | null>(null);
   const [skippedFrontPages, setSkippedFrontPages] = useState(0);
   const [fromFirstPage, setFromFirstPage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -239,10 +255,17 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     if (headPages.length > 0) {
       bookPrepRef.current = { headPages, heads: new RunningHeadFilter(), nextPage: 1 };
       text = applyFirstBatch(false);
-      // AI editor pass: drop what a listener doesn't need (the rules above catch the common cases)
+      // AI editor pass: drop what a listener doesn't need (the rules above catch the common
+      // cases) and find the chapter headings; meanwhile, read the chapter names from the
+      // book's contents page, if it has one
+      const prep = bookPrepRef.current;
+      const contents = headPages.filter((p) => classifyPage(p) === 'contents').join('\n');
       if (text.trim()) {
-        setExtractionStatusText(tr('جاري تنقية النص مما لا يحتاجه المستمع...', 'Removing what a listener doesn’t need...'));
-        text = await smartFilter(text);
+        setExtractionStatusText(tr('جاري تنقية النص والتعرف على الفصول...', 'Cleaning the text and finding the chapters...'));
+        const [filtered, toc] = await Promise.all([smartFilterWithHeadings(text), contents ? readTocTitles(contents) : Promise.resolve([] as string[])]);
+        text = filtered.text;
+        prep.headings = filtered.headings;
+        prep.toc = toc;
         setExtractedText(text);
       }
     } else {
@@ -554,7 +577,17 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
             const prep = bookPrepRef.current;
             const stream =
               listeningMode === 'full' && !targetChapter && inputMode === 'pdf' && selectedFile && session && prep
-                ? { session, prep, more: prep.nextPage <= session.totalPages, assembler: new ChapterAssembler(jobId, tr('بداية الكتاب', 'Beginning')) }
+                ? {
+                    session,
+                    prep,
+                    more: prep.nextPage <= session.totalPages,
+                    assembler: (() => {
+                      const a = new ChapterAssembler(jobId, tr('بداية الكتاب', 'Beginning'));
+                      a.setToc(prep.toc || []);
+                      a.addHeadings(prep.headings || []);
+                      return a;
+                    })(),
+                  }
                 : null;
             if (stream) {
               const first = [...stream.assembler.push(activeText), ...(stream.more ? stream.assembler.cut() : stream.assembler.flush())];
@@ -614,6 +647,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                     nextPageToRead: stream.prep.nextPage,
                     skippedFrontPages: skippedFrontPages,
                     scannedBook: stream.session.ocr || undefined,
+                    tocTitles: stream.prep.toc?.length ? stream.prep.toc : undefined,
                     isStreamingBackground: stream.more,
                   }
                 : {}),
@@ -799,7 +833,11 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                           setFromFirstPage(next);
                           const raw = applyFirstBatch(next);
                           // "From page one" means everything; otherwise the editor pass applies
-                          if (!next && raw.trim()) smartFilter(raw).then((t) => setExtractedText(t));
+                          if (!next && raw.trim())
+                            smartFilterWithHeadings(raw).then((f) => {
+                              if (bookPrepRef.current) bookPrepRef.current.headings = f.headings;
+                              setExtractedText(f.text);
+                            });
                         }}
                         className="text-brand-soft hover:underline cursor-pointer"
                       >

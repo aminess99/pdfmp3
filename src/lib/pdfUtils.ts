@@ -101,10 +101,19 @@ const reverseLine = (line: string): string =>
 const COMMON_LA_ENDINGS = /^(?:[وف]?(?:مثلا|أولا|اولا|طويلا|قليلا|فعلا|أصلا|اصلا|كلا|إلا|الا|ألا|جميلا|سهلا|مستقبلا|سبيلا|دليلا|بديلا|ليلا|عملا|أملا|حلا|شكلا|قبلا|تفصيلا|تحليلا|مقابلا|كاملا|شاملا|عاجلا))[.,:؛،]?$/;
 
 // Reversed Arabic shows the article "ال" at word ends ("لا") far more often than at word starts
+// Short function words, as written and as they read when reversed
+const FORWARD_WORDS = new Set(['في', 'من', 'على', 'إلى', 'الى', 'عن', 'أن', 'إن', 'مع', 'لا', 'ما', 'هو', 'هي']);
+const REVERSED_WORDS = new Set(['يف', 'نم', 'ىلع', 'ىلإ', 'ىلا', 'نع', 'نأ', 'نإ', 'عم', 'وه', 'يه']);
+
 const looksReversed = (line: string): boolean => {
-  const words = line.split(/\s+/);
-  const forward = words.filter((w) => /^(?:ال|وال|بال|فال|لل)/.test(w)).length;
-  const backward = words.filter((w) => w.length > 2 && /لا$/.test(w) && !COMMON_LA_ENDINGS.test(w)).length;
+  const words = line.split(/\s+/).map((w) => w.replace(/[.,:؛،!?؟()«»"]/g, '')).filter(Boolean);
+  const forward =
+    words.filter((w) => /^(?:ال|وال|بال|فال|لل)/.test(w)).length + words.filter((w) => FORWARD_WORDS.has(w)).length;
+  const backward =
+    words.filter((w) => w.length > 2 && /لا$/.test(w) && !COMMON_LA_ENDINGS.test(w)).length +
+    words.filter((w) => REVERSED_WORDS.has(w)).length +
+    // ة and ى only ever end an Arabic word, so a word starting with them is reversed
+    words.filter((w) => /^[ةى]/.test(w)).length;
   // Short lines (headings) rarely have two article words, so one is enough there
   return backward > forward * 2 && (backward >= 2 || words.length <= 4);
 };
@@ -308,6 +317,14 @@ function realArabicWords(text: string): number {
 const FORUM_AD_RE = /اضغط\s+هنا|انقر\s+هنا|لتحميل|للتحميل|تحميل\s+(?:كتب|المزيد)|منتدى|منتديات|الفيسبوك|فيسبوك|فيس\s+بوك|تليجرام|تلغرام|قناتنا|حصريات|زوروا|موقعنا/g;
 export const looksLikeForumAd = (text: string): boolean => (text.match(FORUM_AD_RE) || []).length >= 2;
 
+// Mostly single Arabic letters separated by spaces: an unusable text layer
+function looksGarbled(text: string): boolean {
+  const toks = text.split(/\s+/).filter((t) => /[\u0600-\u06FF\uFB50-\uFEFF]/.test(t));
+  if (toks.length < 15) return false;
+  const singles = toks.filter((t) => t.replace(/[^\u0600-\u06FF\uFB50-\uFEFF]/g, '').length === 1).length;
+  return singles / toks.length > 0.5;
+}
+
 // ---- Progressive OCR for scanned books ----
 // Pages are rendered to JPEG in the browser and sent a few at a time to /api/pdf/ocr-pages,
 // so a 300-page scan costs only the pages that are actually listened to.
@@ -410,6 +427,9 @@ async function readPageLayer(pdfDoc: any, n: number): Promise<{ text: string; ne
   try {
     const page = await pdfDoc.getPage(n);
     const text = pageItemsToText((await page.getTextContent()).items) || '';
+    // A broken text layer (letters stored one by one: "ة ظ و ف ح م"), common in Arabic PDFs
+    // with bad fonts: the page has to be read from its image
+    if (looksGarbled(text)) return { text: '', needsOcr: true };
     // Real text, or a digital forum ad page (dropped later): no OCR needed
     if (realArabicWords(text) >= MIN_TEXT_WORDS || looksLikeForumAd(text)) return { text, needsOcr: false };
     const ops = await page.getOperatorList();

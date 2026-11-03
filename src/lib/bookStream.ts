@@ -1,8 +1,8 @@
 import type { BookChapter, ConversionJob } from '../types';
-import { findChapterHeadings, estimateDurationMinutes } from './chapterUtils';
+import { findChapterHeadings, estimateDurationMinutes, normTitle, partTitle, nextPartTitle } from './chapterUtils';
 import { RunningHeadFilter, cleanPages } from './bookCleaner';
 import { saveBookToServer } from './library';
-import { smartFilter } from './smartFilter';
+import { smartFilterWithHeadings, FoundHeading } from './smartFilter';
 import { tr } from './i18n';
 
 // Reads a long PDF in the background while the listener is already in the studio: the first
@@ -26,17 +26,38 @@ export interface BookStreamUpdate {
 
 const countWords = (t: string) => t.split(/\s+/).filter(Boolean).length;
 
-// Turns a stream of text into chapters at the book's own headings
+// Turns a stream of text into chapters at the book's own headings: the usual "الفصل الأول"
+// patterns, headings the AI reader found (lib/smartFilter.ts), and the names from the book's
+// contents page. Text too short to stand alone is carried into the next chapter.
+const MIN_CHAPTER_WORDS = 40;
+
 export class ChapterAssembler {
   private buffer = '';
   private title: string;
   private sawHeading = false;
   private partNumber = 1;
   private count: number;
+  private knownLines = new Map<string, string>(); // normalized heading line -> title
+  private toc: { norm: string; title: string }[] = [];
 
-  constructor(private readonly jobId: string, fallbackTitle: string, existingChapters = 0) {
+  constructor(private readonly jobId: string, fallbackTitle: string, existingChapters = 0, continuing = false) {
     this.title = fallbackTitle;
     this.count = existingChapters;
+    // Resuming inside a chapter: its next parts keep numbering from the given title
+    this.sawHeading = continuing;
+  }
+
+  // Headings the AI reader found in text about to be pushed
+  addHeadings(list: FoundHeading[]): void {
+    for (const h of list) {
+      const key = normTitle(h.line);
+      if (key) this.knownLines.set(key, h.title);
+    }
+  }
+
+  // Chapter names from the book's contents page
+  setToc(titles: string[]): void {
+    this.toc = titles.map((t) => ({ norm: normTitle(t), title: t })).filter((t) => t.norm.length >= 3);
   }
 
   private make(title: string, text: string): BookChapter {
@@ -55,7 +76,40 @@ export class ChapterAssembler {
 
   // Title for text that continues the current chapter after it was cut
   private continuationTitle(): string {
-    return this.sawHeading ? tr(`${this.title} (تابع)`, `${this.title} (continued)`) : tr(`الجزء ${++this.partNumber}`, `Part ${++this.partNumber}`);
+    if (this.sawHeading) return nextPartTitle(this.title);
+    this.partNumber++;
+    return tr(partTitle(this.partNumber), partTitle(this.partNumber, false));
+  }
+
+  // Lines that are headings by the AI reader or by the contents page
+  private lineHeadings(text: string): { index: number; fullMatch: string; title: string }[] {
+    if (!this.knownLines.size && !this.toc.length) return [];
+    const out: { index: number; fullMatch: string; title: string }[] = [];
+    let pos = 0;
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      const words = trimmed ? trimmed.split(/\s+/).length : 0;
+      if (words >= 1 && words <= 14) {
+        const key = normTitle(trimmed);
+        // A heading stored backwards ("كلخدا يف زنك") matches when read the other way
+        const rkey = normTitle([...trimmed].reverse().join(''));
+        let title = this.knownLines.get(key) || this.knownLines.get(rkey);
+        if (!title && key.length >= 3) {
+          // Exact match, or a close one for longer names ("الفصل الأول: كنز في داخلك" vs "كنز في داخلك")
+          const hit = this.toc.find(
+            (t) =>
+              t.norm === key ||
+              t.norm === rkey ||
+              (t.norm.length >= 8 && key.includes(t.norm) && key.length <= t.norm.length + 20) ||
+              (key.length >= 8 && t.norm.includes(key) && key.length >= t.norm.length * 0.6)
+          );
+          if (hit) title = hit.title;
+        }
+        if (title) out.push({ index: pos, fullMatch: line, title });
+      }
+      pos += line.length + 1;
+    }
+    return out;
   }
 
   // Adds text; returns the chapters completed by it
@@ -63,18 +117,29 @@ export class ChapterAssembler {
     if (!text.trim()) return [];
     const out: BookChapter[] = [];
     const combined = this.buffer ? `${this.buffer}\n\n${text}` : text;
-    const heads = findChapterHeadings(combined);
+    // Pattern headings and found headings, in order, without overlaps
+    const heads = [...findChapterHeadings(combined), ...this.lineHeadings(combined)].sort((a, b) => a.index - b.index);
     let cursor = 0;
     let title = this.title;
+    let carry = '';
     for (const h of heads) {
+      if (h.index < cursor) continue;
       const before = combined.slice(cursor, h.index).trim();
-      if (countWords(before) >= 20) out.push(this.make(title, before));
+      const body = carry ? `${carry}\n\n${before}`.trim() : before;
+      if (countWords(body) >= MIN_CHAPTER_WORDS) {
+        out.push(this.make(title, body));
+        carry = '';
+      } else {
+        // Too short to stand alone (an epigraph, a part title page): goes into the next chapter
+        carry = body;
+      }
       title = h.title;
       this.sawHeading = true;
       cursor = h.index + h.fullMatch.length;
     }
     this.title = title;
-    this.buffer = combined.slice(cursor).trim();
+    const rest = combined.slice(cursor).trim();
+    this.buffer = carry ? `${carry}\n\n${rest}`.trim() : rest;
     if (countWords(this.buffer) > MAX_CHAPTER_WORDS) {
       out.push(this.make(this.title, this.buffer));
       this.buffer = '';
@@ -83,7 +148,7 @@ export class ChapterAssembler {
     return out;
   }
 
-  // Emits whatever is buffered now; text that follows continues under a "(continued)" title
+  // Emits whatever is buffered now; text that follows continues as the chapter's next part
   cut(): BookChapter[] {
     if (countWords(this.buffer) < 1) return [];
     const ch = this.make(this.title, this.buffer);
@@ -176,7 +241,9 @@ export async function runBookStream(opts: {
       }
       const end = Math.min(totalPages, page + (opts.batchSize || PAGES_PER_BATCH) - 1);
       const pages = await readPageTexts(page, end);
-      const text = await smartFilter(cleanPages(pages, heads).text);
+      const filtered = await smartFilterWithHeadings(cleanPages(pages, heads).text);
+      assembler.addHeadings(filtered.headings);
+      const text = filtered.text;
       page = end + 1;
       const added = assembler.push(text);
       if (page > totalPages) added.push(...assembler.flush());

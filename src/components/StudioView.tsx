@@ -35,6 +35,7 @@ import { toast } from '../lib/toast';
 import { createShare, shareUrl } from '../lib/shares';
 import { ChatPdfModal } from './ChatPdfModal';
 import { chaptersAr, minutesAr } from '../lib/arabicPlural';
+import { normTitle, nextPartTitle } from '../lib/chapterUtils';
 import { voiceLabel, voiceInitial, genderLabel, dialectLabel } from '../lib/voiceLabel';
 import { tr, DIR } from '../lib/i18n';
 import { VoiceOptionGroups, groupVoicesByDialect } from './VoiceOptions';
@@ -248,7 +249,9 @@ export const StudioView: React.FC<StudioViewProps> = ({
       }
       const list = job.chapters || [];
       const last = list[list.length - 1];
-      const assembler = new ChapterAssembler(job.id, last ? tr(`${last.title} (تابع)`, `${last.title} (continued)`) : tr('بداية الكتاب', 'Beginning'), list.length);
+      // Resuming inside the last chapter: its next part is "<name> (2)", "(3)"...
+      const assembler = new ChapterAssembler(job.id, last ? nextPartTitle(last.title) : tr('بداية الكتاب', 'Beginning'), list.length, Boolean(last));
+      assembler.setToc(job.tocTitles || []);
       window.dispatchEvent(
         new CustomEvent<BookStreamUpdate>(BOOK_STREAM_EVENT, {
           detail: { jobId: job.id, chapters: list, nextPageToRead: job.nextPageToRead!, totalPages: job.totalPages, done: false },
@@ -677,6 +680,23 @@ export const StudioView: React.FC<StudioViewProps> = ({
     setShowSleepMenu(false);
   };
 
+  // Chapters from the book's contents page that aren't ready yet (only while pages remain)
+  const upcomingChapters = useMemo(() => {
+    const toc = job.tocTitles || [];
+    if (!toc.length || !(job.nextPageToRead && job.nextPageToRead <= job.totalPages)) return [];
+    const ready = (chapters || []).map((c) => normTitle(c.title.replace(/\s*\(\d+\)\s*$/, '')));
+    const isReady = (t: string) => {
+      const n = normTitle(t);
+      return ready.some((r) => r === n || (n.length >= 8 && (r.includes(n) || n.includes(r)) && r.length >= 4));
+    };
+    // Everything after the last contents entry that is already ready
+    let lastReady = -1;
+    toc.forEach((t, i) => {
+      if (isReady(t)) lastReady = i;
+    });
+    return toc.slice(lastReady + 1).slice(0, 40);
+  }, [job.tocTitles, job.nextPageToRead, job.totalPages, chapters]);
+
   const chapterList = (
     <>
       <div className="text-[13px] text-slate-400 px-2 pb-2">{tr("الفصول", "Chapters")}</div>
@@ -714,6 +734,19 @@ export const StudioView: React.FC<StudioViewProps> = ({
           </button>
         );
       })}
+      {upcomingChapters.length > 0 && (
+        <div className="mt-1" aria-label={tr('فصول قادمة', 'Coming chapters')}>
+          {upcomingChapters.map((t, i) => (
+            <div key={`${i}-${t}`} className="w-full min-h-[44px] flex items-center justify-between gap-2 px-3 text-[15px] text-slate-500">
+              <span className="flex items-center gap-2.5 min-w-0">
+                <span className="w-4 h-4 rounded-full border-2 border-slate-700 shrink-0" aria-hidden="true" />
+                <span className="truncate">{t}</span>
+              </span>
+              <span className="text-[12px] shrink-0">{tr('قيد التجهيز', 'Coming')}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {job.isStreamingBackground ? (
         <div role="status" className="mt-3 p-3.5 rounded-xl bg-card text-[13px] text-slate-400 flex flex-col gap-2">
           <span>

@@ -247,3 +247,44 @@ export async function detectArabicChaptersWithAI(
     isOriginalTOC: false,
   };
 }
+
+// ---- Chapter names (lib/bookStream.ts ChapterAssembler, the studio's chapter list)
+
+// A title reduced to its letters and digits, so "الفصلُ الأول: كنزٌ في داخلك" matches "الفصل الأول - كنز في داخلك"
+export const normTitle = (s: string): string =>
+  String(s || '')
+    .replace(/[ً-ٰٟـ]/g, '')
+    .replace(/[إأآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+const AR_ORDINALS = ['الأول', 'الثاني', 'الثالث', 'الرابع', 'الخامس', 'السادس', 'السابع', 'الثامن', 'التاسع', 'العاشر', 'الحادي عشر', 'الثاني عشر', 'الثالث عشر', 'الرابع عشر', 'الخامس عشر', 'السادس عشر', 'السابع عشر', 'الثامن عشر', 'التاسع عشر', 'العشرون'];
+// "الجزء الثاني" for parts of a book without headings
+export const partTitle = (n: number, ar = true): string => (ar ? `الجزء ${AR_ORDINALS[n - 1] || n}` : `Part ${n}`);
+
+// The next part of a chapter that was cut for length: "كنز في داخلك" -> "كنز في داخلك (2)" -> "(3)"
+export function nextPartTitle(title: string): string {
+  const m = title.match(/^(.*?)\s*\((\d+)\)\s*$/);
+  if (m) return `${m[1]} (${Number(m[2]) + 1})`;
+  return `${title.replace(/\s*\((?:تابع|continued)\)\s*$/, '')} (2)`;
+}
+
+// Chapter names from contents-page text when the AI reader is unavailable: lines that end in
+// a page number, without the dot leaders
+export function parseTocLines(text: string): string[] {
+  const out: string[] = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    const m = line.match(/^(.*?)[\s.…·_\-–]*([0-9٠-٩]{1,4})\s*$/);
+    if (!m) continue;
+    const title = m[1].replace(/[.…·_]{2,}/g, ' ').replace(/\s+/g, ' ').trim();
+    const words = title.split(' ').length;
+    if (words < 1 || words > 14 || /^(المحتويات|الفهرس|فهرس المحتويات)$/.test(title)) continue;
+    out.push(title);
+  }
+  return out.slice(0, 80);
+}
