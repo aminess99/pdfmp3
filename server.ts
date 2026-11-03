@@ -588,7 +588,11 @@ app.post("/api/pdf/ocr-pages", async (req, res) => {
   }
   const valid = images.map((u) => (typeof u === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(u) && u.length < 4_000_000 ? u : ""));
   const present = valid.filter(Boolean);
-  if (present.length === 0) return res.json({ pages: valid.map(() => "") });
+  if (present.length < images.length) {
+    console.warn(`[OCR] ${images.length - present.length} of ${images.length} page images rejected (sizes: ${images.map((u) => (typeof u === "string" ? u.length : 0)).join(",")})`);
+  }
+  // Every image was unusable: say so instead of returning blank pages that look like a read
+  if (present.length === 0) return res.status(422).json({ error: "صور الصفحات غير صالحة للمسح الضوئي." });
 
   // A reply with almost no text for a whole group of pages is a failed read (some models
   // answer empty in a second), not blank pages: try the next model

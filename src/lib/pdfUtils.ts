@@ -310,8 +310,9 @@ export const OCR_PAGES_PER_BATCH = OCR_PAGES_PER_REQUEST * OCR_PARALLEL_REQUESTS
 async function renderPageJpeg(pdfDoc: any, pageNumber: number): Promise<string> {
   const page = await pdfDoc.getPage(pageNumber);
   const base = page.getViewport({ scale: 1 });
-  // About 1400px wide: sharp enough for Arabic diacritics, small enough to upload quickly
-  const scale = Math.min(2.5, Math.max(1, 1400 / base.width));
+  // About 1400px wide (and at most 2200px tall): sharp enough for Arabic diacritics, small
+  // enough to upload. Scans often have huge page sizes, so the scale may go well below 1.
+  const scale = Math.min(2.5, 1400 / base.width, 2200 / base.height);
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement('canvas');
   canvas.width = Math.floor(viewport.width);
@@ -320,7 +321,12 @@ async function renderPageJpeg(pdfDoc: any, pageNumber: number): Promise<string> 
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   await page.render({ canvasContext: ctx, viewport } as any).promise;
-  const url = canvas.toDataURL('image/jpeg', 0.72);
+  let url = canvas.toDataURL('image/jpeg', 0.72);
+  // A noisy scan can still be heavy: shrink the quality until it uploads comfortably
+  for (const q of [0.55, 0.4]) {
+    if (url.length <= 1_500_000) break;
+    url = canvas.toDataURL('image/jpeg', q);
+  }
   canvas.width = canvas.height = 0;
   page.cleanup?.();
   return url;
@@ -349,7 +355,7 @@ async function ocrPageGroup(pdfDoc: any, pages: number[]): Promise<string[]> {
           return pages.map((_, i) => normalizeArabicPdfText(String(data.pages[i] || '')));
         }
       }
-      if (res.status === 401 || res.status === 403) break;
+      if (res.status === 401 || res.status === 403 || res.status === 422) break;
     } catch (err) {
       console.warn('OCR request error:', err);
     }

@@ -253,6 +253,10 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     // Nothing readable page by page (a damaged PDF the browser can't page through, or only
     // ad pages): send the whole file to the server's deep scan instead
     if (!text.trim() && file) {
+      // The whole-file scan sends the file in one request: only sensible for small files
+      if (file.size > 15 * 1024 * 1024) {
+        throw new Error(tr('لم نتمكن من قراءة صفحات هذا الكتاب. جرّب "المسح العميق"، أو ملفاً آخر للكتاب نفسه.', 'We couldn’t read this book’s pages. Try the deep scan, or another file of the same book.'));
+      }
       setExtractionStatusText(tr('جاري المسح العميق للملف كاملاً، قد يستغرق دقيقة...', 'Deep-scanning the whole file, this can take a minute...'));
       setExtractionProgress(30);
       const whole = await extractTextFromPDFFile(file, (pct) => setExtractionProgress(pct), true);
