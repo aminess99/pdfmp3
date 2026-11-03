@@ -693,7 +693,7 @@ app.post("/api/pdf/filter-paragraphs", async (req, res) => {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return res.json({ drop: [] });
   const t0 = Date.now();
-  for (const model of [process.env.OPENROUTER_FILTER_MODEL, "google/gemini-2.5-flash-lite", "google/gemini-2.5-flash"].filter(Boolean) as string[]) {
+  for (const model of [process.env.OPENROUTER_FILTER_MODEL, "google/gemini-2.5-flash", "google/gemini-2.5-flash-lite"].filter(Boolean) as string[]) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 20000);
