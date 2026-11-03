@@ -43,6 +43,7 @@ jobs:
           node scripts/promo/record.cjs promo-out/demo-book.pdf promo-out
           node scripts/promo/compose.cjs promo-out
           grep -E '^\[(OCR|filter|toc|book-title)\]' server.log | tail -20 || true
+          echo "---- book writer / errors"; grep -iE 'book|cover|generat|error|fail|timed out' server.log | tail -60 || true
       - name: Commit the video
         run: |
           mkdir -p public/promo

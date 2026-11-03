@@ -43,6 +43,10 @@ const CURSOR = () => {
     }, true);
     addEventListener('mouseup', () => (c.style.transform = ''), true);
   };
+  // Notices from the recording setup (no real account, no cloud copy) stay off camera
+  const st = document.createElement('style');
+  st.textContent = '[aria-live="polite"][class*="z-[90]"]{display:none!important}';
+  (document.head || document.documentElement).appendChild(st);
   if (document.body) add();
   else addEventListener('DOMContentLoaded', add);
 };
@@ -234,7 +238,9 @@ async function scene(name, fn) {
     await wait(900);
     await click(page.getByRole('button', { name: 'ألّف الكتاب' }));
     mark('generating');
+    const t = Date.now();
     await until(async () => (await page.getByRole('button', { name: 'استمع للكتاب' }).count()) > 0, process.env.PROMO_MOCK ? 15000 : 300000, 1000);
+    console.log(`  writer took ${Math.round((Date.now() - t) / 1000)}s; on screen: ${(await page.locator('[role=alert]').allTextContents()).join(' | ') || 'no error'}`);
     await wait(1500);
     mark('result');
     await page.mouse.wheel(0, 300);

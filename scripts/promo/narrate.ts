@@ -24,7 +24,8 @@ async function speak(text: string, voiceId: string, file: string) {
       fs.writeFileSync(raw, Buffer.from(await r.arrayBuffer()));
       // Normalise to 48 kHz mono WAV, trimming silence at both ends
       execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', raw, '-af',
-        'silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse',
+        // trim silence at both ends, then 8% faster (the narrator is slow and deliberate)
+        'silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse,atempo=1.08',
         '-ar', '48000', '-ac', '1', file]);
       fs.unlinkSync(raw);
       return;
