@@ -194,9 +194,10 @@ export class ChapterAssembler {
     return out;
   }
 
-  // Emits whatever is buffered now; text that follows continues as the chapter's next part
+  // Emits whatever is buffered now; text that follows continues as the chapter's next part.
+  // A scrap (a title page) stays buffered and opens the next chapter instead.
   cut(): BookChapter[] {
-    if (countWords(this.buffer) < 1) return [];
+    if (countWords(this.buffer) < MIN_CHAPTER_WORDS) return [];
     const ch = this.make(this.title, this.buffer);
     this.buffer = '';
     this.title = this.continuationTitle();

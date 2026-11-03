@@ -651,7 +651,9 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                   }
                 : null;
             if (stream) {
-              const first = [...stream.assembler.push(activeText), ...(stream.more ? stream.assembler.cut() : stream.assembler.flush())];
+              let first = [...stream.assembler.push(activeText), ...(stream.more ? stream.assembler.cut() : stream.assembler.flush())];
+              // Only a scrap so far (a title page): play it rather than nothing
+              if (!first.length) first = stream.assembler.flush();
               if (first.length) finalChapters = first;
             }
 
