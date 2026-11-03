@@ -45,7 +45,7 @@ const CURSOR = () => {
   };
   // Notices from the recording setup (no real account, no cloud copy) stay off camera
   const st = document.createElement('style');
-  st.textContent = '[aria-live="polite"][class*="z-[90]"]{display:none!important}';
+  st.textContent = 'div.fixed[aria-live="polite"]{display:none!important}';
   (document.head || document.documentElement).appendChild(st);
   if (document.body) add();
   else addEventListener('DOMContentLoaded', add);
