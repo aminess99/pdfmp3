@@ -64,7 +64,7 @@ const formatFileSize = (bytes: number): string =>
   bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
 // A title for a book or text whose name says nothing: the AI reader, else its first line
-async function suggestTitle(text: string): Promise<string> {
+async function suggestTitle(text: string, firstLineFallback = true): Promise<string> {
   const opening = String(text || '').trim().slice(0, 3000);
   if (!opening) return '';
   try {
@@ -78,6 +78,8 @@ async function suggestTitle(text: string): Promise<string> {
   } catch {
     // fall back to the first line
   }
+  // A book's opening lines are often its imprint ("جميع الحقوق محفوظة"): better no title than that
+  if (!firstLineFallback) return '';
   const first = opening.split('\n').map((l) => l.trim()).find((l) => l.split(/\s+/).length >= 2) || '';
   const words = first.split(/\s+/).slice(0, 7).join(' ');
   return words.length >= 4 ? words.replace(/[.،,:؛]+$/, '') : '';
@@ -323,7 +325,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     // A file name like "69fb610a9299e.pdf": read the title (and author) from the opening pages
     if (file && isMeaninglessName(file.name) && !detectedTitleRef.current) {
       const opening = (bookPrepRef.current?.headPages || []).slice(0, 6).join('\n').trim() || text;
-      detectedTitleRef.current = await suggestTitle(opening);
+      detectedTitleRef.current = await suggestTitle(opening, false);
     }
     setExtractionProgress(100);
   };
