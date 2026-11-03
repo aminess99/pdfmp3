@@ -49,10 +49,24 @@ export function findChapterHeadings(text: string): { index: number; fullMatch: s
       continue;
     }
 
+    let fullMatch = match[0];
+    let title = rawTitle;
+    // "الفصل الثاني" alone on its line, with the chapter's name on the next line: use both
+    if (/^(?:الفصل|الباب|الجزء|المبحث|Chapter)\s+\S+(?:\s+عشر)?$/i.test(rawTitle)) {
+      const after = text.slice(match.index + match[0].length);
+      const next = after.match(/^[ \t]*\n?[ \t]*([^\n]+)(\n|$)/);
+      const line = next?.[1]?.trim() || '';
+      const n = line.split(/\s+/).filter(Boolean).length;
+      if (line && n >= 1 && n <= 12 && !/[.!؛:]$/.test(line) && !/^(?:الفصل|الباب|الجزء)\s/.test(line)) {
+        title = `${rawTitle}: ${line.replace(/[.،]+$/, '')}`;
+        fullMatch += next![0];
+      }
+    }
+
     matches.push({
       index: match.index,
-      fullMatch: match[0],
-      title: rawTitle,
+      fullMatch,
+      title,
     });
   }
 

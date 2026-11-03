@@ -23,7 +23,7 @@ function flagsFor(ch, allTitles) {
   if (/(^|\s)(\S+)(\s+\2){3,}(\s|$)/.test(ch.text)) f.push('كلمات مكررة');
   if (ws.length && new Set(ws).size / ws.length < 0.2) f.push('تنوع كلمات منخفض');
   const qs = (ch.text.match(/[؟?]/g) || []).length;
-  if (qs >= 6 && qs / Math.max(1, paras.length) > 0.6) f.push('أسئلة متتالية (فهرس؟)');
+  if (qs >= 6 && qs / Math.max(1, paras.length) > 0.6 && avg < 15) f.push('أسئلة متتالية (فهرس؟)');
   return f;
 }
 
