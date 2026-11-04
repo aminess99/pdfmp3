@@ -135,9 +135,40 @@ export const StudioView: React.FC<StudioViewProps> = ({
       .trim();
   }, [rawFullText]);
 
+  // What the narrator says before the text: the book and its author at the start of the
+  // book, then the chapter's name ("الفصل الأول: قوة البدايات"); split parts ("… (2)") and
+  // generic part names ("الجزء الثاني") are not announced
+  const announcement = useMemo(() => {
+    const said: string[] = [];
+    const fromBook = Boolean(job.bookAuthor || job.coverImage || job.scannedBook || job.tocTitles?.length);
+    if (fromBook && activeChapterIndex === 0 && !/^(?:ملخص|النقاط الجوهرية|Summary|Key points):/.test(job.fileName || '')) {
+      const name = cleanBookTitle(job.fileName || '').replace(/\s+-\s+\(.*\)\s*$/, '').split(' - ')[0].trim();
+      const author = (job.bookAuthor || '').trim();
+      if (name && !/^كتاب صوتي/.test(name)) said.push(author ? `كتاب ${name}، تأليف ${author}.` : `كتاب ${name}.`);
+    }
+    const title = (currentChapter?.title || '').trim();
+    const generic = !title || /\(\s*[0-9٠-٩]+\s*\)\s*$/.test(title) || /^(?:الجزء|القسم)\s+\S+$/.test(title) || /^(?:كامل الكتاب|Whole book|Part \d+)$/i.test(title);
+    if (chapters && chapters.length > 1 && !generic) said.push(/[.؟?!]$/.test(title) ? title : `${title}.`);
+    return said;
+  }, [job.bookAuthor, job.coverImage, job.scannedBook, job.tocTitles, job.fileName, activeChapterIndex, currentChapter?.title, chapters]);
+
+  // The chapter text without its own heading line when the narrator has just said it
+  const bodyText = useMemo(() => {
+    const title = (currentChapter?.title || '').trim();
+    if (!announcement.length || !title) return fullText;
+    const norm = (s: string) => s.replace(/[\u064B-\u0652ـ:،.\-–—]/g, '').replace(/\s+/g, ' ').trim();
+    const nameOnly = title.replace(/^(?:ال)?(?:فصل|باب|جزء|قسم)\s+\S+\s*[:：\-–—]?\s*/, '');
+    const firstLine = fullText.split('\n')[0] || '';
+    const fl = norm(firstLine);
+    if (fl && fl.length <= norm(title).length + 6 && (fl === norm(title) || fl === norm(nameOnly) || norm(title).endsWith(fl))) {
+      return fullText.slice(firstLine.length).trim() || fullText;
+    }
+    return fullText;
+  }, [fullText, announcement, currentChapter?.title]);
+
   // Split text into natural coherent chunks of ~75 to 90 words (~35 to 40 seconds of continuous speech)
   const sentences = useMemo(() => {
-    const rawUnits = fullText
+    const rawUnits = bodyText
       .split(/(?<=[.!?؟\n])\s+/)
       .map((s) => s.trim())
       .filter((s) => s.length > 0 && !/^الصفحة\s*\d+$/i.test(s));
@@ -160,8 +191,11 @@ export const StudioView: React.FC<StudioViewProps> = ({
       }
     }
     if (currentChunk) merged.push(currentChunk);
-    return merged.length > 0 ? merged : [fullText || tr("نص الكتاب جاهز للاستماع.", "The book text is ready to listen to.")];
-  }, [fullText]);
+    const body = merged.length > 0 ? merged : [bodyText || tr("نص الكتاب جاهز للاستماع.", "The book text is ready to listen to.")];
+    // The announcements open the chapter as their own short paragraph
+    return announcement.length ? [announcement.join(' '), ...body] : body;
+  }, [bodyText, announcement]);
+  const hasAnnouncement = announcement.length > 0;
 
   // Duration calculations
   const wordsCount = useMemo(() => fullText.split(/\s+/).filter(Boolean).length, [fullText]);
@@ -985,6 +1019,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 <p className="text-[13px] text-slate-400 mb-2">{tr("اضغط على أي فقرة لتبدأ الاستماع منها", "Tap any paragraph to start listening from there")}</p>
                 {sentences.map((sent, idx) => {
                   const isActive = idx === activeSentenceIndex;
+                  const isHeading = hasAnnouncement && idx === 0;
                   return (
                     <button
                       key={idx}
@@ -993,7 +1028,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                       aria-current={isActive}
                       onClick={() => handleSeekSentence(idx)}
                       dir="auto"
-                      className={`block w-full text-start px-3 py-2 rounded-lg leading-[2] cursor-pointer transition-colors ${fontClass} ${
+                      className={`block w-full text-start px-3 py-2 rounded-lg leading-[2] cursor-pointer transition-colors ${fontClass} ${isHeading ? 'text-[1.25em] font-bold mb-1 ' : ''}${
                         isActive ? 'bg-accent/10 text-white' : 'text-slate-500 hover:text-slate-300'
                       }`}
                     >

@@ -11,7 +11,8 @@ export function cleanBookTitle(rawName: string): string {
     .replace(/\.(pdf|epub)$/i, '')
     .replace(/_pdf$/i, '')
     .replace(/^https?:\/\/\S+/i, '')
-    .replace(/^(foulabook\.com|kutub-pdf\.net|noor-book\.com|kotobati\.com)[_-]?/gi, '')
+    // Download sites stamp their name anywhere in the file name ("…_Foulabook.com_.pdf")
+    .replace(/[_\-\s]*(?:www\.)?(?:foulabook|bookslibrary|kutub-pdf|noor-book|kotobati|ktobati|alexandra\.ahlamontada|ketabpedia|maktbah)(?:\.(?:com|net|org))?[_\-\s]*/gi, ' ')
     .replace(/[_-]\d{3,10}/g, '') // remove random upload IDs like _23971
     .replace(/\(\d+\)/g, '') // remove (1)
     .replace(/[._-]+$/, '')

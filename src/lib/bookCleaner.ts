@@ -35,6 +35,14 @@ function lowVariety(text: string): boolean {
   return ws.length >= 40 && new Set(ws).size / ws.length < 0.15;
 }
 
+// Praise pages ("قالوا عن الكتاب"): short quotes, each signed "name - job - country"
+function looksLikeTestimonials(text: string): boolean {
+  const w = words(text);
+  if (/^\s*(?:قالوا|ماذا قالوا|آراء|اراء|ما قيل)\s+(?:عن|في)\s+(?:الكتاب|هذا الكتاب|المؤلف|الكاتب)/m.test(text) && w < 700) return true;
+  const signed = lines(text).filter((l) => words(l) <= 14 && (l.match(/\s[-–—]\s/g) || []).length >= 1 && !/[.؟?!]\s*$/.test(l)).length;
+  return signed >= 4 && signed / Math.max(1, lines(text).length) >= 0.25;
+}
+
 export type PageKind = 'content' | 'blank' | 'imprint' | 'contents' | 'ads';
 
 // A table-of-contents page: many short lines that end in a page number
@@ -56,6 +64,7 @@ export function classifyPage(text: string): PageKind {
   if (imprintHits >= 2 && w < 260) return 'imprint';
   if ((text.match(ADS_RE) || []).length >= 1 && w < 400) return 'ads';
   if (looksLikeForumAd(text) && w < 500) return 'ads';
+  if (looksLikeTestimonials(text)) return 'ads';
   return 'content';
 }
 
@@ -138,7 +147,14 @@ const stripFootnoteMarks = (t: string) =>
     // links and site names stamped on pages (forum watermarks)
     .replace(/\S*(?:https?:\/\/|www\.)\S*/gi, ' ')
     .replace(/\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|info|me)\b\S*/gi, ' ')
-    .replace(/(?<=[؀-ۿA-Za-z.,،؛:!?؟»"')])\s?[([]\s*[0-9٠-٩]{1,3}\s*[)\]]/g, '').replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]+/g, '');
+    .replace(/(?<=[؀-ۿA-Za-z.,،؛:!?؟»"')])\s?[([]\s*[0-9٠-٩]{1,3}\s*[)\]]/g, '').replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]+/g, '')
+    // A bare footnote number after a word, before punctuation or the end of the line ("العالم ١١.")
+    // — but not a count or a date ("عمره 30.", "عام 1998", "الآية 12")
+    .replace(/([\u0621-\u064A\u0650-\u0652]+)\s([0-9٠-٩]{1,2})(?=\s*(?:["«»“”.،,:؛!؟?)]|$))/gm, (m, word: string) =>
+      COUNT_WORDS.test(word) ? m : word);
+
+// Words a number really belongs to
+const COUNT_WORDS = /^(?:و|ب|ل|في)?(?:ال)?(?:عام|عمر|عمره|عمرها|سن|سنة|سنوات|رقم|صفحة|ص|الآية|آية|فصل|الفصل|يوم|يوما|أيام|ساعة|ساعات|دقيقة|دقائق|شهر|أشهر|أسبوع|مادة|المادة|بند|قاعدة|درس|خطوة|نقطة|مرة|المرحلة|مرحلة|جزء|الجزء|العدد|عدد|نسبة|حوالي|نحو|قرابة|تقريبا|من|إلى|الى|حتى|بين|و)$/;
 
 // The listenable text of a run of pages: non-content pages dropped, heads and markers removed
 export function cleanPages(pages: string[], heads: RunningHeadFilter): { text: string; skipped: number } {

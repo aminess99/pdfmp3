@@ -92,6 +92,8 @@ export interface ConversionJob {
   tocTitles?: string[];
   // Small JPEG of the book's cover page (data URL), shown in the library and the studio
   coverImage?: string;
+  // The book's author, read from its opening pages (announced at the start of the book)
+  bookAuthor?: string;
 }
 
 export interface Testimonial {

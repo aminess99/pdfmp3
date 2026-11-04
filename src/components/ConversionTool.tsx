@@ -65,24 +65,29 @@ const formatFileSize = (bytes: number): string =>
 
 // A title for a book or text whose name says nothing: the AI reader, else its first line
 async function suggestTitle(text: string, firstLineFallback = true): Promise<string> {
+  const { title, author } = await readTitleAndAuthor(text, firstLineFallback);
+  return title && author ? `${title} - ${author}` : title;
+}
+
+async function readTitleAndAuthor(text: string, firstLineFallback = true): Promise<{ title: string; author: string }> {
   const opening = String(text || '').trim().slice(0, 3000);
-  if (!opening) return '';
+  if (!opening) return { title: '', author: '' };
   try {
     const res = await apiFetch('/api/pdf/book-title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: opening }) }, { silent: true });
     if (res.ok) {
       const data = await res.json();
       const title = String(data.title || '').trim();
       const author = String(data.author || '').trim();
-      if (title) return author ? `${title} - ${author}` : title;
+      if (title || author) return { title, author };
     }
   } catch {
     // fall back to the first line
   }
   // A book's opening lines are often its imprint ("جميع الحقوق محفوظة"): better no title than that
-  if (!firstLineFallback) return '';
+  if (!firstLineFallback) return { title: '', author: '' };
   const first = opening.split('\n').map((l) => l.trim()).find((l) => l.split(/\s+/).length >= 2) || '';
   const words = first.split(/\s+/).slice(0, 7).join(' ');
-  return words.length >= 4 ? words.replace(/[.،,:؛]+$/, '') : '';
+  return { title: words.length >= 4 ? words.replace(/[.،,:؛]+$/, '') : '', author: '' };
 }
 
 // The book's chapter names from its contents page: the AI reader first, simple line parsing if
@@ -183,6 +188,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   // The book's cover image and, when the file name says nothing, its title read from the book
   const coverRef = useRef<string | undefined>(undefined);
   const detectedTitleRef = useRef<string>('');
+  const detectedAuthorRef = useRef<string>('');
   const bookPrepRef = useRef<{ headPages: string[]; heads: RunningHeadFilter; nextPage: number; headings?: FoundHeading[]; toc?: string[] } | null>(null);
   const [skippedFrontPages, setSkippedFrontPages] = useState(0);
   const [fromFirstPage, setFromFirstPage] = useState(false);
@@ -363,10 +369,13 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
       if (whole.pagesCount > session.totalPages) setPageCount(whole.pagesCount);
     }
     coverRef.current = (await coverPromise) || coverRef.current;
-    // A file name like "69fb610a9299e.pdf": read the title (and author) from the opening pages
-    if (file && isMeaninglessName(file.name) && !detectedTitleRef.current) {
+    // The author (announced at the start of the book), and the title too when the file name
+    // says nothing ("69fb610a9299e.pdf"), read from the opening pages
+    if (file && !detectedTitleRef.current && !detectedAuthorRef.current) {
       const opening = (bookPrepRef.current?.headPages || []).slice(0, 6).join('\n').trim() || text;
-      detectedTitleRef.current = await suggestTitle(opening, false);
+      const found = await readTitleAndAuthor(opening, false);
+      detectedAuthorRef.current = found.author;
+      if (isMeaninglessName(file.name)) detectedTitleRef.current = found.author && found.title ? `${found.title} - ${found.author}` : found.title;
     }
     setExtractionProgress(100);
   };
@@ -389,6 +398,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     setSelectedFile(file);
     coverRef.current = undefined;
     detectedTitleRef.current = '';
+    detectedAuthorRef.current = '';
     bookPrepRef.current = null;
     progressiveSessionRef.current = null;
     setSkippedFrontPages(0);
@@ -727,6 +737,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
               id: jobId,
               fileName,
               ...(inputMode === 'pdf' && selectedFile && coverRef.current ? { coverImage: coverRef.current } : {}),
+              ...(inputMode === 'pdf' && selectedFile && detectedAuthorRef.current ? { bookAuthor: detectedAuthorRef.current } : {}),
               fileSize,
               totalPages: calculatedPages,
               processedPages: stream ? Math.min(calculatedPages, stream.prep.nextPage - 1) : calculatedPages,
