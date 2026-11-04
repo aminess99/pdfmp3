@@ -9,7 +9,7 @@ const path = require('path');
 
 const BASE = process.env.BASE_URL || 'http://localhost:4789';
 const book = path.resolve(process.argv[2]);
-const out = path.join(process.argv[3] || 'reel-out', 'clips');
+const out = path.resolve(process.argv[3] || 'reel-out', 'clips');
 fs.mkdirSync(out, { recursive: true });
 const marks = {};
 
