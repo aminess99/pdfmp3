@@ -94,6 +94,8 @@ const css = `
     await page.waitForTimeout(150);
     shots.push((await page.screenshot({ type: 'jpeg', quality: 82 })).toString('base64'));
   }
+  // The first chapter's opening page as an image, for the reels' opening shot
+  require('fs').writeFileSync(out.replace(/\.pdf$/i, '') + '-page.jpg', Buffer.from(shots[5], 'base64'));
   await page.setContent(`<html><head><style>@page{size:1240px 1754px;margin:0}body{margin:0}img{display:block;width:1240px;height:1754px;page-break-after:always}</style></head><body>${shots.map((b) => `<img src="data:image/jpeg;base64,${b}">`).join('')}</body></html>`);
   await page.pdf({ path: out, width: '1240px', height: '1754px', printBackground: true, margin: { top: 0, bottom: 0, left: 0, right: 0 } });
   await browser.close();

@@ -44,9 +44,16 @@ const CURSOR = () => {
     addEventListener('mouseup', () => (c.style.transform = ''), true);
   };
   // Notices from the recording setup (no real account, no cloud copy) stay off camera
-  const st = document.createElement('style');
-  st.textContent = 'div.fixed[aria-live="polite"]{display:none!important}';
-  (document.head || document.documentElement).appendChild(st);
+  const hide = () => {
+    if (document.head && !document.getElementById('promo-hide')) {
+      const st = document.createElement('style');
+      st.id = 'promo-hide';
+      st.textContent = 'div.fixed[aria-live="polite"]{display:none!important}';
+      document.head.appendChild(st);
+    }
+  };
+  document.addEventListener('DOMContentLoaded', hide);
+  new MutationObserver(hide).observe(document.documentElement, { childList: true, subtree: true });
   if (document.body) add();
   else addEventListener('DOMContentLoaded', add);
 };

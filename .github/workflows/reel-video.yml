@@ -1,0 +1,60 @@
+name: Reel video
+
+# Records and edits a vertical reel (scripts/promo/reel): phone recordings of the site with
+# real OCR, the site's own voice, headlines and word-by-word captions. The reel to make is
+# named on the first line of .github/reel-video.txt (e.g. "reel1" -> scripts/promo/reel/reel1.json).
+# Commits public/promo/reels/<name>.mp4.
+on:
+  push:
+    paths:
+      - .github/reel-video.txt
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reel-video
+  cancel-in-progress: true
+
+jobs:
+  reel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-core fonts-noto-color-emoji > /dev/null
+      - run: npm ci --no-audit --no-fund
+      - name: Recording build (demo sign-in enabled)
+        run: VITE_DEMO_MODE=1 npm run build
+      - run: npm i --no-save playwright@1.63.0 && npx playwright install --with-deps chromium > /dev/null
+      - name: Record and edit
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          NODE_ENV: production
+          PORT: "4789"
+        run: |
+          NAME=$(head -1 .github/reel-video.txt | awk '{print $1}')
+          echo "NAME=$NAME" >> $GITHUB_ENV
+          node dist/server.cjs > server.log 2>&1 &
+          sleep 5
+          node scripts/promo/demo-book.cjs reel-out/demo-book.pdf
+          npx tsx scripts/promo/narrate.ts reel-out scripts/promo/reel/$NAME.json
+          node scripts/promo/reel/record.cjs reel-out/demo-book.pdf reel-out
+          node scripts/promo/reel/compose.cjs reel-out scripts/promo/reel/$NAME.json reel-out/demo-book-page.jpg
+          grep -E '^\[(OCR|filter|toc)\]|402|error' server.log | tail -20 || true
+      - name: Commit the reel
+        run: |
+          mkdir -p public/promo/reels
+          cp reel-out/reel.mp4 public/promo/reels/$NAME.mp4
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/promo/reels
+          if git diff --cached --quiet; then echo "no change"; else
+            git commit -m "Reel $NAME (generated)"
+            git pull --rebase
+            git push
+          fi

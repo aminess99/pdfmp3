@@ -1,6 +1,6 @@
 // Narration for the promo video, spoken by the site's own voices through a local server
 // (POST /api/tts/speak). Writes out/narr/<id>.wav (dialect lines appended to their segment)
-// and out/narr/durations.json. Usage: npx tsx scripts/promo/narrate.ts <outDir>
+// and out/narr/durations.json. Usage: npx tsx scripts/promo/narrate.ts <outDir> [segments.json]
 import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
@@ -9,7 +9,7 @@ import { VOICES } from '../../src/data/voices';
 const BASE = process.env.BASE_URL || 'http://localhost:4789';
 const out = path.join(process.argv[2] || 'promo-out', 'narr');
 fs.mkdirSync(out, { recursive: true });
-const segments = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'scripts/promo/segments.json'), 'utf8'));
+const segments = JSON.parse(fs.readFileSync(process.argv[3] || path.join(process.cwd(), 'scripts/promo/segments.json'), 'utf8'));
 const voice = (id: string) => VOICES.find((v) => v.id === id)!;
 
 async function speak(text: string, voiceId: string, file: string) {
@@ -43,7 +43,7 @@ const dur = (f: string) => Number(execFileSync('ffprobe', ['-v', 'error', '-show
   for (const seg of segments) {
     const parts: string[] = [];
     const main = path.join(out, `${seg.id}.main.wav`);
-    await speak(seg.text, 'youssef_msa', main);
+    await speak(seg.text, seg.voice || 'youssef_msa', main);
     parts.push(main);
     for (const [i, d] of (seg.dialects || []).entries()) {
       const f = path.join(out, `${seg.id}.d${i}.wav`);
