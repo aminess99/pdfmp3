@@ -14,3 +14,8 @@ export const pagesAr = (n: number) => (isEn ? pluralEn(n, 'page', 'pages') : plu
 export const minutesAr = (n: number) => (isEn ? pluralEn(n, 'minute', 'minutes') : pluralAr(n, 'دقيقة واحدة', 'دقيقتان', 'دقائق', 'دقيقة'));
 export const chaptersAr = (n: number) => (isEn ? pluralEn(n, 'chapter', 'chapters') : pluralAr(n, 'فصل واحد', 'فصلان', 'فصول', 'فصلاً'));
 export const wordsAr = (n: number) => (isEn ? pluralEn(n, 'word', 'words') : pluralAr(n, 'كلمة واحدة', 'كلمتان', 'كلمات', 'كلمة'));
+// "8 ثوانٍ", "45 ثانية", "2 د 5 ث" (elapsed time)
+export const elapsedAr = (n: number) =>
+  n >= 60
+    ? (isEn ? `${Math.floor(n / 60)}m ${n % 60}s` : `${Math.floor(n / 60)} د ${n % 60} ث`)
+    : isEn ? `${n}s` : pluralAr(n, 'ثانية واحدة', 'ثانيتان', 'ثوانٍ', 'ثانية');

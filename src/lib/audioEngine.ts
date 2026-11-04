@@ -3,6 +3,8 @@ import { Voice, AudioStyle } from '../types';
 import { tr } from './i18n';
 import { apiFetch } from './apiFetch';
 
+export type SpeechStatus = 'idle' | 'preparing' | 'slow' | 'playing';
+
 export class AudioEngine {
   private currentAudioElement: HTMLAudioElement | null = null;
   private isPlaying = false;
@@ -15,6 +17,25 @@ export class AudioEngine {
   private preloadedAudios = new Map<string, HTMLAudioElement>();
   private activeRequestController: AbortController | null = null;
   private currentSessionId = 0;
+
+  // What the narrator is doing, for the player to show: 'preparing' while a clip is being
+  // made, 'slow' when that takes more than 10 s (busy service or retries), 'playing', 'idle'
+  public status: SpeechStatus = 'idle';
+  private statusListeners = new Set<(s: SpeechStatus) => void>();
+  private slowTimer: ReturnType<typeof setTimeout> | null = null;
+  public onStatus(fn: (s: SpeechStatus) => void): () => void {
+    this.statusListeners.add(fn);
+    return () => this.statusListeners.delete(fn);
+  }
+  private setStatus(s: SpeechStatus) {
+    if (this.slowTimer && s !== 'preparing') {
+      clearTimeout(this.slowTimer);
+      this.slowTimer = null;
+    }
+    if (this.status === s) return;
+    this.status = s;
+    this.statusListeners.forEach((fn) => fn(s));
+  }
 
 
   // Request high-quality MP3 from Fish Audio API backend
@@ -399,6 +420,13 @@ export class AudioEngine {
     this.onBoundaryCallback = onBoundary;
     this.onEndCallback = onEnd;
     this.onErrorCallback = onError;
+    const cached = this.audioCache.has(this.clipKey(text, voice));
+    if (!cached) {
+      this.setStatus('preparing');
+      this.slowTimer = setTimeout(() => {
+        if (this.currentSessionId === sessionId && this.status === 'preparing') this.setStatus('slow');
+      }, 10_000);
+    }
 
     // First attempt: Server AI voice generation (Fish Audio S2.1 Pro cloned voice or Gemini)
     const audioUrl = await this.generateSpeechUrl(text, voice, rate);
@@ -417,6 +445,7 @@ export class AudioEngine {
         if (this.currentSessionId !== sessionId) return;
         this.isPlaying = false;
         this.currentAudioElement = null;
+        this.setStatus('idle');
         if (this.onEndCallback) {
           this.onEndCallback();
         }
@@ -430,6 +459,7 @@ export class AudioEngine {
 
       try {
         await audio.play();
+        if (this.currentSessionId === sessionId) this.setStatus('playing');
         return;
       } catch (playErr) {
         if (this.currentSessionId !== sessionId) return;
@@ -442,6 +472,7 @@ export class AudioEngine {
 
   private failPlayback(sessionId: number) {
     if (this.currentSessionId !== sessionId) return;
+    this.setStatus('idle');
     this.isPlaying = false;
     this.currentAudioElement = null;
     if (!this.lastFailureHandled) {
@@ -478,6 +509,7 @@ export class AudioEngine {
       this.currentAudioElement = null;
     }
     this.isPlaying = false;
+    this.setStatus('idle');
   }
 
   // Fraction (0–1) of the clip that is currently playing, for progress bars

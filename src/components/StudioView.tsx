@@ -28,12 +28,13 @@ import {
   Loader2
 } from 'lucide-react';
 import { ConversionJob, Voice, AudioStyle, Dialect } from '../types';
-import { audioEngine } from '../lib/audioEngine';
+import { audioEngine, SpeechStatus } from '../lib/audioEngine';
 import { DIALECTS, VOICES, AUDIO_STYLES } from '../data/voices';
 import { cleanBookTitle } from '../lib/bookTitle';
 import { toast } from '../lib/toast';
 import { createShare, shareUrl } from '../lib/shares';
 import { ChatPdfModal } from './ChatPdfModal';
+import { WaitingNote } from './WaitingNote';
 import { chaptersAr, minutesAr } from '../lib/arabicPlural';
 import { normTitle, nextPartTitle } from '../lib/chapterUtils';
 import { voiceLabel, voiceInitial, genderLabel, dialectLabel } from '../lib/voiceLabel';
@@ -65,6 +66,13 @@ export const StudioView: React.FC<StudioViewProps> = ({
   onRequestAuth,
 }) => {
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
+  // The narrator is making the clip that should be playing now (shown on the play buttons)
+  const [speechStatus, setSpeechStatus] = useState<SpeechStatus>(audioEngine.status);
+  useEffect(() => audioEngine.onStatus(setSpeechStatus), []);
+  const waitingForVoice = isPlaying && (speechStatus === 'preparing' || speechStatus === 'slow');
+  const waitingMessage = speechStatus === 'slow'
+    ? tr('لحظات، الخدمة مشغولة قليلاً… ما زلنا نحاول', 'One moment, the service is busy… still trying')
+    : tr('يجهّز الراوي الصوت…', 'The narrator is preparing the audio…');
   const [playbackRate, setPlaybackRate] = useState<number>(() => {
     try {
       return Number(localStorage.getItem('app_default_speed')) || 1.0;
@@ -144,7 +152,8 @@ export const StudioView: React.FC<StudioViewProps> = ({
     if (fromBook && activeChapterIndex === 0 && !/^(?:ملخص|النقاط الجوهرية|Summary|Key points):/.test(job.fileName || '')) {
       const name = cleanBookTitle(job.fileName || '').replace(/\s+-\s+\(.*\)\s*$/, '').split(' - ')[0].trim();
       const author = (job.bookAuthor || '').trim();
-      if (name && !/^كتاب صوتي/.test(name)) said.push(author ? `كتاب ${name}، تأليف ${author}.` : `كتاب ${name}.`);
+      // Only a real (Arabic) book name is announced, not a file name like "scan_03"
+      if (name && /[\u0621-\u064A]{2,}/.test(name) && !/^كتاب صوتي/.test(name)) said.push(author ? `كتاب ${name}، تأليف ${author}.` : `كتاب ${name}.`);
     }
     const title = (currentChapter?.title || '').trim();
     const generic = !title || /\(\s*[0-9٠-٩]+\s*\)\s*$/.test(title) || /^(?:الجزء|القسم)\s+\S+$/.test(title) || /^(?:كامل الكتاب|Whole book|Part \d+)$/i.test(title);
@@ -731,6 +740,34 @@ export const StudioView: React.FC<StudioViewProps> = ({
     return toc.slice(lastReady + 1).slice(0, 40);
   }, [job.tocTitles, job.nextPageToRead, job.totalPages, chapters]);
 
+  const sameChapter = (title: string, want: string) => {
+    const c = normTitle(title.replace(/\s*\(\d+\)\s*$/, ''));
+    const w = normTitle(want);
+    return Boolean(w) && (c === w || (c.length >= 4 && w.length >= 4 && (c.includes(w) || w.includes(c))));
+  };
+  // A chapter the listener picked before it was ready: jump to it as soon as it is
+  const [wantedChapter, setWantedChapter] = useState<{ id?: string; title?: string } | null>(null);
+  const askForChapter = (want: { id?: string; title?: string }, aheadIndex?: number) => {
+    setWantedChapter(want);
+    // Lazy reading only prepares a couple of chapters ahead of the listener: read up to this one
+    if (aheadIndex !== undefined) setListenerPosition(job.id, aheadIndex);
+    toast(tr('هذا الفصل قيد التجهيز، سيبدأ تلقائياً عند جاهزيته.', 'This chapter is being prepared; it will start as soon as it is ready.'), 'info');
+  };
+  useEffect(() => {
+    if (!wantedChapter || !chapters) return;
+    const idx = chapters.findIndex((c) =>
+      (c.status || 'completed') === 'completed' &&
+      (wantedChapter.id ? c.id === wantedChapter.id : sameChapter(c.title, wantedChapter.title || ''))
+    );
+    if (idx < 0) return;
+    setWantedChapter(null);
+    if (idx !== activeChapterIndex) {
+      setActiveChapterIndex(idx);
+      setActiveSentenceIndex(0);
+    }
+    toast(tr(`جاهز: ${chapters[idx].title}`, `Ready: ${chapters[idx].title}`), 'success');
+  }, [chapters, wantedChapter]);
+
   const chapterList = (
     <>
       <div className="text-[13px] text-slate-400 px-2 pb-2">{tr("الفصول", "Chapters")}</div>
@@ -742,17 +779,21 @@ export const StudioView: React.FC<StudioViewProps> = ({
           <button
             key={chap.id}
             type="button"
-            disabled={!ready}
             aria-current={isActive}
+            aria-disabled={!ready}
             onClick={() => {
               setChaptersOpen(false);
+              if (!ready && status !== 'error') {
+                askForChapter({ id: chap.id });
+                return;
+              }
               if (ready && activeChapterIndex !== idx) {
                 setActiveChapterIndex(idx);
                 setActiveSentenceIndex(0);
               }
             }}
             className={`w-full min-h-[52px] flex items-center justify-between gap-2 px-3 rounded-[10px] text-start text-[15px] transition-colors ${
-              isActive ? 'bg-raised text-white' : ready ? 'text-slate-300 hover:bg-raised/60 cursor-pointer' : 'text-slate-500 cursor-default'
+              isActive ? 'bg-raised text-white' : ready ? 'text-slate-300 hover:bg-raised/60 cursor-pointer' : 'text-slate-500 hover:bg-raised/40 cursor-pointer'
             }`}
           >
             <span className="flex items-center gap-2.5 min-w-0">
@@ -770,15 +811,34 @@ export const StudioView: React.FC<StudioViewProps> = ({
       })}
       {upcomingChapters.length > 0 && (
         <div className="mt-1" aria-label={tr('فصول قادمة', 'Coming chapters')}>
-          {upcomingChapters.map((t, i) => (
-            <div key={`${i}-${t}`} className="w-full min-h-[44px] flex items-center justify-between gap-2 px-3 text-[15px] text-slate-500">
-              <span className="flex items-center gap-2.5 min-w-0">
-                <span className="w-4 h-4 rounded-full border-2 border-slate-700 shrink-0" aria-hidden="true" />
-                <span className="truncate">{t}</span>
-              </span>
-              <span className="text-[12px] shrink-0">{tr('قيد التجهيز', 'Coming')}</span>
-            </div>
-          ))}
+          {upcomingChapters.map((t, i) => {
+            // The first one is being read right now while the book streams in
+            const now = i === 0 && Boolean(job.isStreamingBackground);
+            const wanted = wantedChapter?.title === t;
+            return (
+              <button
+                key={`${i}-${t}`}
+                type="button"
+                onClick={() => {
+                  setChaptersOpen(false);
+                  askForChapter({ title: t }, (chapters?.length || 1) - 1 + i);
+                }}
+                className={`w-full min-h-[44px] flex items-center justify-between gap-2 px-3 rounded-[10px] text-start text-[15px] hover:bg-raised/40 cursor-pointer ${wanted ? 'text-slate-300' : 'text-slate-500'}`}
+              >
+                <span className="flex items-center gap-2.5 min-w-0">
+                  {now || wanted ? (
+                    <Loader2 className="w-4 h-4 text-brand-soft animate-spin shrink-0" aria-hidden="true" />
+                  ) : (
+                    <span className="w-4 h-4 rounded-full border-2 border-slate-700 shrink-0" aria-hidden="true" />
+                  )}
+                  <span className="truncate">{t}</span>
+                </span>
+                <span className="text-[12px] shrink-0">
+                  {wanted ? tr('يبدأ عند جاهزيته', 'Starts when ready') : now ? tr('يُجهَّز الآن', 'Preparing now') : tr('قيد التجهيز', 'Coming')}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
       {job.isStreamingBackground ? (
@@ -1020,6 +1080,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 {sentences.map((sent, idx) => {
                   const isActive = idx === activeSentenceIndex;
                   const isHeading = hasAnnouncement && idx === 0;
+                  const isWaiting = isActive && waitingForVoice;
                   return (
                     <button
                       key={idx}
@@ -1029,7 +1090,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                       onClick={() => handleSeekSentence(idx)}
                       dir="auto"
                       className={`block w-full text-start px-3 py-2 rounded-lg leading-[2] cursor-pointer transition-colors ${fontClass} ${isHeading ? 'text-[1.25em] font-bold mb-1 ' : ''}${
-                        isActive ? 'bg-accent/10 text-white' : 'text-slate-500 hover:text-slate-300'
+                        isActive ? `bg-accent/10 text-white${isWaiting ? ' animate-pulse' : ''}` : 'text-slate-500 hover:text-slate-300'
                       }`}
                     >
                       {sent}
@@ -1058,9 +1119,12 @@ export const StudioView: React.FC<StudioViewProps> = ({
                   {panel === 'summary' ? tr('ملخص', 'Summary') : tr(tr("أهم النقاط", "Key points"), 'Key points')} {currentChapter ? `· ${currentChapter.title}` : ''}
                 </h2>
                 {panelLoading ? (
-                  <p className="flex items-center gap-2 text-slate-400">
-                    <Loader2 className="w-4 h-4 animate-spin" /> {tr('جاري التلخيص بالذكاء الاصطناعي...', 'Summarizing with AI...')}
-                  </p>
+                  <div role="status" className="flex flex-col gap-1">
+                    <p className="flex items-center gap-2 text-slate-400">
+                      <Loader2 className="w-4 h-4 animate-spin" /> {tr('جاري التلخيص بالذكاء الاصطناعي...', 'Summarizing with AI...')}
+                    </p>
+                    <WaitingNote typical={20} />
+                  </div>
                 ) : panelText ? (
                   <>
                     <p dir="auto" className="text-slate-300 text-lg leading-[2] whitespace-pre-line">{panelText}</p>
@@ -1098,7 +1162,11 @@ export const StudioView: React.FC<StudioViewProps> = ({
             <span className="flex flex-col leading-tight min-w-0">
               <span className="text-white text-[15px] font-semibold truncate">{currentChapter?.title || cleanTitle}</span>
               <span className="text-[13px] text-slate-400 tabular-nums">
-                <bdi dir="ltr">{formatTime(elapsedSeconds)} / {formatTime(estimatedTotalSeconds)}</bdi> · {voiceLabel(selectedVoice)}
+                {waitingForVoice ? (
+                  <span className="text-accent">{waitingMessage}</span>
+                ) : (
+                  <><bdi dir="ltr">{formatTime(elapsedSeconds)} / {formatTime(estimatedTotalSeconds)}</bdi> · {voiceLabel(selectedVoice)}</>
+                )}
               </span>
             </span>
           </button>
@@ -1106,8 +1174,9 @@ export const StudioView: React.FC<StudioViewProps> = ({
             type="button"
             onClick={handleTogglePlay}
             aria-label={isPlaying ? tr("إيقاف مؤقت", "Pause") : tr("تشغيل", "Play")}
-            className="w-12 h-12 rounded-full bg-gradient-to-l from-[#8b5cf6] to-[#3b82f6] text-white flex items-center justify-center shrink-0 cursor-pointer"
+            className="relative w-12 h-12 rounded-full bg-gradient-to-l from-[#8b5cf6] to-[#3b82f6] text-white flex items-center justify-center shrink-0 cursor-pointer"
           >
+            {waitingForVoice && <span aria-hidden="true" className="absolute -inset-1 rounded-full border-[3px] border-accent/25 border-t-accent animate-spin" />}
             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
           </button>
           <span className="absolute top-0 inset-x-0 h-0.5 bg-line" aria-hidden="true">
@@ -1123,8 +1192,9 @@ export const StudioView: React.FC<StudioViewProps> = ({
             type="button"
             onClick={handleTogglePlay}
             aria-label={isPlaying ? tr("إيقاف مؤقت", "Pause") : tr("تشغيل", "Play")}
-            className="w-14 h-14 rounded-full bg-gradient-to-l from-[#8b5cf6] to-[#3b82f6] text-white flex items-center justify-center cursor-pointer"
+            className="relative w-14 h-14 rounded-full bg-gradient-to-l from-[#8b5cf6] to-[#3b82f6] text-white flex items-center justify-center cursor-pointer"
           >
+            {waitingForVoice && <span aria-hidden="true" className="absolute -inset-1 rounded-full border-[3px] border-accent/25 border-t-accent animate-spin" />}
             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
           </button>
           <button type="button" onClick={() => handleSkipSeconds(10)} aria-label={tr("الفقرة التالية", "Next paragraph")} className="w-11 h-11 rounded-full text-slate-300 hover:text-white flex items-center justify-center cursor-pointer">
@@ -1242,6 +1312,14 @@ export const StudioView: React.FC<StudioViewProps> = ({
         )}
       </footer>
 
+      {/* The narrator is preparing the clip (desktop; the phone player shows it in place) */}
+      {waitingForVoice && !isGeneratingMp3 && (
+        <div role="status" className="hidden md:flex fixed bottom-28 left-1/2 -translate-x-1/2 z-40 items-center gap-3 px-4 py-2.5 rounded-full bg-raised border border-line shadow-2xl shadow-black/50 text-white text-sm">
+          <Loader2 className="w-4 h-4 animate-spin text-accent" />
+          {waitingMessage}
+        </div>
+      )}
+
       {/* Download progress */}
       {isGeneratingMp3 && downloadProgressMsg && (
         <div role="status" className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-raised border border-line shadow-2xl shadow-black/50 text-white text-sm">
@@ -1324,14 +1402,16 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 type="button"
                 onClick={handleTogglePlay}
                 aria-label={isPlaying ? tr("إيقاف مؤقت", "Pause") : tr("تشغيل", "Play")}
-                className="w-20 h-20 rounded-full bg-white text-ink flex items-center justify-center cursor-pointer"
+                className="relative w-20 h-20 rounded-full bg-white text-ink flex items-center justify-center cursor-pointer"
               >
+                {waitingForVoice && <span aria-hidden="true" className="absolute -inset-1.5 rounded-full border-4 border-accent/25 border-t-accent animate-spin" />}
                 {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current" />}
               </button>
               <button type="button" onClick={() => handleSkipSeconds(10)} aria-label={tr("الفقرة التالية", "Next paragraph")} className="w-14 h-14 rounded-full text-slate-200 flex items-center justify-center cursor-pointer">
                 <SkipBack className="w-7 h-7 ltr:rotate-180" />
               </button>
             </div>
+            <p role="status" className="min-h-6 text-center text-sm text-accent">{waitingForVoice ? waitingMessage : ''}</p>
           </div>
 
           <div className="shrink-0 grid grid-cols-4 gap-2">

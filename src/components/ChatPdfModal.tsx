@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { WaitingNote } from './WaitingNote';
 import { 
   X, 
   MessageSquare, 
@@ -197,8 +198,9 @@ export const ChatPdfModal: React.FC<ChatPdfModalProps> = ({
             );
           })}
           {isLoading && (
-            <div className="self-end flex items-center gap-2 px-4 py-3 rounded-[14px] bg-ink border border-line text-sm text-slate-400">
-              <Loader2 className="w-4 h-4 animate-spin text-accent" /> {tr("يقرأ الكتاب ويصيغ الإجابة...", "Reading the book and writing an answer...")}
+            <div role="status" className="self-end flex flex-col gap-1 px-4 py-3 rounded-[14px] bg-ink border border-line text-sm text-slate-400">
+              <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin text-accent" /> {tr("يقرأ الكتاب ويصيغ الإجابة...", "Reading the book and writing an answer...")}</span>
+              <WaitingNote typical={15} />
             </div>
           )}
           <div ref={messagesEndRef} />

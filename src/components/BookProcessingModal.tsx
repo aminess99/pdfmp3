@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Check, Loader2, X } from 'lucide-react';
 import { BookChapter } from '../types';
-import { chaptersAr, pagesAr } from '../lib/arabicPlural';
+import { chaptersAr, elapsedAr, pagesAr } from '../lib/arabicPlural';
 import { tr, DIR } from '../lib/i18n';
 
 interface BookProcessingModalProps {
@@ -21,7 +21,16 @@ interface BookProcessingModalProps {
   onCancel: () => void;
 }
 
-const EXTRACT_STEPS = [tr('قراءة الملف', 'Reading the file'), tr('استخراج النص', 'Extracting the text'), tr('اكتشاف العنوان والفصول', 'Finding the title and chapters')];
+const EXTRACT_STEPS = [tr('فتح الملف', 'Opening the file'), tr('قراءة الصفحات', 'Reading the pages'), tr('تنقية النص وترتيب الفصول', 'Cleaning the text and ordering the chapters'), tr('تجهيز الاستماع', 'Getting the listening ready')];
+
+// Which step the reader is really on, from what it says it is doing
+function extractStepOf(status: string, pct: number): number {
+  if (/تنقية|الفصول|Cleaning|chapters/i.test(status)) return 2;
+  if (/الصفحات|المسح|OCR|ePub|pages|scan/i.test(status)) return 1;
+  if (pct >= 95) return 3;
+  return pct > 8 ? 1 : 0;
+}
+
 const CONVERT_STEPS = [tr('تجهيز النص', 'Preparing the text'), tr('مواءمة النطق مع الصوت', 'Matching pronunciation to the voice'), tr('توليد الصوت', 'Generating audio'), tr('فتح الاستوديو', 'Opening the studio')];
 
 export const BookProcessingModal: React.FC<BookProcessingModalProps> = ({
@@ -37,11 +46,28 @@ export const BookProcessingModal: React.FC<BookProcessingModalProps> = ({
   chapters,
   onCancel,
 }) => {
+  // Time since this window opened, so a long read never looks frozen
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!isOpen) return;
+    setElapsed(0);
+    const t0 = Date.now();
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [isOpen, mode]);
   if (!isOpen) return null;
 
   const steps = mode === 'extracting' ? EXTRACT_STEPS : CONVERT_STEPS;
   const pct = Math.max(0, Math.min(100, Math.round(progress)));
-  const activeStep = Math.min(steps.length - 1, Math.floor((pct / 100) * steps.length));
+  const activeStep = mode === 'extracting'
+    ? extractStepOf(currentStatusText || '', pct)
+    : Math.min(steps.length - 1, Math.floor((pct / 100) * steps.length));
+  const scanned = /مصوّر|المسح|OCR|scan/i.test(currentStatusText || '');
+  const reassurance = elapsed >= 90
+    ? tr('ما زلنا نعمل على كتابك، الكتب الكبيرة تحتاج وقتاً أطول. لا تغلق الصفحة.', 'Still working on your book; big books take longer. Keep this page open.')
+    : elapsed >= 30 && scanned
+      ? tr('الكتب المصوّرة تُقرأ صفحةً صفحة بالذكاء الاصطناعي، لذلك تأخذ وقتاً أطول قليلاً.', 'Scanned books are read page by page with AI, so they take a little longer.')
+      : '';
   const meta = [pageCount ? pagesAr(pageCount) : '', fileSize || '', chapters && chapters.length > 1 ? chaptersAr(chapters.length) : '']
     .filter(Boolean)
     .join(' · ');
@@ -82,7 +108,10 @@ export const BookProcessingModal: React.FC<BookProcessingModalProps> = ({
                 ) : (
                   <span className="w-5 h-5 rounded-full border-2 border-slate-700 shrink-0" aria-hidden="true" />
                 )}
-                <span className={done || running ? 'text-white' : 'text-slate-500'}>{step}</span>
+                <span className="flex flex-col min-w-0">
+                  <span className={done || running ? 'text-white' : 'text-slate-500'}>{step}</span>
+                  {running && currentStatusText && <span className="text-[12px] text-slate-400 truncate">{currentStatusText}</span>}
+                </span>
               </li>
             );
           })}
@@ -90,13 +119,15 @@ export const BookProcessingModal: React.FC<BookProcessingModalProps> = ({
 
         <div className="flex flex-col gap-2" role="status" aria-live="polite">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-300 truncate">{currentStatusText || steps[activeStep]}</span>
+            <span className="text-slate-400 tabular-nums">{tr('مضى', 'Elapsed')} {elapsedAr(elapsed)}</span>
             <span className="text-white font-semibold tabular-nums">{pct}%</span>
           </div>
           <div className="relative h-1.5 rounded-full bg-line overflow-hidden">
             <div className="absolute top-0 start-0 h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${pct}%` }} />
           </div>
         </div>
+
+        {reassurance && <p className="text-[13px] text-slate-400 leading-relaxed">{reassurance}</p>}
 
         {mode === 'converting' && voiceName && (
           <div className="flex items-center gap-3 text-sm text-slate-400">

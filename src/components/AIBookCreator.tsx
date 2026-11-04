@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { WaitingNote } from './WaitingNote';
 import { ArrowRight, BookOpen, Check, FileDown, Headphones, Loader2, RefreshCw, Sparkles, AlertCircle } from 'lucide-react';
 import { GeneratedBookStructure, createProfessionalArabicPdf } from '../lib/bookPdfGenerator';
 import { generateCrispBookCoverPng } from '../lib/bookCoverCanvas';
@@ -523,6 +524,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
           <div className="flex flex-col gap-1">
             <h3 className="font-display font-extrabold text-2xl text-white">{tr("نؤلف كتابك الآن", "Writing your book")}</h3>
             <p className="text-slate-400">{tr("ابقَ في هذه الصفحة حتى ينتهي.", "Stay on this page until it finishes.")}</p>
+            <WaitingNote typical={90} className="mt-1" />
           </div>
           <ol className="flex flex-col gap-3 text-start min-w-[240px]">
             {[
