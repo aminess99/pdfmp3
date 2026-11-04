@@ -68,8 +68,10 @@ function cut(seg, target, file) {
     shot(`<div style="position:absolute;top:190px;left:60px;right:60px;text-align:center">
       <span style="display:inline-block;padding:22px 44px;border-radius:28px;background:#4f46e5;color:#fff;font-size:76px;font-weight:900;line-height:1.3;box-shadow:0 14px 40px rgba(0,0,0,.45)">${text}</span></div>`, file);
   // The spoken line, with word i highlighted
-  const words = (list, i, file) =>
-    shot(`<div style="position:absolute;bottom:300px;left:60px;right:60px;text-align:center"><div style="display:inline-block;padding:20px 34px;border-radius:26px;background:rgba(11,12,26,.82);font-size:62px;font-weight:900;line-height:1.45;color:#fff">${list.map((w, k) => `<span style="color:${k === i ? '#22d3ee' : '#fff'}">${w}</span>`).join(' ')}</div></div>`, file);
+  // Captions sit low by default; "captionAt": "top" moves them under the headline (for shots
+  // whose bottom half is the point, like the chapter list)
+  const words = (list, i, file, at) =>
+    shot(`<div style="position:absolute;${at === 'top' ? 'top:470px' : 'bottom:300px'};left:60px;right:60px;text-align:center"><div style="display:inline-block;padding:20px 34px;border-radius:26px;background:rgba(11,12,26,.82);font-size:62px;font-weight:900;line-height:1.45;color:#fff">${list.map((w, k) => `<span style="color:${k === i ? '#22d3ee' : '#fff'}">${w}</span>`).join(' ')}</div></div>`, file);
 
   const pieces = [];
   const audio = [];
@@ -110,7 +112,7 @@ function cut(seg, target, file) {
       let t = 0;
       for (let i = 0; i < list.length; i++) {
         const f = path.join(work, `${seg.id}.w${i}.png`);
-        await words(list, i, f);
+        await words(list, i, f, seg.captionAt);
         inputs.push('-i', f);
         const start = t;
         t += (main * weights[i]) / sum;
