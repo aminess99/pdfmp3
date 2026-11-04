@@ -1472,7 +1472,15 @@ export const StudioView: React.FC<StudioViewProps> = ({
       )}
 
       {showChatModal && (
-        <ChatPdfModal isOpen={showChatModal} onClose={() => setShowChatModal(false)} job={job} availableVoices={voicesPool} />
+        <ChatPdfModal
+          isOpen={showChatModal}
+          onClose={() => setShowChatModal(false)}
+          job={job}
+          availableVoices={voicesPool}
+          chapters={(chapters || []).filter((c) => (c.status || 'completed') === 'completed').map((c) => ({ title: c.title, text: c.text }))}
+          currentChapter={activeChapterIndex}
+          stillReading={Boolean(job.isStreamingBackground) || unreadPages > 0}
+        />
       )}
     </div>
   );

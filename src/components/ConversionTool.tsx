@@ -569,9 +569,18 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     if (listeningMode !== 'full' && inputMode === 'pdf' && session && prep && prep.nextPage <= session.totalPages) {
       setConvertingChapterStatus(tr('جاري قراءة بقية الكتاب...', 'Reading the rest of the book...'));
       try {
-        // A scanned book is read by OCR: cap it so one summary cannot scan hundreds of pages
-        const end = session.ocr ? Math.min(session.totalPages, prep.nextPage + 119) : session.totalPages;
-        const rest = await smartFilter(cleanPages(await session.readPageTexts(prep.nextPage, end), prep.heads).text);
+        // The whole book, scanned books too: a summary of the first pages only is not a summary
+        // of the book (a 300-page scan costs well under a dollar of OCR)
+        const end = session.totalPages;
+        // In chunks, so the window shows how far it has got ("الصفحات 120 من 300")
+        const pages: string[] = [];
+        const step = session.ocr ? 24 : 60;
+        for (let from = prep.nextPage; from <= end; from += step) {
+          const to = Math.min(end, from + step - 1);
+          setConvertingChapterStatus(tr(`جاري قراءة بقية الكتاب للتلخيص: الصفحات ${from}–${to} من ${end}...`, `Reading the rest of the book for the summary: pages ${from}–${to} of ${end}...`));
+          pages.push(...(await session.readPageTexts(from, to)));
+        }
+        const rest = await smartFilter(cleanPages(pages, prep.heads).text);
         if (rest) processedText = `${extractedText}\n\n${rest}`;
       } catch (e) {
         console.warn('Reading the rest of the book failed:', e);

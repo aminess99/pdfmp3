@@ -568,6 +568,8 @@ async function ocrImagesOpenRouter(images: string[], info: { model?: string } = 
           model,
           temperature: 0,
           max_tokens: 2500 * images.length,
+          // Copying text off a page needs no "thinking": it is billed as output and only slows the scan
+          reasoning: { max_tokens: 0 },
           messages: [
             {
               role: "user",
@@ -912,6 +914,37 @@ function localExtractKeyPoints(text: string, bookTitle?: string): string {
 }
 
 // AI Book Listening Mode Transformer: Generates Executive Summaries (10m) or Key Points (50%)
+// A summary reads the whole book: Gemini Flash takes ~1M tokens, so a 300-page book
+// (~600k Arabic characters) fits in one request. Longer texts keep their start, middle and end.
+const SUMMARY_MAX_CHARS = 700000;
+function bookForSummary(text: string): string {
+  if (text.length <= SUMMARY_MAX_CHARS) return text;
+  const part = Math.floor(SUMMARY_MAX_CHARS / 3);
+  const mid = Math.floor(text.length / 2 - part / 2);
+  return `${text.slice(0, part)}\n\n[…]\n\n${text.slice(mid, mid + part)}\n\n[…]\n\n${text.slice(-part)}`;
+}
+
+// Summaries are kept on the persistent disk next to the audio clips
+const SUMMARY_CACHE_DIR = path.join(AUDIO_CACHE_DIR, "summaries");
+function summaryCacheKey(mode: string, title: string | undefined, text: string): string {
+  return crypto.createHash("sha256").update(`${mode}\n${title || ""}\n${text}`).digest("hex").slice(0, 40);
+}
+function readSummaryCache(key: string): string | null {
+  try {
+    return fs.readFileSync(path.join(SUMMARY_CACHE_DIR, `${key}.txt`), "utf8") || null;
+  } catch {
+    return null;
+  }
+}
+function writeSummaryCache(key: string, text: string): void {
+  try {
+    fs.mkdirSync(SUMMARY_CACHE_DIR, { recursive: true });
+    fs.writeFileSync(path.join(SUMMARY_CACHE_DIR, `${key}.txt`), text);
+  } catch {
+    // a cache miss next time is fine
+  }
+}
+
 // The client calls /api/ai/transform-book; keep the original path too
 app.post(["/api/book/transform-mode", "/api/ai/transform-book"], async (req, res) => {
   try {
@@ -949,7 +982,7 @@ ${titleContext}
 - اكتب النص الصوتي كاملاً مباشرة دون أي مقدمات أو تعليقات خارجية.
 
 النص المصدري للكتاب:
-${text.slice(0, 45000)}`;
+${bookForSummary(text)}`;
     } else if (mode === "key_points") {
       prompt = `أنت خبير إعداد الكتب الصوتية واستخلاص الرؤى الجوهرية.
 ${titleContext}
@@ -977,13 +1010,23 @@ ${titleContext}
 اكتب النص مباشرة دون أي مقدمات أو اعتذارات.
 
 النص الأصلي للكتاب:
-${text.slice(0, 35000)}`;
+${bookForSummary(text)}`;
     }
+
+    // The same book and mode asked again: answer from the cache (no new cost)
+    const cacheKey = summaryCacheKey(mode, bookTitle, text);
+    const cached = readSummaryCache(cacheKey);
+    if (cached) {
+      console.log(`[summary] ${mode} from cache (${text.length} chars)`);
+      return res.json({ success: true, transformedText: cached, mode, cached: true });
+    }
+    const t0 = Date.now();
 
     let transformedText = "";
 
     // 1. First priority: OpenRouter with Google Gemini (Massive context, deep narrative Arabic, full 10-minute output)
-    const openRouterResult = await callOpenRouter(prompt, "google/gemini-2.5-flash", 4000);
+    // A whole book (up to ~200k tokens) takes longer to read than a chapter
+    const openRouterResult = await callOpenRouter(prompt, "google/gemini-2.5-flash", 8000, text.length > 60000 ? 120000 : 45000);
     if (openRouterResult && openRouterResult.length > 30) {
       transformedText = openRouterResult;
     }
@@ -1008,6 +1051,11 @@ ${text.slice(0, 35000)}`;
           }
         }
       }
+    }
+
+    if (transformedText.length > 30) {
+      writeSummaryCache(cacheKey, transformedText);
+      console.log(`[summary] ${mode} of ${text.length} chars -> ${transformedText.length} chars, ${Date.now() - t0} ms`);
     }
 
     // 3. High quality local fallback if AI services or quota are momentarily exhausted
@@ -2377,6 +2425,55 @@ app.post("/api/ai/generate-cover", async (req, res) => {
 });
 
 // Chat With Your PDF / Book (Gemini 3.8 Flash Contextual Q&A with Speech)
+// "Ask the book": what the answer is read from. The whole book when it is short; otherwise
+// the chapter being listened to plus the paragraphs that share the most words with the
+// question, in book order, each labelled with its chapter (about 60k characters in all)
+const CHAT_BUDGET = 60000;
+const CHAT_STOPWORDS = new Set("ما ماذا متى كيف لماذا لما هل من في على عن الى إلى الذي التي الذين هذا هذه ذلك تلك هو هي هم كان كانت يكون مع أو او ثم لكن قد لقد كل بعض أي اي أين اين عند بين حول الكتاب الكاتب المؤلف فصل الفصل أهم اهم فكرة لي لنا".split(" "));
+const chatStem = (w: string) => w.replace(/[\u064B-\u0652ـ]/g, "").replace(/^(?:و|ف|ب|ل|ك)?(?:ال)/, "").replace(/[ةه]$/, "");
+function passagesForQuestion(chapters: { title: string; text: string }[], question: string, current: number): string {
+  const label = (c: { title: string }) => (c.title ? `[${c.title}]\n` : "");
+  const all = chapters.map((c) => label(c) + c.text).join("\n\n");
+  if (all.length <= CHAT_BUDGET) return all;
+  const terms = [...new Set(question.split(/[^\u0621-\u064Aa-zA-Z0-9]+/).filter((w) => w.length >= 3 && !CHAT_STOPWORDS.has(w)).map(chatStem).filter((w) => w.length >= 2))];
+  const cur = chapters[current];
+  const curText = cur ? cur.text.slice(0, 20000) : "";
+  // Paragraphs of ~1200 characters across the book
+  const paras: { ch: number; i: number; text: string; score: number }[] = [];
+  chapters.forEach((c, ch) => {
+    if (ch === current) return;
+    const blocks = c.text.split(/\n{2,}/);
+    let buf = "";
+    let i = 0;
+    const push = () => {
+      if (!buf.trim()) return;
+      const words = buf.split(/\s+/).map(chatStem);
+      const score = terms.reduce((n, t) => n + words.filter((w) => w === t || (t.length >= 4 && w.includes(t))).length, 0);
+      paras.push({ ch, i: i++, text: buf.trim(), score });
+      buf = "";
+    };
+    for (const b of blocks) {
+      buf += (buf ? "\n" : "") + b;
+      if (buf.length >= 1200) push();
+    }
+    push();
+  });
+  let room = CHAT_BUDGET - curText.length;
+  const chosen = paras
+    .filter((p) => p.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .filter((p) => (room -= p.text.length + 60) > 0);
+  // Nothing matched (a general question like "what is the main idea"): the opening of every chapter
+  if (!chosen.length) {
+    const each = Math.floor((CHAT_BUDGET - curText.length) / Math.max(1, chapters.length));
+    chapters.forEach((c, ch) => ch !== current && paras.filter((p) => p.ch === ch && p.i === 0).forEach((p) => chosen.push({ ...p, text: p.text.slice(0, each) })));
+  }
+  const parts = chosen.map((p) => ({ ch: p.ch, i: p.i, text: p.text }));
+  if (cur) parts.push({ ch: current, i: -1, text: `(الفصل الذي يستمع إليه المستخدم الآن)\n${curText}` });
+  parts.sort((a, b) => a.ch - b.ch || a.i - b.i);
+  return parts.map((p) => label(chapters[p.ch]) + p.text).join("\n\n");
+}
+
 app.post("/api/ai/chat-pdf", async (req, res) => {
   try {
     const { question, bookText, bookTitle, history = [] } = req.body;
@@ -2385,16 +2482,28 @@ app.post("/api/ai/chat-pdf", async (req, res) => {
       return res.status(400).json({ error: "السؤال مطلوب." });
     }
 
-    const trimmedBook = (bookText || "").slice(0, 35000);
+    // The book as chapters (what has been read so far), the one being listened to, and the
+    // contents; older clients send one bookText
+    const chapters: { title: string; text: string }[] = Array.isArray(req.body.chapters)
+      ? req.body.chapters
+          .filter((c: any) => c && typeof c.text === "string")
+          .map((c: any) => ({ title: String(c.title || "").slice(0, 200), text: c.text }))
+      : [];
+    if (!chapters.length && typeof bookText === "string" && bookText.trim()) chapters.push({ title: "", text: bookText });
+    const currentIndex = Number.isInteger(req.body.currentChapter) ? req.body.currentChapter : -1;
+    const toc: string[] = Array.isArray(req.body.toc) ? req.body.toc.map((t: any) => String(t).slice(0, 200)).slice(0, 80) : [];
+    const incomplete = Boolean(req.body.incomplete);
+    const reference = passagesForQuestion(chapters, question, currentIndex);
+    const contents = toc.length ? toc : chapters.map((c) => c.title).filter(Boolean);
 
     const prompt = `أنت المساعد الذكي وخبير محتوى الكتاب الصوتي "${bookTitle || 'الكتاب المرفوع'}".
 المستخدم يطرح عليك سؤالاً حول محتوى هذا الكتاب.
-
-نص / مقتطفات الكتاب كمرجع أساسي:
+${contents.length ? `\nفصول الكتاب:\n${contents.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n` : ""}
+مقاطع من الكتاب مرتبة حسب ورودها فيه (كل مقطع مسبوق باسم فصله)، اخترناها لأنها الأقرب إلى السؤال، ومعها الفصل الذي يستمع إليه المستخدم الآن:
 ---
-${trimmedBook}
+${reference}
 ---
-
+${incomplete ? "\nتنبيه: الكتاب ما زال يُقرأ، وبعض فصوله الأخيرة لم تصل بعد. إذا كان السؤال عن جزء لم يصل، قل ذلك بوضوح.\n" : ""}
 سجل المحادثة السابق إن وجد:
 ${JSON.stringify(history.slice(-4))}
 
@@ -2402,10 +2511,11 @@ ${JSON.stringify(history.slice(-4))}
 "${question}"
 
 تعليمات الإجابة:
-1. أجب بدقة واستناداً إلى ما ورد في الكتاب بأسلوب واضح، ممتع، وملهم.
+1. أجب بدقة واستناداً إلى ما ورد في الكتاب بأسلوب واضح، ممتع، وملهم، واذكر الفصل الذي جاءت منه الفكرة حين تعرفه (مثل: "في فصل كذا...").
 2. إذا كان السؤال يطلب تلخيص فكرة، اقتباسات، أو خطوات عملية، رتبها في نقاط سهلة القراءة.
 3. استخدم لغة عربية فصيحة ومشكولة في الكلمات المفتاحية لتكون مريحة عند الاستماع الصوتي.
-4. إذا لم تكن المعلومة مذكورة إطلاقاً في الكتاب، أجب بلطف بناءً على المعرفة العامة مع توضيح ذلك.`;
+4. إذا لم تكن المعلومة مذكورة في هذه المقاطع، قل ذلك صراحة أولاً، ثم أجب بلطف من المعرفة العامة مع توضيح أن ذلك ليس من نص الكتاب.`;
+    console.log(`[chat] ${chapters.length} chapters, ${chapters.reduce((n, c) => n + c.text.length, 0)} chars -> ${reference.length} chars sent`);
 
     let answer = "";
     const ai = getGeminiClient();

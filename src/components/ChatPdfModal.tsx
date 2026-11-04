@@ -18,12 +18,17 @@ import { ConversionJob, Voice } from '../types';
 import { audioEngine } from '../lib/audioEngine';
 import { tr, DIR } from '../lib/i18n';
 import { apiFetch } from '../lib/apiFetch';
+import { cleanBookTitle } from '../lib/bookTitle';
 
 interface ChatPdfModalProps {
   isOpen: boolean;
   onClose: () => void;
   job: ConversionJob | null;
   availableVoices: Voice[];
+  // The chapters read so far (a long book keeps arriving while it is listened to)
+  chapters?: { title: string; text: string }[];
+  currentChapter?: number;
+  stillReading?: boolean;
 }
 
 interface Message {
@@ -37,6 +42,9 @@ export const ChatPdfModal: React.FC<ChatPdfModalProps> = ({
   isOpen,
   onClose,
   job,
+  chapters,
+  currentChapter,
+  stillReading,
   availableVoices,
 }) => {
   const [messages, setMessages] = useState<Message[]>([
@@ -97,8 +105,10 @@ export const ChatPdfModal: React.FC<ChatPdfModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question: queryText,
-          bookText: bookContext,
-          bookTitle: job.fileName,
+          ...(chapters && chapters.length
+            ? { chapters, currentChapter: currentChapter ?? -1, toc: job.tocTitles || [], incomplete: Boolean(stillReading) }
+            : { bookText: bookContext }),
+          bookTitle: cleanBookTitle(job.fileName),
           history: messages.map((m) => ({
             role: m.sender === 'user' ? 'user' : 'model',
             parts: [{ text: m.text }],
