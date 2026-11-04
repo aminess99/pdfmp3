@@ -188,6 +188,28 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
   const [fromFirstPage, setFromFirstPage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // After a file is read, listening starts by itself after a short countdown (the options were
+  // chosen before uploading); any change to them, or "إلغاء", stops it
+  const [autoStartIn, setAutoStartIn] = useState<number | null>(null);
+  const convertButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (autoStartIn === null) return;
+    if (autoStartIn <= 0) {
+      setAutoStartIn(null);
+      handleStartConversion();
+      return;
+    }
+    const t = setTimeout(() => setAutoStartIn((n) => (n === null ? null : n - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [autoStartIn]);
+  useEffect(() => {
+    setAutoStartIn(null);
+  }, [listeningMode, selectedChapterMode, selectedVoice?.id, fromFirstPage]);
+  const startCountdown = () => {
+    setAutoStartIn(3);
+    setTimeout(() => convertButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+  };
+
   // "Try a sample" starts converting once the sample text is in state
   useEffect(() => {
     if (pendingSampleStart && selectedSampleBook && extractedText === selectedSampleBook.sampleText) {
@@ -397,6 +419,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         const session = await startProgressivePdfExtraction(file, 6);
         await prepareSession(session, file);
       }
+      if (!extractionCancelledRef.current) startCountdown();
     } catch (err: any) {
       console.warn('File extraction note:', err);
       setConversionError(err.message || tr("حدث خطأ أثناء قراءة الملف.", "Something went wrong while reading the file."));
@@ -460,6 +483,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
       // Read by OCR a few pages at a time, like a scanned book
       bookPrepRef.current = null;
       await prepareSession(await startOcrPdfSession(selectedFile), selectedFile);
+      if (!extractionCancelledRef.current) startCountdown();
     } catch (e: any) {
       setConversionError(e.message || tr("تعذر استكمال المسح الضوئي.", "The scan could not be completed."));
     } finally {
@@ -909,6 +933,14 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
                       </button>
                     </p>
                   )}
+                  {autoStartIn !== null && (
+                    <p role="status" className="mt-1 px-3 py-2 rounded-xl bg-accent/10 border border-accent/30 text-sm text-white flex items-center gap-3">
+                      <span>{tr(`جاهز! يبدأ الاستماع خلال ${autoStartIn} ثوانٍ`, `Ready! Listening starts in ${autoStartIn}s`)}</span>
+                      <button type="button" onClick={() => setAutoStartIn(null)} className="text-brand-soft hover:underline cursor-pointer">
+                        {tr('إلغاء', 'Cancel')}
+                      </button>
+                    </p>
+                  )}
                   <button type="button" onClick={handleForceOcr} className="text-xs text-slate-400 hover:text-white cursor-pointer">
                     {tr("النص غير واضح؟ جرّب المسح العميق", "Text looks wrong? Try a deep scan")}
                   </button>
@@ -1049,8 +1081,12 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
             </button>
           </div>
           <button
+            ref={convertButtonRef}
             type="button"
-            onClick={() => handleStartConversion()}
+            onClick={() => {
+              setAutoStartIn(null);
+              handleStartConversion();
+            }}
             disabled={isConverting || isExtracting || isQuickLoading || !hasInput}
             className="flex items-center justify-center gap-2.5 min-h-[52px] px-7 rounded-2xl bg-gradient-to-l from-[#8b5cf6] to-[#3b82f6] text-white font-bold text-[17px] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
           >
