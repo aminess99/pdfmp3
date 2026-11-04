@@ -89,7 +89,9 @@ export class AudioEngine {
 
     const fetchPromise = (async () => {
       try {
-        const res = await apiFetch('/api/tts/speak', {
+        // One quiet retry after a short wait: a busy voice service or a provider hiccup
+        // (timeouts, momentary credit holds) usually clears within seconds
+        const call = () => apiFetch('/api/tts/speak', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -105,6 +107,11 @@ export class AudioEngine {
             speed: 1.0,
           }),
         });
+        let res = await call().catch(() => null);
+        if (!res || res.status >= 500) {
+          await new Promise((r) => setTimeout(r, 2500));
+          res = await call();
+        }
 
         if (!res.ok) {
           console.warn('Server TTS returned non-200:', res.status);
