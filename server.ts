@@ -548,6 +548,9 @@ const OCR_PAGES_PROMPT = `أمامك صور صفحات متتالية من كت�
 - اكتب العناوين (مثل الفصل الأول أو المقدمة) كل عنوان في سطر مستقل.
 - أخرج النص فقط، دون أي تعليق منك.`;
 
+// Turned off for the rest of the process if OpenRouter refuses it
+let ocrNoThinking = true;
+
 async function ocrImagesOpenRouter(images: string[], info: { model?: string } = {}): Promise<string | null> {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return null;
@@ -556,33 +559,44 @@ async function ocrImagesOpenRouter(images: string[], info: { model?: string } = 
     try {
       const controller = new AbortController();
       const t = setTimeout(() => controller.abort(), 90000);
-      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
-          "X-Title": "Hakawati AI",
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0,
-          max_tokens: 2500 * images.length,
-          // Copying text off a page needs no "thinking": it is billed as output and only slows the scan
-          reasoning: { max_tokens: 0 },
-          messages: [
-            {
-              role: "user",
-              content: [{ type: "text", text: OCR_PAGES_PROMPT }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))],
-            },
-          ],
-        }),
-        signal: controller.signal,
-      });
+      // Copying text off a page needs no "thinking": it is billed as output and only slows the
+      // scan. If a provider refuses the setting, the same request goes again without it.
+      const send = (noThinking: boolean) =>
+        fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+            "X-Title": "Hakawati AI",
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0,
+            max_tokens: 2500 * images.length,
+            ...(noThinking ? { reasoning: { max_tokens: 0 } } : {}),
+            messages: [
+              {
+                role: "user",
+                content: [{ type: "text", text: OCR_PAGES_PROMPT }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))],
+              },
+            ],
+          }),
+          signal: controller.signal,
+        });
+      let r = await send(ocrNoThinking);
+      if (r.status === 400 && ocrNoThinking) {
+        console.warn(`[OCR] ${model} refused reasoning=0 (${(await r.text()).slice(0, 200)}); sending without it`);
+        ocrNoThinking = false;
+        r = await send(false);
+      }
       clearTimeout(t);
       if (r.ok) {
         const data: any = await r.json();
         const text = data.choices?.[0]?.message?.content;
+        const u = data.usage || {};
+        const cost = u.cost !== undefined ? " cost " + u.cost + " USD" : "";
+        console.log(`[OCR usage] ${model} in ${u.prompt_tokens ?? "?"} out ${u.completion_tokens ?? "?"} thinking ${u.completion_tokens_details?.reasoning_tokens ?? 0}${cost}`);
         if (typeof text === "string" && text.replace(/\s+/g, "").length > 0) {
           info.model = model;
           return text;
