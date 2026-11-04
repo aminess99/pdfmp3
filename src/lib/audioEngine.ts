@@ -107,11 +107,14 @@ export class AudioEngine {
             speed: 1.0,
           }),
         });
+        // Retries ride out a server restart too (an update takes the site down for up to a minute)
         let res = await call().catch(() => null);
-        if (!res || res.status >= 500) {
-          await new Promise((r) => setTimeout(r, 2500));
-          res = await call();
+        for (const wait of [2500, 5000, 10000, 20000, 25000]) {
+          if (res && res.status < 500) break;
+          await new Promise((r) => setTimeout(r, wait));
+          res = await call().catch(() => null);
         }
+        if (!res) return null;
 
         if (!res.ok) {
           console.warn('Server TTS returned non-200:', res.status);
