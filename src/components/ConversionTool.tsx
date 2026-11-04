@@ -994,7 +994,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
           {inputMode === 'pdf' && selectedFile && !isExtracting && listeningMode === 'full' && detectedChapters.length > 1 && (
             <div className="flex flex-col gap-2">
               <label htmlFor="chapter-pick" className="text-sm text-slate-400">
-                {tr('وجدنا', 'Found')} {chaptersAr(detectedChapters.length)} · {tr('حوالي', 'about')} {minutesAr(totalDetectedMinutes)}
+                {tr('في الكتاب', 'Found')} {chaptersAr(detectedChapters.length)} · {tr('حوالي', 'about')} {minutesAr(totalDetectedMinutes)}
               </label>
               <select
                 id="chapter-pick"
