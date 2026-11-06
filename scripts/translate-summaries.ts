@@ -52,6 +52,7 @@ Rules:
 - Use the book's published English title and the author's usual English spelling. For books written in Arabic, keep the transliterated title the first time and explain it in English.
 - Keep quotations from the Quran or hadith as faithful English renderings, attributed as in the Arabic.
 - The text is read aloud verbatim: write numbers in words, and use no symbols, markdown, brackets or emojis.
+- Inside the text, quote with curly quotes “ ” or ‘ ’, never with straight double quotes, so the JSON stays valid.
 - The first paragraph should open with "Welcome to this summary of ..." in English.
 - FAQ answers that mention listening or downloading should refer to "this page" and "MP3" as in the Arabic.
 
