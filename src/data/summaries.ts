@@ -1,0 +1,488 @@
+// Audio book summaries. Each one is served at /ملخص-كتاب-<slug> (server.ts pre-renders
+// the text, meta tags and JSON-LD), and the hub lists them all at /ملخصات-كتب-صوتية.
+//
+// Each text (./summary-texts/<textId>.ts) doubles as the narration script:
+// scripts/generate-summary-audio.ts reads it in order (heading, then paragraphs) and saves
+// public/summaries/<slug>.mp3 plus <slug>.json with the start time of every section, so the
+// page can jump between them. Write numbers out in words and avoid symbols in the texts,
+// since they are read aloud verbatim.
+
+import { LANG, Lang } from '../lib/i18n';
+import { SUMMARIES_EN, SUMMARIES_HUB_EN } from './summariesEn';
+
+export interface BookSummary {
+  slug: string;
+  bookTitle: string;
+  author: string;
+  category: string;
+  voiceId: string;
+  // Planned listening time, shown until the audio manifest gives the real one
+  minutes: number;
+  title: string;
+  description: string;
+  keywords: string;
+  // One or two sentences under the title
+  lead: string;
+  publishedAt: string;
+  // File name of the text in ./summary-texts/ (Latin, so it is safe everywhere)
+  textId: string;
+  // public/covers/<textId>.webp (page) and .jpg (link previews) exist
+  hasCover?: boolean;
+  // Set on the copies handed out by summariesFor(): the language and the Arabic slug that
+  // pairs the two versions
+  lang?: Lang;
+  baseSlug?: string;
+}
+
+// The English version of a summary (./summariesEn.ts, keyed by the Arabic slug); its text is
+// ./summary-texts/en/<textId>.ts and its audio public/summaries/en/<slug>.mp3
+export type BookSummaryEn = Pick<BookSummary, 'slug' | 'bookTitle' | 'author' | 'category' | 'title' | 'description' | 'keywords' | 'lead' | 'minutes'>;
+
+// The long part, kept out of the main bundle: server.ts and the generator import every
+// text through ./summaryTexts.ts, the browser loads only the one it shows (lib/summaryLoader.ts)
+export interface SummaryText {
+  sections: { heading: string; paragraphs: string[] }[];
+  faqs: { question: string; answer: string }[];
+}
+
+// Written by the server-side generator next to each MP3
+export interface SummaryAudioManifest {
+  hash: string;
+  duration: number;
+  sections: number[];
+}
+
+export const summariesHubPath = (lang: Lang): string => (lang === 'en' ? '/en/book-summaries' : `/${encodeURIComponent('ملخصات-كتب-صوتية')}`);
+export const SUMMARIES_HUB_PATH = summariesHubPath(LANG);
+const SUMMARY_PREFIX = 'ملخص-كتاب-';
+
+// Every summary in Arabic; each also gets an English version in ./summariesEn.ts
+export const ALL_SUMMARIES: BookSummary[] = [
+  {
+    slug: 'العادات-الذرية',
+    bookTitle: 'العادات الذرية',
+    author: 'جيمس كلير',
+    category: 'تطوير الذات',
+    voiceId: 'khalid_msa',
+    minutes: 19,
+    title: 'ملخص كتاب العادات الذرية صوتي ومكتوب – جيمس كلير | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب العادات الذرية لجيمس كلير في أقل من عشرين دقيقة بالعربية الفصحى، أو اقرأه مكتوباً: قاعدة الواحد بالمئة، والعادات المبنية على الهوية، والقوانين الأربعة لتغيير السلوك، وقاعدة الدقيقتين.',
+    keywords:
+      'ملخص كتاب العادات الذرية, ملخص كتاب العادات الذرية pdf, العادات الذرية كتاب صوتي, ملخص العادات الذرية صوتي, كتاب العادات الذرية, جيمس كلير, القوانين الأربعة لتغيير السلوك, قاعدة الدقيقتين',
+    lead: 'كيف تصنع التغييرات الصغيرة جداً نتائج كبيرة؟ أهم أفكار الكتاب في أقل من عشرين دقيقة: من قاعدة الواحد بالمئة إلى القوانين الأربعة لبناء العادات الجيدة والتخلص من السيئة.',
+    publishedAt: '2026-10-30',
+    textId: 'atomic-habits',
+    hasCover: true,
+  },
+  {
+    slug: 'أبي-الذي-أكره',
+    bookTitle: 'أبي الذي أكره',
+    author: 'عماد رشاد عثمان',
+    category: 'علم النفس',
+    voiceId: 'huda_msa',
+    minutes: 14,
+    title: 'ملخص كتاب أبي الذي أكره صوتي ومكتوب – عماد رشاد عثمان | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب أبي الذي أكره للدكتور عماد رشاد عثمان بالعربية الفصحى، أو اقرأه مكتوباً: أشكال الأذى الأسري، وأثر جروح الطفولة، ومراحل التعافي، والحدود والمسامحة.',
+    keywords:
+      'ملخص كتاب أبي الذي أكره, ملخص كتاب أبي الذي أكره pdf, أبي الذي أكره كتاب صوتي, عماد رشاد عثمان, جروح الطفولة, الأذى الأسري, التعافي النفسي',
+    lead: 'حين يجتمع الحب والألم تجاه الوالدين: كيف تفهم جروح الطفولة دون أن تتهم أحداً، وكيف تبدأ رحلة التعافي وتضع حدوداً صحية.',
+    publishedAt: '2026-10-30',
+    textId: 'my-father-whom-i-hate',
+    hasCover: true,
+  },
+  {
+    slug: '48-قانون-للقوة',
+    bookTitle: '48 قانوناً للقوة',
+    author: 'روبرت غرين',
+    category: 'القوة والنفوذ',
+    voiceId: 'youssef_msa',
+    minutes: 15,
+    title: 'ملخص كتاب 48 قانون للقوة صوتي ومكتوب – روبرت غرين | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب 48 قانون للقوة لروبرت غرين بالعربية الفصحى، أو اقرأه مكتوباً: أهم القوانين مجمّعة حسب موضوعها، مع قراءة نقدية لما يفيدك منها وما يجب أن تحذره.',
+    keywords:
+      'ملخص كتاب 48 قانون للقوة, ملخص كتاب 48 قانون للقوة pdf, 48 قانون للقوة كتاب صوتي, قوانين القوة, روبرت غرين, كيف تمسك بزمام القوة',
+    lead: 'أشهر قوانين السلطة والنفوذ من قصص التاريخ: ما الذي نتعلمه منها في الحذر والتوقيت وفهم الناس، وما الذي يجب أن نحذره.',
+    publishedAt: '2026-10-30',
+    textId: '48-laws-of-power',
+    hasCover: true,
+  },
+  {
+    slug: 'فن-اللامبالاة',
+    bookTitle: 'فن اللامبالاة',
+    author: 'مارك مانسون',
+    category: 'تطوير الذات',
+    voiceId: 'khalid_msa',
+    minutes: 13,
+    title: 'ملخص كتاب فن اللامبالاة صوتي ومكتوب – مارك مانسون | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب فن اللامبالاة لمارك مانسون بالعربية الفصحى، أو اقرأه مكتوباً: لماذا تجعلك مطاردة السعادة تعيساً، والألم الذي تختاره، والقيم الجيدة والسيئة، والمسؤولية.',
+    keywords:
+      'ملخص كتاب فن اللامبالاة, ملخص كتاب فن اللامبالاة pdf, فن اللامبالاة كتاب صوتي, ملخص كتاب فن اللامبالاة صوتي, مارك مانسون',
+    lead: 'ليست دعوة إلى ألا تهتم بشيء، بل إلى أن تختار بحكمة ما يستحق اهتمامك، وتتقبل أن الألم والمشكلات جزء من الحياة.',
+    publishedAt: '2026-10-30',
+    textId: 'subtle-art',
+    hasCover: true,
+  },
+  {
+    slug: 'الأب-الغني-والأب-الفقير',
+    bookTitle: 'الأب الغني والأب الفقير',
+    author: 'روبرت كيوساكي',
+    category: 'المال والأعمال',
+    voiceId: 'fatima_msa',
+    minutes: 12,
+    title: 'ملخص كتاب الأب الغني والأب الفقير صوتي ومكتوب – روبرت كيوساكي | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب الأب الغني والأب الفقير لروبرت كيوساكي بالعربية الفصحى، أو اقرأه مكتوباً: الفرق بين الأصل والالتزام، وسباق الفئران، وادفع لنفسك أولاً، والذكاء المالي.',
+    keywords:
+      'ملخص كتاب الأب الغني والأب الفقير, ملخص كتاب الأب الغني والأب الفقير pdf, الأب الغني والأب الفقير كتاب صوتي, روبرت كيوساكي, الثقافة المالية, الأصول والالتزامات',
+    lead: 'دروس الثقافة المالية التي غيّرت تفكير الملايين: لماذا لا يعمل الأغنياء من أجل المال، وما الفرق بين الأصل والالتزام، وكيف تبدأ.',
+    publishedAt: '2026-10-30',
+    textId: 'rich-dad-poor-dad',
+    hasCover: true,
+  },
+  {
+    slug: 'العادات-السبع-للناس-الأكثر-فعالية',
+    bookTitle: 'العادات السبع للناس الأكثر فعالية',
+    author: 'ستيفن كوفي',
+    category: 'تطوير الذات',
+    voiceId: 'youssef_msa',
+    minutes: 13,
+    title: 'ملخص كتاب العادات السبع للناس الأكثر فعالية صوتي ومكتوب – ستيفن كوفي | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب العادات السبع للناس الأكثر فعالية لستيفن كوفي بالعربية الفصحى، أو اقرأه مكتوباً: العادات السبع، ودائرة التأثير، ومصفوفة إدارة الوقت، والحساب العاطفي.',
+    keywords:
+      'ملخص كتاب العادات السبع للناس الأكثر فعالية, ملخص كتاب العادات السبع pdf, العادات السبع كتاب صوتي, ستيفن كوفي, مصفوفة إدارة الوقت, العادات السبع للمراهقين',
+    lead: 'العادات التي تبني شخصية فعالة من الداخل إلى الخارج: من المبادرة وتحديد الوجهة وإدارة الوقت، إلى التعاون والاستماع وتجديد النفس.',
+    publishedAt: '2026-10-30',
+    textId: 'seven-habits',
+    hasCover: true,
+  },
+  {
+    slug: 'فاتتني-صلاة',
+    bookTitle: 'فاتتني صلاة',
+    author: 'إسلام جمال',
+    category: 'ديني',
+    voiceId: 'jood_lit',
+    minutes: 9,
+    title: 'ملخص كتاب فاتتني صلاة صوتي ومكتوب – إسلام جمال | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب فاتتني صلاة لإسلام جمال بالعربية الفصحى، أو اقرأه مكتوباً: لماذا نصلي، ومعاني الصلاة من الأذان إلى التسليم، ونصائح للمحافظة عليها.',
+    keywords:
+      'ملخص كتاب فاتتني صلاة, ملخص كتاب فاتتني صلاة pdf, فاتتني صلاة كتاب صوتي, إسلام جمال, الخشوع في الصلاة, معاني الصلاة',
+    lead: 'رحلة مع الصلاة خطوة خطوة، من الأذان إلى التسليم، لتكتشف معنى ما تقوله وتفعله، وتجد فيها راحة لا عبئاً.',
+    publishedAt: '2026-10-30',
+    textId: 'missed-prayer',
+    hasCover: true,
+  },
+  {
+    slug: 'الأمير-مكيافيلي',
+    bookTitle: 'الأمير',
+    author: 'نيكولو مكيافيلي',
+    category: 'فكر وسياسة',
+    voiceId: 'suhaib_doc',
+    minutes: 12,
+    title: 'ملخص كتاب الأمير لمكيافيلي صوتي ومكتوب | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب الأمير لنيكولو مكيافيلي بالعربية الفصحى، أو اقرأه مكتوباً: أنواع الإمارات، والجيش الخاص، والخوف أم المحبة، والثعلب والأسد، والحظ، مع قراءة نقدية.',
+    keywords:
+      'ملخص كتاب الأمير, ملخص كتاب الأمير ميكافيلي pdf, كتاب الأمير مكيافيلي, الأمير كتاب صوتي, مكيافيلي, الغاية تبرر الوسيلة',
+    lead: 'أشهر كتاب في الفكر السياسي: كيف تُكتسب السلطة وكيف تضيع، كما رآها مكيافيلي في إيطاليا القرن السادس عشر، مع قراءة نقدية.',
+    publishedAt: '2026-10-30',
+    textId: 'the-prince',
+    hasCover: true,
+  },
+  {
+    slug: 'الذكاء-العاطفي',
+    bookTitle: 'الذكاء العاطفي',
+    author: 'دانيال غولمان',
+    category: 'علم النفس',
+    voiceId: 'huda_msa',
+    minutes: 11,
+    title: 'ملخص كتاب الذكاء العاطفي صوتي ومكتوب – دانيال غولمان | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب الذكاء العاطفي لدانيال غولمان بالعربية الفصحى، أو اقرأه مكتوباً: المكونات الخمسة للذكاء العاطفي، والاختطاف العاطفي، وتجربة الحلوى، والذكاء العاطفي في البيت والعمل.',
+    keywords:
+      'ملخص كتاب الذكاء العاطفي, ملخص كتاب الذكاء العاطفي pdf, الذكاء العاطفي كتاب صوتي, دانيال جولمان, مكونات الذكاء العاطفي',
+    lead: 'لماذا لا يكفي الذكاء وحده للنجاح؟ القدرات الخمس التي تساعدك على فهم مشاعرك وإدارتها وفهم الآخرين، وكيف تنميها.',
+    publishedAt: '2026-10-30',
+    textId: 'emotional-intelligence',
+    hasCover: true,
+  },
+  {
+    slug: 'من-جيد-إلى-عظيم',
+    bookTitle: 'من جيد إلى عظيم',
+    author: 'جيم كولينز',
+    category: 'المال والأعمال',
+    voiceId: 'khalid_msa',
+    minutes: 11,
+    title: 'ملخص كتاب من جيد إلى عظيم صوتي ومكتوب – جيم كولينز | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب من جيد إلى عظيم لجيم كولينز بالعربية الفصحى، أو اقرأه مكتوباً: قيادة المستوى الخامس، والأشخاص قبل الاتجاه، ومفارقة ستوكديل، ومفهوم القنفذ، ودولاب الموازنة.',
+    keywords:
+      'ملخص كتاب من جيد إلى عظيم, ملخص كتاب من جيد إلى عظيم pdf, من جيد إلى عظيم كتاب صوتي, جيم كولينز, قيادة المستوى الخامس, مفهوم القنفذ',
+    lead: 'كيف تتحول شركة عادية إلى شركة عظيمة؟ ما وجده بحث استمر سنوات عن الشركات التي حققت هذا التحول، وما يميزها عن غيرها.',
+    publishedAt: '2026-10-30',
+    textId: 'good-to-great',
+    hasCover: true,
+  },
+  {
+    slug: 'محاط-بالحمقى',
+    bookTitle: 'محاط بالحمقى',
+    author: 'توماس إريكسون',
+    category: 'علم النفس',
+    voiceId: 'khalid_msa',
+    minutes: 15,
+    title: 'ملخص كتاب محاط بالحمقى صوتي ومكتوب – توماس إريكسون | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب محاط بالحمقى لتوماس إريكسون بالعربية الفصحى، أو اقرأه مكتوباً: أنماط الشخصية الأربعة بالألوان، الأحمر والأصفر والأخضر والأزرق، وكيف تتعامل مع كل نمط.',
+    keywords:
+      'ملخص كتاب محاط بالحمقى, ملخص كتاب محاط بالحمقى pdf, محاط بالحمقى كتاب صوتي, توماس إريكسون, ألوان الشخصية, الأنماط الأربعة للشخصية',
+    lead: 'لماذا نشعر أحياناً أن من حولنا لا يفهموننا؟ أنماط الشخصية الأربعة بالألوان، وكيف تفهم كل نمط وتتواصل معه في العمل والبيت.',
+    publishedAt: '2026-11-02',
+    textId: 'surrounded-by-idiots',
+    hasCover: true,
+  },
+  {
+    slug: 'الرجال-من-المريخ-والنساء-من-الزهرة',
+    bookTitle: 'الرجال من المريخ والنساء من الزهرة',
+    author: 'جون غراي',
+    category: 'العلاقات',
+    voiceId: 'huda_msa',
+    minutes: 14,
+    title: 'ملخص كتاب الرجال من المريخ والنساء من الزهرة صوتي ومكتوب – جون غراي | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب الرجال من المريخ والنساء من الزهرة لجون غراي بالعربية الفصحى، أو اقرأه مكتوباً: كهف الرجل، والحاجة إلى الكلام، ولغتان مختلفتان، وكيف تختلفان دون شجار.',
+    keywords:
+      'ملخص كتاب الرجال من المريخ والنساء من الزهرة, ملخص كتاب الرجال من المريخ pdf, الرجال من المريخ والنساء من الزهرة كتاب صوتي, جون غراي, العلاقات الزوجية',
+    lead: 'لماذا يختلف الرجال والنساء في التعبير والتعامل مع الضغط؟ أفكار الكتاب عن فهم الشريك وتحسين التواصل، مع قراءة نقدية.',
+    publishedAt: '2026-11-02',
+    textId: 'men-mars-women-venus',
+    hasCover: true,
+  },
+  {
+    slug: 'الداء-والدواء',
+    bookTitle: 'الداء والدواء',
+    author: 'ابن قيم الجوزية',
+    category: 'ديني',
+    voiceId: 'jood_lit',
+    minutes: 15,
+    title: 'ملخص كتاب الداء والدواء لابن القيم صوتي ومكتوب | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب الداء والدواء للإمام ابن القيم بالعربية الفصحى، أو اقرأه مكتوباً: الدعاء دواء، والفرق بين الرجاء والغرور، وآثار الذنوب، والتوبة، والمحبة وعلاج العشق.',
+    keywords:
+      'ملخص كتاب الداء والدواء, الداء والدواء لابن القيم, الجواب الكافي لمن سأل عن الدواء الشافي, ملخص الداء والدواء pdf, الداء والدواء كتاب صوتي',
+    lead: 'جواب ابن القيم لمن ابتُلي بذنب لم يستطع تركه: الدعاء، والتوبة، وآثار الذنوب على القلب والحياة، وكيف يُعالج القلب ويُحفظ.',
+    publishedAt: '2026-11-02',
+    textId: 'the-disease-and-the-cure',
+    hasCover: true,
+  },
+  {
+    slug: 'قوة-عقلك-الباطن',
+    bookTitle: 'قوة عقلك الباطن',
+    author: 'جوزيف ميرفي',
+    category: 'تطوير الذات',
+    voiceId: 'fatima_msa',
+    minutes: 14,
+    title: 'ملخص كتاب قوة عقلك الباطن صوتي ومكتوب – جوزيف ميرفي | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب قوة عقلك الباطن لجوزيف ميرفي بالعربية الفصحى، أو اقرأه مكتوباً: العقل الواعي والباطن، والتوكيدات، والتخيل، والنوم، مع قراءة نقدية لما يدعمه العلم وما لا يدعمه.',
+    keywords:
+      'ملخص كتاب قوة عقلك الباطن, ملخص كتاب قوة عقلك الباطن pdf, قوة عقلك الباطن كتاب صوتي, جوزيف ميرفي, العقل الباطن, التوكيدات الإيجابية',
+    lead: 'هل يستطيع عقلك الباطن أن يغيّر حياتك؟ أفكار الكتاب عن التوكيدات والتخيل والنوم، مع قراءة نقدية تفرّق بين النافع والمبالغ فيه.',
+    publishedAt: '2026-11-02',
+    textId: 'power-of-subconscious',
+    hasCover: true,
+  },
+  {
+    slug: 'كيف-تكسب-الأصدقاء-وتؤثر-في-الناس',
+    bookTitle: 'كيف تكسب الأصدقاء وتؤثر في الناس',
+    author: 'ديل كارنيجي',
+    category: 'العلاقات',
+    voiceId: 'youssef_msa',
+    minutes: 15,
+    title: 'ملخص كتاب كيف تكسب الأصدقاء وتؤثر في الناس صوتي ومكتوب – ديل كارنيجي | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب كيف تكسب الأصدقاء وتؤثر في الناس لديل كارنيجي بالعربية الفصحى، أو اقرأه مكتوباً: لا تنتقد، والتقدير الصادق، وستة طرق ليحبك الناس، وفن الإقناع والقيادة.',
+    keywords:
+      'ملخص كتاب كيف تكسب الأصدقاء وتؤثر في الناس, ملخص كتاب كيف تؤثر على الآخرين وتكتسب الأصدقاء pdf, ديل كارنيجي, فن التعامل مع الناس, كتاب صوتي',
+    lead: 'المبادئ التي علّمت الملايين فن التعامل مع الناس: كيف تكسب محبتهم، وتقنعهم بوجهة نظرك، وتصلح أخطاءهم دون أن تجرحهم.',
+    publishedAt: '2026-11-02',
+    textId: 'how-to-win-friends',
+    hasCover: true,
+  },
+  {
+    slug: 'حياة-في-الإدارة',
+    bookTitle: 'حياة في الإدارة',
+    author: 'غازي القصيبي',
+    category: 'المال والأعمال',
+    voiceId: 'khalid_msa',
+    minutes: 16,
+    title: 'ملخص كتاب حياة في الإدارة صوتي ومكتوب – غازي القصيبي | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب حياة في الإدارة لغازي القصيبي بالعربية الفصحى، أو اقرأه مكتوباً: من الجامعة إلى السكة الحديد ووزارتي الصناعة والصحة، وأهم دروس القيادة واتخاذ القرار.',
+    keywords:
+      'ملخص كتاب حياة في الإدارة, ملخص كتاب غازي القصيبي حياة في الإدارة pdf, حياة في الإدارة كتاب صوتي, غازي القصيبي, دروس الإدارة, القيادة',
+    lead: 'تجربة غازي القصيبي من قاعات الجامعة إلى الوزارة والسفارة: كيف تختار فريقك، وتنزل إلى الميدان، وتتخذ القرار، وتحفظ نزاهتك في المنصب.',
+    publishedAt: '2026-11-06',
+    textId: 'life-in-administration',
+    hasCover: true,
+  },
+  {
+    slug: 'ممتلئ-بالفراغ',
+    bookTitle: 'ممتلئ بالفراغ',
+    author: 'عماد رشاد عثمان',
+    category: 'علم النفس',
+    voiceId: 'huda_msa',
+    minutes: 16,
+    title: 'ملخص كتاب ممتلئ بالفراغ صوتي ومكتوب – عماد رشاد عثمان | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب ممتلئ بالفراغ للدكتور عماد رشاد عثمان بالعربية الفصحى، أو اقرأه مكتوباً: تأملات حول التعافي من الإدمانات والسلوكيات القهرية، والفراغ الداخلي الذي تحتها، ورحلة التعافي والانتكاسة.',
+    keywords:
+      'ملخص كتاب ممتلئ بالفراغ, ملخص كتاب ممتلئ بالفراغ pdf, ممتلئ بالفراغ كتاب صوتي, عماد رشاد عثمان, التعافي من الإدمان, السلوكيات القهرية',
+    lead: 'تأملات في التعافي من الإدمانات والسلوكيات القهرية: لماذا نتعلق بما يؤذينا، وما الفراغ الذي يقف وراء الإدمان، وكيف تبدأ رحلة التعافي.',
+    publishedAt: '2026-11-06',
+    textId: 'full-of-emptiness',
+    hasCover: true,
+  },
+  {
+    slug: 'الهشاشة-النفسية',
+    bookTitle: 'الهشاشة النفسية',
+    author: 'إسماعيل عرفة',
+    category: 'علم النفس',
+    voiceId: 'youssef_msa',
+    minutes: 16,
+    title: 'ملخص كتاب الهشاشة النفسية صوتي ومكتوب – إسماعيل عرفة | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب الهشاشة النفسية لإسماعيل عرفة بالعربية الفصحى، أو اقرأه مكتوباً: تضخيم الألم، والتشخيص الذاتي، وثقافة الضحية، وتقديس المشاعر، وطريق الصلابة النفسية.',
+    keywords:
+      'ملخص كتاب الهشاشة النفسية, ملخص كتاب الهشاشة النفسية pdf, الهشاشة النفسية كتاب صوتي, إسماعيل عرفة, الصلابة النفسية, ثقافة الضحية',
+    lead: 'لماذا أصبحنا أضعف وأكثر عرضة للكسر؟ قراءة في تضخيم الألم وثقافة الضحية، وكيف نبني صلابة نفسية حقيقية.',
+    publishedAt: '2026-11-06',
+    textId: 'psychological-fragility',
+    hasCover: true,
+  },
+  {
+    slug: 'من-حرك-قطعة-الجبن-الخاصة-بي',
+    bookTitle: 'من حرك قطعة الجبن الخاصة بي؟',
+    author: 'سبنسر جونسون',
+    category: 'تطوير الذات',
+    voiceId: 'fatima_msa',
+    minutes: 15,
+    title: 'ملخص كتاب من حرك قطعة الجبن الخاصة بي صوتي ومكتوب – سبنسر جونسون | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب من حرك قطعة الجبن الخاصة بي لسبنسر جونسون بالعربية الفصحى، أو اقرأه مكتوباً: قصة الفأرين والقزمين في المتاهة، ودروس التعامل مع التغيير.',
+    keywords:
+      'ملخص كتاب من حرك قطعة الجبن الخاصة بي, ملخص كتاب من حرك قطعة الجبن الخاصة بي pdf, من حرك قطعة الجبن كتاب صوتي, سبنسر جونسون, التعامل مع التغيير',
+    lead: 'قصة رمزية قصيرة عن أكبر تحدٍّ في حياتنا: ماذا تفعل حين يتغير كل شيء فجأة؟ ودروس الكتاب في توقع التغيير والتكيف معه.',
+    publishedAt: '2026-11-06',
+    textId: 'who-moved-my-cheese',
+    hasCover: true,
+  },
+  {
+    slug: 'دع-القلق-وابدأ-الحياة',
+    bookTitle: 'دع القلق وابدأ الحياة',
+    author: 'ديل كارنيجي',
+    category: 'تطوير الذات',
+    voiceId: 'suhaib_doc',
+    minutes: 15,
+    title: 'ملخص كتاب دع القلق وابدأ الحياة صوتي ومكتوب – ديل كارنيجي | Hakawati AI',
+    description:
+      'استمع إلى ملخص كتاب دع القلق وابدأ الحياة لديل كارنيجي بالعربية الفصحى، أو اقرأه مكتوباً: عش في حدود يومك، والمعادلة السحرية لمواجهة القلق، وطرق راحة البال.',
+    keywords:
+      'ملخص كتاب دع القلق وابدأ الحياة, ملخص كتاب دع القلق وابدأ الحياة pdf, دع القلق وابدأ الحياة كتاب صوتي, ديل كارنيجي, التخلص من القلق',
+    lead: 'قواعد عملية للتخلص من القلق: أن تعيش في حدود يومك، وتواجه أسوأ الاحتمالات، وتحلل مشكلتك، وتملأ عقلك بالشكر والأمل.',
+    publishedAt: '2026-11-06',
+    textId: 'stop-worrying',
+    hasCover: true,
+  },
+];
+
+// The summaries in one language (English: the ones with an English version)
+export function summariesFor(lang: Lang): BookSummary[] {
+  if (lang === 'ar') return ALL_SUMMARIES.map((s) => ({ ...s, lang: 'ar', baseSlug: s.slug }));
+  return ALL_SUMMARIES.filter((s) => SUMMARIES_EN[s.slug]).map((s) => ({ ...s, ...SUMMARIES_EN[s.slug], lang: 'en', baseSlug: s.slug }));
+}
+
+// The summaries in the language of the page being viewed (Arabic on the server)
+export const BOOK_SUMMARIES: BookSummary[] = summariesFor(LANG);
+
+export const summaryPath = (s: BookSummary): string =>
+  s.lang === 'en' ? `${summariesHubPath('en')}/${encodeURIComponent(s.slug)}` : `/${encodeURIComponent(SUMMARY_PREFIX + s.slug)}`;
+
+// "ملخص كتاب العادات الذرية" / "Atomic Habits Summary"
+export const summaryName = (s: BookSummary): string => (s.lang === 'en' ? `${s.bookTitle} Summary` : `ملخص كتاب ${s.bookTitle}`);
+
+// The same summary in each language
+export function summaryAlternates(s: BookSummary): { ar: string; en?: string } {
+  const base = s.baseSlug || s.slug;
+  const en = SUMMARIES_EN[base];
+  return { ar: `/${encodeURIComponent(SUMMARY_PREFIX + base)}`, ...(en ? { en: `${summariesHubPath('en')}/${encodeURIComponent(en.slug)}` } : {}) };
+}
+
+// Where a summary's text lives: ./summary-texts/<textId>.ts, or en/<textId>.ts in English
+export const summaryTextKey = (s: BookSummary): string => (s.lang === 'en' ? `en/${s.textId}` : s.textId);
+
+// Audio and its section manifest: public/summaries/<slug>.*, English under summaries/en/
+const audioDir = (s: BookSummary): string => (s.lang === 'en' ? '/summaries/en' : '/summaries');
+export const summaryCoverUrl = (s: BookSummary, format: 'webp' | 'jpg' = 'webp'): string => `/covers/${s.textId}.${format}`;
+export const summaryAudioUrl = (s: BookSummary): string => `${audioDir(s)}/${encodeURIComponent(s.slug)}.mp3`;
+export const summaryManifestUrl = (s: BookSummary): string => `${audioDir(s)}/${encodeURIComponent(s.slug)}.json`;
+
+function decodePath(pathname: string): string {
+  try {
+    return decodeURIComponent(pathname).replace(/^\/+|\/+$/g, '');
+  } catch {
+    return pathname.replace(/^\/+|\/+$/g, '');
+  }
+}
+
+export function findSummary(pathname: string): BookSummary | undefined {
+  const path = decodePath(pathname);
+  if (path.startsWith('en/book-summaries/')) return summariesFor('en').find((s) => s.slug === path.slice('en/book-summaries/'.length));
+  if (!path.startsWith(SUMMARY_PREFIX)) return undefined;
+  const slug = path.slice(SUMMARY_PREFIX.length);
+  return summariesFor('ar').find((s) => s.slug === slug);
+}
+
+export const isSummariesHub = (pathname: string): boolean => ['ملخصات-كتب-صوتية', 'en/book-summaries'].includes(decodePath(pathname));
+
+// Next on the list (chosen by Arabic search demand); listed on the hub as "coming soon"
+const UPCOMING_AR: string[] = [
+  'أبي الذي أكره',
+  '48 قانوناً للقوة',
+  'فن اللامبالاة',
+  'الأب الغني والأب الفقير',
+  'العادات السبع للناس الأكثر فعالية',
+  'فاتتني صلاة',
+  'الأمير',
+  'جلسات نفسية',
+  'أربعون',
+  'محاط بالحمقى',
+  'المرحلة الملكية',
+  'ممتلئ بالفراغ',
+  'الرجال من المريخ والنساء من الزهرة',
+  'عقدك النفسية سجنك الأبدي',
+  'لأنك الله',
+  'نظرية الفستق',
+  'زاد المعاد',
+  'الذكاء العاطفي',
+  'من جيد إلى عظيم',
+].filter((t) => !ALL_SUMMARIES.some((s) => s.bookTitle === t));
+// The "coming soon" list is Arabic titles: shown on the Arabic hub only
+export const upcomingSummariesFor = (lang: Lang): string[] => (lang === 'en' ? [] : UPCOMING_AR);
+export const UPCOMING_SUMMARIES = upcomingSummariesFor(LANG);
+
+const SUMMARIES_HUB_AR = {
+  title: 'ملخصات كتب صوتية مجانية بالعربي | Hakawati AI',
+  description:
+    'استمع مجاناً إلى ملخصات صوتية لأشهر الكتب بالعربية الفصحى، كل ملخص في ربع ساعة تقريباً مع النص مكتوباً: تطوير الذات، والمال، وعلم النفس، والفكر.',
+  keywords: 'ملخصات كتب صوتية, ملخص كتاب صوتي, ملخصات كتب, ملخصات كتب مسموعة, كتب صوتية مجانية, ملخص كتاب pdf',
+  h1: 'ملخصات كتب صوتية',
+  lead: 'أهم أفكار الكتب الأكثر قراءة في ربع ساعة، بصوت عربي فصيح. استمع مجاناً، أو اقرأ الملخص مكتوباً، أو حمّله لتسمعه بدون إنترنت.',
+};
+
+export const summariesHubFor = (lang: Lang) => (lang === 'en' ? SUMMARIES_HUB_EN : SUMMARIES_HUB_AR);
+export const SUMMARIES_HUB = summariesHubFor(LANG);
