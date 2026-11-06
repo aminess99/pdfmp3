@@ -21,6 +21,26 @@ import fullOfEmptiness from './summary-texts/full-of-emptiness';
 import psychologicalFragility from './summary-texts/psychological-fragility';
 import whoMovedMyCheese from './summary-texts/who-moved-my-cheese';
 import stopWorrying from './summary-texts/stop-worrying';
+import enFortyeightLawsOfPower from './summary-texts/en/48-laws-of-power';
+import enAtomicHabits from './summary-texts/en/atomic-habits';
+import enEmotionalIntelligence from './summary-texts/en/emotional-intelligence';
+import enFullOfEmptiness from './summary-texts/en/full-of-emptiness';
+import enGoodToGreat from './summary-texts/en/good-to-great';
+import enHowToWinFriends from './summary-texts/en/how-to-win-friends';
+import enLifeInAdministration from './summary-texts/en/life-in-administration';
+import enMenMarsWomenVenus from './summary-texts/en/men-mars-women-venus';
+import enMissedPrayer from './summary-texts/en/missed-prayer';
+import enMyFatherWhomIHate from './summary-texts/en/my-father-whom-i-hate';
+import enPowerOfSubconscious from './summary-texts/en/power-of-subconscious';
+import enPsychologicalFragility from './summary-texts/en/psychological-fragility';
+import enRichDadPoorDad from './summary-texts/en/rich-dad-poor-dad';
+import enSevenHabits from './summary-texts/en/seven-habits';
+import enStopWorrying from './summary-texts/en/stop-worrying';
+import enSubtleArt from './summary-texts/en/subtle-art';
+import enSurroundedByIdiots from './summary-texts/en/surrounded-by-idiots';
+import enTheDiseaseAndTheCure from './summary-texts/en/the-disease-and-the-cure';
+import enThePrince from './summary-texts/en/the-prince';
+import enWhoMovedMyCheese from './summary-texts/en/who-moved-my-cheese';
 
 export const SUMMARY_TEXTS: Record<string, SummaryText> = {
   'atomic-habits': atomicHabits,
@@ -43,6 +63,27 @@ export const SUMMARY_TEXTS: Record<string, SummaryText> = {
   'psychological-fragility': psychologicalFragility,
   'who-moved-my-cheese': whoMovedMyCheese,
   'stop-worrying': stopWorrying,
+  // English versions, under en/<textId>
+  'en/48-laws-of-power': enFortyeightLawsOfPower,
+  'en/atomic-habits': enAtomicHabits,
+  'en/emotional-intelligence': enEmotionalIntelligence,
+  'en/full-of-emptiness': enFullOfEmptiness,
+  'en/good-to-great': enGoodToGreat,
+  'en/how-to-win-friends': enHowToWinFriends,
+  'en/life-in-administration': enLifeInAdministration,
+  'en/men-mars-women-venus': enMenMarsWomenVenus,
+  'en/missed-prayer': enMissedPrayer,
+  'en/my-father-whom-i-hate': enMyFatherWhomIHate,
+  'en/power-of-subconscious': enPowerOfSubconscious,
+  'en/psychological-fragility': enPsychologicalFragility,
+  'en/rich-dad-poor-dad': enRichDadPoorDad,
+  'en/seven-habits': enSevenHabits,
+  'en/stop-worrying': enStopWorrying,
+  'en/subtle-art': enSubtleArt,
+  'en/surrounded-by-idiots': enSurroundedByIdiots,
+  'en/the-disease-and-the-cure': enTheDiseaseAndTheCure,
+  'en/the-prince': enThePrince,
+  'en/who-moved-my-cheese': enWhoMovedMyCheese,
 };
 
 export const summaryText = (s: BookSummary): SummaryText => {
