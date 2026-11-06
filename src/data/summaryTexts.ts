@@ -16,6 +16,11 @@ import menMarsWomenVenus from './summary-texts/men-mars-women-venus';
 import theDiseaseAndTheCure from './summary-texts/the-disease-and-the-cure';
 import powerOfSubconscious from './summary-texts/power-of-subconscious';
 import howToWinFriends from './summary-texts/how-to-win-friends';
+import lifeInAdministration from './summary-texts/life-in-administration';
+import fullOfEmptiness from './summary-texts/full-of-emptiness';
+import psychologicalFragility from './summary-texts/psychological-fragility';
+import whoMovedMyCheese from './summary-texts/who-moved-my-cheese';
+import stopWorrying from './summary-texts/stop-worrying';
 
 export const SUMMARY_TEXTS: Record<string, SummaryText> = {
   'atomic-habits': atomicHabits,
@@ -33,6 +38,11 @@ export const SUMMARY_TEXTS: Record<string, SummaryText> = {
   'the-disease-and-the-cure': theDiseaseAndTheCure,
   'power-of-subconscious': powerOfSubconscious,
   'how-to-win-friends': howToWinFriends,
+  'life-in-administration': lifeInAdministration,
+  'full-of-emptiness': fullOfEmptiness,
+  'psychological-fragility': psychologicalFragility,
+  'who-moved-my-cheese': whoMovedMyCheese,
+  'stop-worrying': stopWorrying,
 };
 
 export const summaryText = (s: BookSummary): SummaryText => {
