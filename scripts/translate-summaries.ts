@@ -73,7 +73,10 @@ async function translate(book: string, text: SummaryText, apiKey: string): Promi
       continue;
     }
     const data: any = await r.json();
-    const raw = String(data.choices?.[0]?.message?.content || '').replace(/^```(?:json)?\s*|\s*```$/g, '');
+    const reply = String(data.choices?.[0]?.message?.content || '');
+    // The JSON object inside the reply (models sometimes wrap it in fences or a sentence),
+    // with trailing commas removed
+    const raw = reply.slice(reply.indexOf('{'), reply.lastIndexOf('}') + 1).replace(/,\s*([}\]])/g, '$1');
     try {
       const out = JSON.parse(raw) as SummaryText;
       // The narration and the section player rely on the same shape as the Arabic
@@ -85,7 +88,7 @@ async function translate(book: string, text: SummaryText, apiKey: string): Promi
       if (same && !/[؀-ۿ]{4,}/.test(JSON.stringify(out).replace(/\([^)]*\)/g, ''))) return out;
       console.warn(`  attempt ${attempt}: structure differs from the Arabic or Arabic left in the text`);
     } catch {
-      console.warn(`  attempt ${attempt}: reply is not JSON`);
+      console.warn(`  attempt ${attempt}: reply is not JSON (finish: ${data.choices?.[0]?.finish_reason}, ${reply.length} chars): ${reply.slice(0, 120).replace(/\s+/g, ' ')} … ${reply.slice(-120).replace(/\s+/g, ' ')}`);
     }
   }
   throw new Error('no usable translation after 3 attempts');
