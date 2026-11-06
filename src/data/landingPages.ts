@@ -3,6 +3,8 @@
 // the default dialect and the input mode to it (App.tsx).
 
 import { VOICE_COUNT, DIALECT_COUNT } from './voices';
+import { LANG, Lang } from '../lib/i18n';
+import { LANDING_EN } from './landingPagesEn';
 
 export interface LandingPage {
   slug: string;
@@ -17,9 +19,17 @@ export interface LandingPage {
   inputMode?: 'pdf' | 'text';
   sections: { heading: string; paragraphs: string[] }[];
   faqs: { question: string; answer: string }[];
+  // Set on the copies handed out by landingPagesFor(): the language and the Arabic slug
+  // that pairs the two versions
+  lang?: Lang;
+  baseSlug?: string;
 }
 
-export const LANDING_PAGES: LandingPage[] = [
+// The English version of a page (./landingPagesEn.ts, keyed by the Arabic slug)
+export type LandingPageEn = Pick<LandingPage, 'slug' | 'title' | 'description' | 'keywords' | 'badge' | 'h1' | 'subtitle' | 'linkLabel' | 'sections' | 'faqs'>;
+
+// Every page in Arabic; each also has an English version in ./landingPagesEn.ts
+export const ALL_LANDING_PAGES: LandingPage[] = [
   {
     slug: 'تحويل-النص-الى-صوت',
     title: 'تحويل النص إلى صوت بالذكاء الاصطناعي مجاناً | Hakawati AI',
@@ -565,6 +575,15 @@ export const LANDING_PAGES: LandingPage[] = [
   },
 ];
 
+// The pages in one language (English: the ones with an English version)
+export function landingPagesFor(lang: Lang): LandingPage[] {
+  if (lang === 'ar') return ALL_LANDING_PAGES.map((p) => ({ ...p, lang: 'ar', baseSlug: p.slug }));
+  return ALL_LANDING_PAGES.filter((p) => LANDING_EN[p.slug]).map((p) => ({ ...p, ...LANDING_EN[p.slug], lang: 'en', baseSlug: p.slug }));
+}
+
+// The pages in the language of the page being viewed (Arabic on the server)
+export const LANDING_PAGES: LandingPage[] = landingPagesFor(LANG);
+
 export function findLandingPage(pathname: string): LandingPage | undefined {
   let path = pathname;
   try {
@@ -572,10 +591,18 @@ export function findLandingPage(pathname: string): LandingPage | undefined {
   } catch {
     // keep the raw path if it is not valid percent-encoding
   }
-  const slug = path.replace(/^\/+|\/+$/g, '');
-  return LANDING_PAGES.find((p) => p.slug === slug);
+  path = path.replace(/^\/+|\/+$/g, '');
+  if (path.startsWith('en/')) return landingPagesFor('en').find((p) => p.slug === path.slice(3));
+  return landingPagesFor('ar').find((p) => p.slug === path);
 }
 
 export function landingPath(page: LandingPage): string {
-  return `/${encodeURIComponent(page.slug)}`;
+  return page.lang === 'en' ? `/en/${encodeURIComponent(page.slug)}` : `/${encodeURIComponent(page.slug)}`;
+}
+
+// The same page in each language
+export function landingAlternates(page: LandingPage): { ar: string; en?: string } {
+  const base = page.baseSlug || page.slug;
+  const en = LANDING_EN[base];
+  return { ar: `/${encodeURIComponent(base)}`, ...(en ? { en: `/en/${encodeURIComponent(en.slug)}` } : {}) };
 }

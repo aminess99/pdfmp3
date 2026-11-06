@@ -7,6 +7,9 @@
 // page can jump between them. Write numbers out in words and avoid symbols in the texts,
 // since they are read aloud verbatim.
 
+import { LANG, Lang } from '../lib/i18n';
+import { SUMMARIES_EN, SUMMARIES_HUB_EN } from './summariesEn';
+
 export interface BookSummary {
   slug: string;
   bookTitle: string;
@@ -25,7 +28,15 @@ export interface BookSummary {
   textId: string;
   // public/covers/<textId>.webp (page) and .jpg (link previews) exist
   hasCover?: boolean;
+  // Set on the copies handed out by summariesFor(): the language and the Arabic slug that
+  // pairs the two versions
+  lang?: Lang;
+  baseSlug?: string;
 }
+
+// The English version of a summary (./summariesEn.ts, keyed by the Arabic slug); its text is
+// ./summary-texts/en/<textId>.ts and its audio public/summaries/en/<slug>.mp3
+export type BookSummaryEn = Pick<BookSummary, 'slug' | 'bookTitle' | 'author' | 'category' | 'title' | 'description' | 'keywords' | 'lead' | 'minutes'>;
 
 // The long part, kept out of the main bundle: server.ts and the generator import every
 // text through ./summaryTexts.ts, the browser loads only the one it shows (lib/summaryLoader.ts)
@@ -41,10 +52,12 @@ export interface SummaryAudioManifest {
   sections: number[];
 }
 
-export const SUMMARIES_HUB_PATH = `/${encodeURIComponent('ملخصات-كتب-صوتية')}`;
+export const summariesHubPath = (lang: Lang): string => (lang === 'en' ? '/en/book-summaries' : `/${encodeURIComponent('ملخصات-كتب-صوتية')}`);
+export const SUMMARIES_HUB_PATH = summariesHubPath(LANG);
 const SUMMARY_PREFIX = 'ملخص-كتاب-';
 
-export const BOOK_SUMMARIES: BookSummary[] = [
+// Every summary in Arabic; each also gets an English version in ./summariesEn.ts
+export const ALL_SUMMARIES: BookSummary[] = [
   {
     slug: 'العادات-الذرية',
     bookTitle: 'العادات الذرية',
@@ -387,11 +400,36 @@ export const BOOK_SUMMARIES: BookSummary[] = [
   },
 ];
 
-export const summaryPath = (s: BookSummary): string => `/${encodeURIComponent(SUMMARY_PREFIX + s.slug)}`;
+// The summaries in one language (English: the ones with an English version)
+export function summariesFor(lang: Lang): BookSummary[] {
+  if (lang === 'ar') return ALL_SUMMARIES.map((s) => ({ ...s, lang: 'ar', baseSlug: s.slug }));
+  return ALL_SUMMARIES.filter((s) => SUMMARIES_EN[s.slug]).map((s) => ({ ...s, ...SUMMARIES_EN[s.slug], lang: 'en', baseSlug: s.slug }));
+}
 
+// The summaries in the language of the page being viewed (Arabic on the server)
+export const BOOK_SUMMARIES: BookSummary[] = summariesFor(LANG);
+
+export const summaryPath = (s: BookSummary): string =>
+  s.lang === 'en' ? `${summariesHubPath('en')}/${encodeURIComponent(s.slug)}` : `/${encodeURIComponent(SUMMARY_PREFIX + s.slug)}`;
+
+// "ملخص كتاب العادات الذرية" / "Atomic Habits Summary"
+export const summaryName = (s: BookSummary): string => (s.lang === 'en' ? `${s.bookTitle} Summary` : `ملخص كتاب ${s.bookTitle}`);
+
+// The same summary in each language
+export function summaryAlternates(s: BookSummary): { ar: string; en?: string } {
+  const base = s.baseSlug || s.slug;
+  const en = SUMMARIES_EN[base];
+  return { ar: `/${encodeURIComponent(SUMMARY_PREFIX + base)}`, ...(en ? { en: `${summariesHubPath('en')}/${encodeURIComponent(en.slug)}` } : {}) };
+}
+
+// Where a summary's text lives: ./summary-texts/<textId>.ts, or en/<textId>.ts in English
+export const summaryTextKey = (s: BookSummary): string => (s.lang === 'en' ? `en/${s.textId}` : s.textId);
+
+// Audio and its section manifest: public/summaries/<slug>.*, English under summaries/en/
+const audioDir = (s: BookSummary): string => (s.lang === 'en' ? '/summaries/en' : '/summaries');
 export const summaryCoverUrl = (s: BookSummary, format: 'webp' | 'jpg' = 'webp'): string => `/covers/${s.textId}.${format}`;
-export const summaryAudioUrl = (s: BookSummary): string => `/summaries/${encodeURIComponent(s.slug)}.mp3`;
-export const summaryManifestUrl = (s: BookSummary): string => `/summaries/${encodeURIComponent(s.slug)}.json`;
+export const summaryAudioUrl = (s: BookSummary): string => `${audioDir(s)}/${encodeURIComponent(s.slug)}.mp3`;
+export const summaryManifestUrl = (s: BookSummary): string => `${audioDir(s)}/${encodeURIComponent(s.slug)}.json`;
 
 function decodePath(pathname: string): string {
   try {
@@ -403,15 +441,16 @@ function decodePath(pathname: string): string {
 
 export function findSummary(pathname: string): BookSummary | undefined {
   const path = decodePath(pathname);
+  if (path.startsWith('en/book-summaries/')) return summariesFor('en').find((s) => s.slug === path.slice('en/book-summaries/'.length));
   if (!path.startsWith(SUMMARY_PREFIX)) return undefined;
   const slug = path.slice(SUMMARY_PREFIX.length);
-  return BOOK_SUMMARIES.find((s) => s.slug === slug);
+  return summariesFor('ar').find((s) => s.slug === slug);
 }
 
-export const isSummariesHub = (pathname: string): boolean => decodePath(pathname) === 'ملخصات-كتب-صوتية';
+export const isSummariesHub = (pathname: string): boolean => ['ملخصات-كتب-صوتية', 'en/book-summaries'].includes(decodePath(pathname));
 
 // Next on the list (chosen by Arabic search demand); listed on the hub as "coming soon"
-export const UPCOMING_SUMMARIES: string[] = [
+const UPCOMING_AR: string[] = [
   'أبي الذي أكره',
   '48 قانوناً للقوة',
   'فن اللامبالاة',
@@ -431,9 +470,12 @@ export const UPCOMING_SUMMARIES: string[] = [
   'زاد المعاد',
   'الذكاء العاطفي',
   'من جيد إلى عظيم',
-].filter((t) => !BOOK_SUMMARIES.some((s) => s.bookTitle === t));
+].filter((t) => !ALL_SUMMARIES.some((s) => s.bookTitle === t));
+// The "coming soon" list is Arabic titles: shown on the Arabic hub only
+export const upcomingSummariesFor = (lang: Lang): string[] => (lang === 'en' ? [] : UPCOMING_AR);
+export const UPCOMING_SUMMARIES = upcomingSummariesFor(LANG);
 
-export const SUMMARIES_HUB = {
+const SUMMARIES_HUB_AR = {
   title: 'ملخصات كتب صوتية مجانية بالعربي | Hakawati AI',
   description:
     'استمع مجاناً إلى ملخصات صوتية لأشهر الكتب بالعربية الفصحى، كل ملخص في ربع ساعة تقريباً مع النص مكتوباً: تطوير الذات، والمال، وعلم النفس، والفكر.',
@@ -441,3 +483,6 @@ export const SUMMARIES_HUB = {
   h1: 'ملخصات كتب صوتية',
   lead: 'أهم أفكار الكتب الأكثر قراءة في ربع ساعة، بصوت عربي فصيح. استمع مجاناً، أو اقرأ الملخص مكتوباً، أو حمّله لتسمعه بدون إنترنت.',
 };
+
+export const summariesHubFor = (lang: Lang) => (lang === 'en' ? SUMMARIES_HUB_EN : SUMMARIES_HUB_AR);
+export const SUMMARIES_HUB = summariesHubFor(LANG);

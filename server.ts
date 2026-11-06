@@ -6,13 +6,13 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { VOICES } from "./src/data/voices";
-import { LANDING_PAGES, LandingPage, findLandingPage, landingPath } from "./src/data/landingPages";
+import { LANDING_PAGES, LandingPage, landingAlternates, landingPagesFor, landingPath } from "./src/data/landingPages";
 import { isAdminUser, overview as adminOverview, usersTable as adminUsersTable, recentPayments as adminRecentPayments, giftMinutes as adminGiftMinutes } from "./server/admin";
 import { libraryEnabled, listBooks, getBook, saveBook, deleteBook, isValidBookId } from "./server/library";
 import { summaryText } from "./src/data/summaryTexts";
-import { ARTICLES, ARTICLES_HUB, ARTICLES_HUB_PATH, Article, articlePath, findArticle, isArticlesHub, splitLinks } from "./src/data/articles";
+import { ARTICLES_HUB_PATH, Article, articleAlternates, articlePath, articlesFor, articlesHubFor, articlesHubPath, splitLinks } from "./src/data/articles";
 import { articleText } from "./src/data/articleTexts";
-import { BOOK_SUMMARIES, BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, UPCOMING_SUMMARIES, findSummary, isSummariesHub, summaryAudioUrl, summaryCoverUrl, summaryPath } from "./src/data/summaries";
+import { BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, summariesFor, summariesHubFor, summariesHubPath, summaryAlternates, summaryAudioUrl, summaryCoverUrl, summaryName, summaryPath, upcomingSummariesFor } from "./src/data/summaries";
 import { HOME_CONTENT, HOME_SEO } from "./src/data/homeContent";
 import firebaseConfig from "./src/lib/firebaseConfig";
 import {
@@ -2581,84 +2581,36 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function renderLandingHtml(template: string, page: LandingPage): string {
-  const url = `${SITE_URL}${landingPath(page)}`;
-  const title = escapeHtml(page.title);
-  const description = escapeHtml(page.description);
+type PageLang = "ar" | "en";
+// Inline translation for the pre-rendered pages
+const L = (lang: PageLang, ar: string, en: string): string => (lang === "en" ? en : ar);
 
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "WebPage",
-        "@id": `${url}#webpage`,
-        url,
-        name: page.title,
-        description: page.description,
-        inLanguage: "ar",
-        isPartOf: { "@type": "WebSite", name: "Hakawati AI", url: `${SITE_URL}/` },
-      },
-      {
-        "@type": "BreadcrumbList",
-        itemListElement: [
-          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}/` },
-          { "@type": "ListItem", position: 2, name: page.linkLabel, item: url },
-        ],
-      },
-      {
-        "@type": "FAQPage",
-        "@id": `${url}#faq`,
-        mainEntity: page.faqs.map((f) => ({
-          "@type": "Question",
-          name: f.question,
-          acceptedAnswer: { "@type": "Answer", text: f.answer },
-        })),
-      },
-    ],
-  };
-
-  const content = [
-    `<main dir="rtl">`,
-    `<h1>${escapeHtml(page.h1)}</h1>`,
-    `<p>${escapeHtml(page.subtitle)}</p>`,
-    ...page.sections.map(
-      (sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")
-    ),
-    `<h2>أسئلة حول ${escapeHtml(page.linkLabel)}</h2>`,
-    ...page.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
-    `<nav><a href="/">تحويل PDF إلى صوت</a> `,
-    ...LANDING_PAGES.filter((p) => p.slug !== page.slug).map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `),
-    `</nav></main>`,
-  ].join("");
-
-  // Replacements use functions so "$" in page text is never treated as a pattern
-  return template
-    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
-    .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${description}" />`)
-    .replace(/<meta name="keywords" content="[^"]*" \/>/, () => `<meta name="keywords" content="${escapeHtml(page.keywords)}" />`)
-    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${url}" />`)
-    .replace(/<meta property="og:url" content="[^"]*" \/>/, () => `<meta property="og:url" content="${url}" />`)
-    .replace(/<meta property="og:title" content="[^"]*" \/>/, () => `<meta property="og:title" content="${title}" />`)
-    .replace(/<meta name="twitter:title" content="[^"]*" \/>/, () => `<meta name="twitter:title" content="${title}" />`)
-    .replace(/<meta property="og:description" content="[^"]*" \/>/, () => `<meta property="og:description" content="${description}" />`)
-    .replace(/<meta name="twitter:description" content="[^"]*" \/>/, () => `<meta name="twitter:description" content="${description}" />`)
-    .replace(
-      /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
-      () => `<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>`
-    )
-    .replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
+// <link rel="alternate" hreflang> pairs: each page and its version in the other language
+function alternateLinks(alt: { ar: string; en?: string }): string {
+  if (!alt.en) return "";
+  return (
+    `<link rel="alternate" hreflang="ar" href="${SITE_URL}${alt.ar}" />` +
+    `<link rel="alternate" hreflang="en" href="${SITE_URL}${alt.en}" />` +
+    `<link rel="alternate" hreflang="x-default" href="${SITE_URL}${alt.ar}" />`
+  );
 }
 
-// Head tags shared by the summary pages; replacements use functions so "$" in text is safe
-function withHead(template: string, head: { title: string; description: string; keywords: string; url: string; ogType?: string; jsonLd: unknown; content: string }): string {
+// Head tags shared by the pre-rendered pages; replacements use functions so "$" in text is safe
+function withHead(
+  template: string,
+  head: { title: string; description: string; keywords: string; url: string; ogType?: string; jsonLd: unknown; content: string; lang?: PageLang; alt?: { ar: string; en?: string } }
+): string {
   const title = escapeHtml(head.title);
   const description = escapeHtml(head.description);
+  const en = head.lang === "en";
   return template
+    .replace(/<html lang="ar" dir="rtl">/, () => (en ? '<html lang="en" dir="ltr">' : '<html lang="ar" dir="rtl">'))
     .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
     .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${description}" />`)
     .replace(/<meta name="keywords" content="[^"]*" \/>/, () => `<meta name="keywords" content="${escapeHtml(head.keywords)}" />`)
-    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${head.url}" />`)
+    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${head.url}" />${head.alt ? alternateLinks(head.alt) : ""}`)
     .replace(/<meta property="og:url" content="[^"]*" \/>/, () => `<meta property="og:url" content="${head.url}" />`)
+    .replace(/<meta property="og:locale" content="[^"]*" \/>/, () => `<meta property="og:locale" content="${en ? "en_US" : "ar_AR"}" />`)
     .replace(/<meta property="og:type" content="[^"]*" \/>/, () => `<meta property="og:type" content="${head.ogType || "website"}" />`)
     .replace(/<meta property="og:title" content="[^"]*" \/>/, () => `<meta property="og:title" content="${title}" />`)
     .replace(/<meta name="twitter:title" content="[^"]*" \/>/, () => `<meta name="twitter:title" content="${title}" />`)
@@ -2671,10 +2623,56 @@ function withHead(template: string, head: { title: string; description: string; 
     .replace(/<div id="root"><\/div>/, () => `<div id="root">${head.content}</div>`);
 }
 
+const homePath = (lang: PageLang): string => (lang === "en" ? "/en" : "/");
+
+function renderLandingHtml(template: string, page: LandingPage): string {
+  const lang: PageLang = page.lang || "ar";
+  const url = `${SITE_URL}${landingPath(page)}`;
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        "@id": `${url}#webpage`,
+        url,
+        name: page.title,
+        description: page.description,
+        inLanguage: lang,
+        isPartOf: { "@type": "WebSite", name: "Hakawati AI", url: `${SITE_URL}/` },
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}${homePath(lang)}` },
+          { "@type": "ListItem", position: 2, name: page.linkLabel, item: url },
+        ],
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: page.faqs.map((f) => ({ "@type": "Question", name: f.question, acceptedAnswer: { "@type": "Answer", text: f.answer } })),
+      },
+    ],
+  };
+  const content = [
+    `<main dir="${lang === "en" ? "ltr" : "rtl"}">`,
+    `<h1>${escapeHtml(page.h1)}</h1>`,
+    `<p>${escapeHtml(page.subtitle)}</p>`,
+    ...page.sections.map((sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")),
+    `<h2>${escapeHtml(L(lang, `أسئلة حول ${page.linkLabel}`, `${page.linkLabel}: frequently asked questions`))}</h2>`,
+    ...page.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    `<nav><a href="${homePath(lang)}">${L(lang, "تحويل PDF إلى صوت", "Arabic PDF to audio")}</a> `,
+    ...landingPagesFor(lang).filter((p) => p.slug !== page.slug).map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `),
+    `</nav></main>`,
+  ].join("");
+  return withHead(template, { title: page.title, description: page.description, keywords: page.keywords, url, jsonLd, content, lang, alt: landingAlternates(page) });
+}
+
 function summaryHasAudio(distPath: string, s: BookSummary): { duration: number } | null {
   try {
-    const m = JSON.parse(fs.readFileSync(path.join(distPath, "summaries", `${s.slug}.json`), "utf8"));
-    return fs.existsSync(path.join(distPath, "summaries", `${s.slug}.mp3`)) ? { duration: Number(m.duration) || 0 } : null;
+    const dir = path.join(distPath, "summaries", ...(s.lang === "en" ? ["en"] : []));
+    const m = JSON.parse(fs.readFileSync(path.join(dir, `${s.slug}.json`), "utf8"));
+    return fs.existsSync(path.join(dir, `${s.slug}.mp3`)) ? { duration: Number(m.duration) || 0 } : null;
   } catch {
     return null;
   }
@@ -2685,9 +2683,11 @@ function isoDuration(seconds: number): string {
 }
 
 function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: number } | null): string {
+  const lang: PageLang = s.lang || "ar";
+  const hub = summariesHubFor(lang);
   const url = `${SITE_URL}${summaryPath(s)}`;
-  const hubUrl = `${SITE_URL}${SUMMARIES_HUB_PATH}`;
-  const name = `ملخص كتاب ${s.bookTitle}`;
+  const hubUrl = `${SITE_URL}${summariesHubPath(lang)}`;
+  const name = summaryName(s);
   const text = summaryText(s);
   const jsonLd = {
     "@context": "https://schema.org",
@@ -2697,7 +2697,7 @@ function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: 
         "@id": `${url}#article`,
         headline: name,
         description: s.description,
-        inLanguage: "ar",
+        inLanguage: lang,
         datePublished: s.publishedAt,
         url,
         author: { "@type": "Organization", name: "Hakawati AI", url: `${SITE_URL}/` },
@@ -2717,7 +2717,7 @@ function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: 
                 contentUrl: `${SITE_URL}${summaryAudioUrl(s)}`,
                 encodingFormat: "audio/mpeg",
                 duration: isoDuration(audio.duration),
-                inLanguage: "ar",
+                inLanguage: lang,
               },
             }
           : {}),
@@ -2725,8 +2725,8 @@ function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: 
       {
         "@type": "BreadcrumbList",
         itemListElement: [
-          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}/` },
-          { "@type": "ListItem", position: 2, name: SUMMARIES_HUB.h1, item: hubUrl },
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}${homePath(lang)}` },
+          { "@type": "ListItem", position: 2, name: hub.h1, item: hubUrl },
           { "@type": "ListItem", position: 3, name, item: url },
         ],
       },
@@ -2738,20 +2738,20 @@ function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: 
     ],
   };
   const content = [
-    `<main dir="rtl"><article>`,
-    `<nav><a href="/">الرئيسية</a> › <a href="${SUMMARIES_HUB_PATH}">${escapeHtml(SUMMARIES_HUB.h1)}</a></nav>`,
+    `<main dir="${lang === "en" ? "ltr" : "rtl"}"><article>`,
+    `<nav><a href="${homePath(lang)}">${L(lang, "الرئيسية", "Home")}</a> › <a href="${summariesHubPath(lang)}">${escapeHtml(hub.h1)}</a></nav>`,
     `<h1>${escapeHtml(name)}</h1>`,
-    `<p>تأليف: ${escapeHtml(s.author)}</p>`,
+    `<p>${L(lang, "تأليف:", "By")} ${escapeHtml(s.author)}</p>`,
     `<p>${escapeHtml(s.lead)}</p>`,
     audio ? `<audio controls preload="none" src="${summaryAudioUrl(s)}"></audio>` : "",
     ...text.sections.map((sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")),
-    `<h2>أسئلة شائعة عن كتاب ${escapeHtml(s.bookTitle)}</h2>`,
+    `<h2>${escapeHtml(L(lang, `أسئلة شائعة عن كتاب ${s.bookTitle}`, `${s.bookTitle}: frequently asked questions`))}</h2>`,
     ...text.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
     `</article><nav>`,
-    ...BOOK_SUMMARIES.filter((o) => o.slug !== s.slug).map((o) => `<a href="${summaryPath(o)}">ملخص كتاب ${escapeHtml(o.bookTitle)}</a> `),
-    `<a href="/">تحويل PDF إلى صوت</a></nav></main>`,
+    ...summariesFor(lang).filter((o) => o.slug !== s.slug).map((o) => `<a href="${summaryPath(o)}">${escapeHtml(summaryName(o))}</a> `),
+    `<a href="${homePath(lang)}">${L(lang, "تحويل PDF إلى صوت", "Arabic PDF to audio")}</a></nav></main>`,
   ].join("");
-  const html = withHead(template, { title: s.title, description: s.description, keywords: s.keywords, url, ogType: "article", jsonLd, content });
+  const html = withHead(template, { title: s.title, description: s.description, keywords: s.keywords, url, ogType: "article", jsonLd, content, lang, alt: summaryAlternates(s) });
   if (!s.hasCover) return html;
   // Link previews (WhatsApp, Facebook, X) show the book cover instead of the site banner
   const cover = `${SITE_URL}${summaryCoverUrl(s, "jpg")}`;
@@ -2759,45 +2759,38 @@ function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: 
     .replace(/<meta property="og:image" content="[^"]*" \/>/, () => `<meta property="og:image" content="${cover}" />`)
     .replace(/<meta property="og:image:width" content="[^"]*" \/>/, () => '<meta property="og:image:width" content="768" />')
     .replace(/<meta property="og:image:height" content="[^"]*" \/>/, () => '<meta property="og:image:height" content="1280" />')
-    .replace(/<meta property="og:image:alt" content="[^"]*" \/>/, () => `<meta property="og:image:alt" content="${escapeHtml(`غلاف كتاب ${s.bookTitle}`)}" />`)
+    .replace(/<meta property="og:image:alt" content="[^"]*" \/>/, () => `<meta property="og:image:alt" content="${escapeHtml(L(lang, `غلاف كتاب ${s.bookTitle}`, `${s.bookTitle} book cover`))}" />`)
     .replace(/<meta name="twitter:image" content="[^"]*" \/>/, () => `<meta name="twitter:image" content="${cover}" />`);
 }
 
-function renderSummariesHubHtml(template: string): string {
-  const url = `${SITE_URL}${SUMMARIES_HUB_PATH}`;
+function renderSummariesHubHtml(template: string, lang: PageLang): string {
+  const hub = summariesHubFor(lang);
+  const list = summariesFor(lang);
+  const upcoming = upcomingSummariesFor(lang);
+  const url = `${SITE_URL}${summariesHubPath(lang)}`;
   const jsonLd = {
     "@context": "https://schema.org",
     "@graph": [
-      {
-        "@type": "CollectionPage",
-        "@id": `${url}#webpage`,
-        url,
-        name: SUMMARIES_HUB.title,
-        description: SUMMARIES_HUB.description,
-        inLanguage: "ar",
-        isPartOf: { "@type": "WebSite", name: "Hakawati AI", url: `${SITE_URL}/` },
-      },
-      {
-        "@type": "ItemList",
-        itemListElement: BOOK_SUMMARIES.map((s, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE_URL}${summaryPath(s)}`, name: `ملخص كتاب ${s.bookTitle}` })),
-      },
+      { "@type": "CollectionPage", "@id": `${url}#webpage`, url, name: hub.title, description: hub.description, inLanguage: lang, isPartOf: { "@type": "WebSite", name: "Hakawati AI", url: `${SITE_URL}/` } },
+      { "@type": "ItemList", itemListElement: list.map((s, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE_URL}${summaryPath(s)}`, name: summaryName(s) })) },
       {
         "@type": "BreadcrumbList",
         itemListElement: [
-          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}/` },
-          { "@type": "ListItem", position: 2, name: SUMMARIES_HUB.h1, item: url },
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}${homePath(lang)}` },
+          { "@type": "ListItem", position: 2, name: hub.h1, item: url },
         ],
       },
     ],
   };
   const content = [
-    `<main dir="rtl"><h1>${escapeHtml(SUMMARIES_HUB.h1)}</h1><p>${escapeHtml(SUMMARIES_HUB.lead)}</p><ul>`,
-    ...BOOK_SUMMARIES.map((s) => `<li><a href="${summaryPath(s)}">ملخص كتاب ${escapeHtml(s.bookTitle)}</a> – ${escapeHtml(s.author)}. ${escapeHtml(s.lead)}</li>`),
+    `<main dir="${lang === "en" ? "ltr" : "rtl"}"><h1>${escapeHtml(hub.h1)}</h1><p>${escapeHtml(hub.lead)}</p><ul>`,
+    ...list.map((s) => `<li><a href="${summaryPath(s)}">${escapeHtml(summaryName(s))}</a> – ${escapeHtml(s.author)}. ${escapeHtml(s.lead)}</li>`),
     `</ul>`,
-    UPCOMING_SUMMARIES.length ? `<h2>قريباً</h2><p>${UPCOMING_SUMMARIES.map(escapeHtml).join("، ")}</p>` : "",
-    `<a href="/">تحويل PDF إلى صوت</a></main>`,
+    upcoming.length ? `<h2>قريباً</h2><p>${upcoming.map(escapeHtml).join("، ")}</p>` : "",
+    `<a href="${homePath(lang)}">${L(lang, "تحويل PDF إلى صوت", "Arabic PDF to audio")}</a></main>`,
   ].join("");
-  return withHead(template, { title: SUMMARIES_HUB.title, description: SUMMARIES_HUB.description, keywords: SUMMARIES_HUB.keywords, url, jsonLd, content });
+  const alt = { ar: summariesHubPath("ar"), ...(summariesFor("en").length ? { en: summariesHubPath("en") } : {}) };
+  return withHead(template, { title: hub.title, description: hub.description, keywords: hub.keywords, url, jsonLd, content, lang, alt });
 }
 
 // Article paragraph -> HTML, with its [text](/path) links
@@ -2807,8 +2800,10 @@ const richHtml = (text: string): string =>
     .join("");
 
 function renderArticleHtml(template: string, a: Article): string {
+  const lang: PageLang = a.lang || "ar";
+  const hub = articlesHubFor(lang);
   const url = `${SITE_URL}${articlePath(a)}`;
-  const hubUrl = `${SITE_URL}${ARTICLES_HUB_PATH}`;
+  const hubUrl = `${SITE_URL}${articlesHubPath(lang)}`;
   const text = articleText(a);
   const jsonLd = {
     "@context": "https://schema.org",
@@ -2818,7 +2813,7 @@ function renderArticleHtml(template: string, a: Article): string {
         "@id": `${url}#article`,
         headline: a.h1,
         description: a.description,
-        inLanguage: "ar",
+        inLanguage: lang,
         datePublished: a.publishedAt,
         dateModified: a.updatedAt,
         url,
@@ -2830,8 +2825,8 @@ function renderArticleHtml(template: string, a: Article): string {
       {
         "@type": "BreadcrumbList",
         itemListElement: [
-          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}/` },
-          { "@type": "ListItem", position: 2, name: ARTICLES_HUB.h1, item: hubUrl },
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}${homePath(lang)}` },
+          { "@type": "ListItem", position: 2, name: hub.h1, item: hubUrl },
           { "@type": "ListItem", position: 3, name: a.h1, item: url },
         ],
       },
@@ -2842,49 +2837,83 @@ function renderArticleHtml(template: string, a: Article): string {
       },
     ],
   };
+  const summariesLink = summariesFor(lang).length
+    ? `<a href="${summariesHubPath(lang)}">${escapeHtml(summariesHubFor(lang).h1)}</a> `
+    : "";
   const content = [
-    `<main dir="rtl"><article>`,
-    `<nav><a href="/">الرئيسية</a> › <a href="${ARTICLES_HUB_PATH}">${escapeHtml(ARTICLES_HUB.h1)}</a></nav>`,
+    `<main dir="${lang === "en" ? "ltr" : "rtl"}"><article>`,
+    `<nav><a href="${homePath(lang)}">${L(lang, "الرئيسية", "Home")}</a> › <a href="${articlesHubPath(lang)}">${escapeHtml(hub.h1)}</a></nav>`,
     `<h1>${escapeHtml(a.h1)}</h1>`,
     `<p>${escapeHtml(a.lead)}</p>`,
-    `<p>فريق Hakawati AI · <time datetime="${a.updatedAt}">${a.updatedAt}</time></p>`,
+    `<p>${L(lang, "فريق Hakawati AI", "Hakawati AI team")} · <time datetime="${a.updatedAt}">${a.updatedAt}</time></p>`,
     ...text.sections.map(
       (sec) =>
         `<h2>${escapeHtml(sec.heading)}</h2>` +
         sec.paragraphs.map((t) => `<p>${richHtml(t)}</p>`).join("") +
         (sec.steps ? `<ol>${sec.steps.map((st) => `<li>${richHtml(st)}</li>`).join("")}</ol>` : "")
     ),
-    `<h2>أسئلة شائعة</h2>`,
+    `<h2>${L(lang, "أسئلة شائعة", "Frequently asked questions")}</h2>`,
     ...text.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
     `</article><nav>`,
-    ...ARTICLES.filter((o) => o.slug !== a.slug).map((o) => `<a href="${articlePath(o)}">${escapeHtml(o.h1)}</a> `),
-    `<a href="${SUMMARIES_HUB_PATH}">${escapeHtml(SUMMARIES_HUB.h1)}</a> <a href="/">تحويل PDF إلى صوت</a></nav></main>`,
+    ...articlesFor(lang).filter((o) => o.slug !== a.slug).map((o) => `<a href="${articlePath(o)}">${escapeHtml(o.h1)}</a> `),
+    `${summariesLink}<a href="${homePath(lang)}">${L(lang, "تحويل PDF إلى صوت", "Arabic PDF to audio")}</a></nav></main>`,
   ].join("");
-  return withHead(template, { title: a.title, description: a.description, keywords: a.keywords, url, ogType: "article", jsonLd, content });
+  return withHead(template, { title: a.title, description: a.description, keywords: a.keywords, url, ogType: "article", jsonLd, content, lang, alt: articleAlternates(a) });
 }
 
-function renderArticlesHubHtml(template: string): string {
-  const url = `${SITE_URL}${ARTICLES_HUB_PATH}`;
+function renderArticlesHubHtml(template: string, lang: PageLang): string {
+  const hub = articlesHubFor(lang);
+  const list = articlesFor(lang);
+  const url = `${SITE_URL}${articlesHubPath(lang)}`;
   const jsonLd = {
     "@context": "https://schema.org",
     "@graph": [
-      { "@type": "CollectionPage", "@id": `${url}#webpage`, url, name: ARTICLES_HUB.title, description: ARTICLES_HUB.description, inLanguage: "ar" },
-      { "@type": "ItemList", itemListElement: ARTICLES.map((a, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE_URL}${articlePath(a)}`, name: a.h1 })) },
+      { "@type": "CollectionPage", "@id": `${url}#webpage`, url, name: hub.title, description: hub.description, inLanguage: lang },
+      { "@type": "ItemList", itemListElement: list.map((a, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE_URL}${articlePath(a)}`, name: a.h1 })) },
       {
         "@type": "BreadcrumbList",
         itemListElement: [
-          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}/` },
-          { "@type": "ListItem", position: 2, name: ARTICLES_HUB.h1, item: url },
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}${homePath(lang)}` },
+          { "@type": "ListItem", position: 2, name: hub.h1, item: url },
         ],
       },
     ],
   };
   const content = [
-    `<main dir="rtl"><h1>${escapeHtml(ARTICLES_HUB.h1)}</h1><p>${escapeHtml(ARTICLES_HUB.lead)}</p><ul>`,
-    ...ARTICLES.map((a) => `<li><a href="${articlePath(a)}">${escapeHtml(a.h1)}</a>. ${escapeHtml(a.lead)}</li>`),
-    `</ul><a href="/">تحويل PDF إلى صوت</a></main>`,
+    `<main dir="${lang === "en" ? "ltr" : "rtl"}"><h1>${escapeHtml(hub.h1)}</h1><p>${escapeHtml(hub.lead)}</p><ul>`,
+    ...list.map((a) => `<li><a href="${articlePath(a)}">${escapeHtml(a.h1)}</a>. ${escapeHtml(a.lead)}</li>`),
+    `</ul><a href="${homePath(lang)}">${L(lang, "تحويل PDF إلى صوت", "Arabic PDF to audio")}</a></main>`,
   ].join("");
-  return withHead(template, { title: ARTICLES_HUB.title, description: ARTICLES_HUB.description, keywords: "مقالات الكتب الصوتية, تحويل النص الى صوت, تحويل pdf الى صوت", url, jsonLd, content });
+  const keywords = L(lang, "مقالات الكتب الصوتية, تحويل النص الى صوت, تحويل pdf الى صوت", "arabic audiobooks, arabic text to speech, arabic pdf to audio, arabic voice over");
+  const alt = { ar: articlesHubPath("ar"), ...(articlesFor("en").length ? { en: articlesHubPath("en") } : {}) };
+  return withHead(template, { title: hub.title, description: hub.description, keywords, url, jsonLd, content, lang, alt });
+}
+
+// /sitemap.xml, built from the same data as the pages: every page in both languages, each
+// with its hreflang pair
+function renderSitemap(): string {
+  type Entry = { alt: { ar: string; en?: string }; lastmod?: string; changefreq: string; priority: string };
+  const entries: Entry[] = [
+    { alt: { ar: "/", en: "/en" }, changefreq: "weekly", priority: "1.0" },
+    ...landingPagesFor("ar").map((p) => ({ alt: landingAlternates(p), changefreq: "weekly", priority: "0.9" })),
+    { alt: { ar: summariesHubPath("ar"), ...(summariesFor("en").length ? { en: summariesHubPath("en") } : {}) }, changefreq: "weekly", priority: "0.8" },
+    ...summariesFor("ar").map((s) => ({ alt: summaryAlternates(s), lastmod: s.publishedAt, changefreq: "monthly", priority: "0.7" })),
+    { alt: { ar: articlesHubPath("ar"), ...(articlesFor("en").length ? { en: articlesHubPath("en") } : {}) }, changefreq: "weekly", priority: "0.7" },
+    ...articlesFor("ar").map((a) => ({ alt: articleAlternates(a), lastmod: a.updatedAt, changefreq: "monthly", priority: "0.7" })),
+  ];
+  const links = (alt: Entry["alt"]) =>
+    alt.en
+      ? `<xhtml:link rel="alternate" hreflang="ar" href="${SITE_URL}${alt.ar}" />` +
+        `<xhtml:link rel="alternate" hreflang="en" href="${SITE_URL}${alt.en}" />` +
+        `<xhtml:link rel="alternate" hreflang="x-default" href="${SITE_URL}${alt.ar}" />`
+      : "";
+  const url = (loc: string, e: Entry) =>
+    `<url><loc>${SITE_URL}${loc}</loc>${e.lastmod ? `<lastmod>${e.lastmod}</lastmod>` : ""}<changefreq>${e.changefreq}</changefreq><priority>${e.priority}</priority>${links(e.alt)}</url>`;
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n` +
+    entries.flatMap((e) => [url(e.alt.ar, e), ...(e.alt.en ? [url(e.alt.en, e)] : [])]).join("\n") +
+    `\n</urlset>\n`
+  );
 }
 
 // The home page is a client-rendered app, so put its text into #root for crawlers
@@ -2913,8 +2942,9 @@ function renderHomeHtml(template: string, lang: "ar" | "en"): string {
     ...c.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
     `<nav>`,
     `<a href="${en ? "/" : "/en"}">${en ? "العربية" : "English"}</a> `,
-    ...(en ? [] : LANDING_PAGES.map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `)),
-    ...(en ? [] : [`<a href="${SUMMARIES_HUB_PATH}">${escapeHtml(SUMMARIES_HUB.h1)}</a> `, `<a href="${ARTICLES_HUB_PATH}">${escapeHtml(ARTICLES_HUB.h1)}</a> `]),
+    ...landingPagesFor(lang).map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `),
+    ...(summariesFor(lang).length ? [`<a href="${summariesHubPath(lang)}">${escapeHtml(summariesHubFor(lang).h1)}</a> `] : []),
+    `<a href="${articlesHubPath(lang)}">${escapeHtml(articlesHubFor(lang).h1)}</a> `,
     `</nav></main>`,
   ].join("");
 
@@ -3045,27 +3075,35 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     const indexTemplate = fs.readFileSync(path.join(distPath, "index.html"), "utf8");
-    const landingHtml = new Map(LANDING_PAGES.map((p) => [p.slug, renderLandingHtml(indexTemplate, p)]));
-    const homeHtml = renderHomeHtml(indexTemplate, "ar");
-    const homeHtmlEn = renderHomeHtml(indexTemplate, "en");
-    const hubHtml = renderSummariesHubHtml(indexTemplate);
-    const articlesHubHtml = renderArticlesHubHtml(indexTemplate);
-    const articleHtml = new Map(ARTICLES.map((a) => [a.slug, renderArticleHtml(indexTemplate, a)]));
-    const summaryHtml = new Map(BOOK_SUMMARIES.map((s) => [s.slug, renderSummaryHtml(indexTemplate, s, summaryHasAudio(distPath, s))]));
+    // Every pre-rendered page in both languages, keyed by its decoded path
+    const pageKey = (p: string): string => {
+      try {
+        return decodeURIComponent(p).replace(/^\/+|\/+$/g, "");
+      } catch {
+        return p.replace(/^\/+|\/+$/g, "");
+      }
+    };
+    const pages = new Map<string, string>();
+    pages.set("", renderHomeHtml(indexTemplate, "ar"));
+    pages.set("index.html", pages.get("")!);
+    pages.set("en", renderHomeHtml(indexTemplate, "en"));
+    for (const lang of ["ar", "en"] as const) {
+      for (const p of landingPagesFor(lang)) pages.set(pageKey(landingPath(p)), renderLandingHtml(indexTemplate, p));
+      for (const a of articlesFor(lang)) pages.set(pageKey(articlePath(a)), renderArticleHtml(indexTemplate, a));
+      for (const s of summariesFor(lang)) pages.set(pageKey(summaryPath(s)), renderSummaryHtml(indexTemplate, s, summaryHasAudio(distPath, s)));
+      if (articlesFor(lang).length) pages.set(pageKey(articlesHubPath(lang)), renderArticlesHubHtml(indexTemplate, lang));
+      if (summariesFor(lang).length) pages.set(pageKey(summariesHubPath(lang)), renderSummariesHubHtml(indexTemplate, lang));
+    }
+    const sitemap = renderSitemap();
+    app.get("/sitemap.xml", (_req, res) => res.type("application/xml").send(sitemap));
 
     app.use((req, res, next) => {
       if (req.method !== "GET") return next();
-      if (req.path === "/" || req.path === "/index.html") return res.type("html").send(homeHtml);
-      if (req.path === "/en" || req.path === "/en/") return res.type("html").send(homeHtmlEn);
-      if (isSummariesHub(req.path)) return res.type("html").send(hubHtml);
-      if (isArticlesHub(req.path)) return res.type("html").send(articlesHubHtml);
-      const article = findArticle(req.path);
-      if (article) return res.type("html").send(articleHtml.get(article.slug));
-      const summary = findSummary(req.path);
-      if (summary) return res.type("html").send(summaryHtml.get(summary.slug));
-      const page = findLandingPage(req.path);
-      if (!page) return next();
-      res.type("html").send(landingHtml.get(page.slug));
+      const html = pages.get(pageKey(req.path));
+      if (html) return res.type("html").send(html);
+      // Until English summaries exist, their hub points to the Arabic one
+      if (pageKey(req.path) === pageKey(summariesHubPath("en"))) return res.redirect(302, summariesHubPath("ar"));
+      next();
     });
 
     // Unknown paths get a real 404 (not a soft 404) so search engines drop them

@@ -1,6 +1,6 @@
 // Every summary text, for the server pre-render and the audio generator (not the browser,
 // which loads one text at a time through lib/summaryLoader.ts)
-import type { BookSummary, SummaryText } from './summaries';
+import { summaryTextKey, type BookSummary, type SummaryText } from './summaries';
 import atomicHabits from './summary-texts/atomic-habits';
 import myFatherWhomIHate from './summary-texts/my-father-whom-i-hate';
 import lawsOfPower from './summary-texts/48-laws-of-power';
@@ -46,7 +46,7 @@ export const SUMMARY_TEXTS: Record<string, SummaryText> = {
 };
 
 export const summaryText = (s: BookSummary): SummaryText => {
-  const text = SUMMARY_TEXTS[s.textId];
+  const text = SUMMARY_TEXTS[summaryTextKey(s)];
   if (!text) throw new Error(`summary text not registered: ${s.textId}`);
   return text;
 };

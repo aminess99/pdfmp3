@@ -1,8 +1,9 @@
 import React from 'react';
 import { LANDING_PAGES, landingPath } from '../data/landingPages';
-import { tr, DIR, HOME_PATH, OTHER_LANG_PATH, isEn } from '../lib/i18n';
+import { tr, DIR, HOME_PATH, isEn } from '../lib/i18n';
+import { otherLanguagePath } from '../lib/alternates';
 import { DIALECT_COUNT } from '../data/voices';
-import { SUMMARIES_HUB_PATH } from '../data/summaries';
+import { BOOK_SUMMARIES, SUMMARIES_HUB_PATH } from '../data/summaries';
 import { ARTICLES_HUB_PATH } from '../data/articles';
 import { SOCIAL_LINKS, SocialLink } from '../data/social';
 
@@ -52,21 +53,16 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal }) => (
       <nav aria-label={tr("الأدوات", "Tools")} className="flex flex-col gap-1 text-sm">
         <strong className="text-white">{tr("الأدوات", "Tools")}</strong>
         <a href={HOME_PATH} className="text-brand-soft hover:text-indigo-200">{tr('تحويل PDF إلى صوت', 'Arabic PDF to audio')}</a>
-        {isEn ? (
-          <a href={OTHER_LANG_PATH} hrefLang="ar" lang="ar" className="text-brand-soft hover:text-indigo-200">
-            النسخة العربية
+        <a href={otherLanguagePath()} hrefLang={isEn ? 'ar' : 'en'} lang={isEn ? 'ar' : 'en'} className="text-brand-soft hover:text-indigo-200">
+          {isEn ? 'النسخة العربية' : 'English version'}
+        </a>
+        {BOOK_SUMMARIES.length > 0 && <a href={SUMMARIES_HUB_PATH} className="text-brand-soft hover:text-indigo-200">{tr('ملخصات كتب صوتية', 'Audio book summaries')}</a>}
+        <a href={ARTICLES_HUB_PATH} className="text-brand-soft hover:text-indigo-200">{tr('المقالات', 'Articles')}</a>
+        {LANDING_PAGES.map((page) => (
+          <a key={page.slug} href={landingPath(page)} className="text-brand-soft hover:text-indigo-200">
+            {page.linkLabel}
           </a>
-        ) : (
-          <>
-            <a href={SUMMARIES_HUB_PATH} className="text-brand-soft hover:text-indigo-200">ملخصات كتب صوتية</a>
-            <a href={ARTICLES_HUB_PATH} className="text-brand-soft hover:text-indigo-200">المقالات</a>
-            {LANDING_PAGES.map((page) => (
-              <a key={page.slug} href={landingPath(page)} className="text-brand-soft hover:text-indigo-200">
-                {page.linkLabel}
-              </a>
-            ))}
-          </>
-        )}
+        ))}
       </nav>
       <nav aria-label={tr("الدعم", "Support")} className="flex flex-col gap-1 text-sm">
         <strong className="text-white">{tr("الدعم", "Support")}</strong>

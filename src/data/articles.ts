@@ -6,6 +6,9 @@
 // Paragraphs may contain internal links written as [text](/path). Write numbers and symbols
 // the way they should be read aloud: the "listen" button narrates the text as it is.
 
+import { LANG, Lang } from '../lib/i18n';
+import { ARTICLES_EN, ARTICLES_HUB_EN } from './articlesEn';
+
 export interface Article {
   slug: string;
   textId: string;
@@ -20,16 +23,26 @@ export interface Article {
   readMinutes: number;
   publishedAt: string;
   updatedAt: string;
+  // Set on the copies handed out by articlesFor(): the language and the Arabic slug that
+  // pairs the two versions
+  lang?: Lang;
+  baseSlug?: string;
 }
+
+// The English version of an article (./articlesEn.ts, keyed by the Arabic slug); its text
+// is ./article-texts/en/<textId>.ts
+export type ArticleEn = Pick<Article, 'slug' | 'title' | 'description' | 'keywords' | 'h1' | 'lead' | 'category' | 'readMinutes'>;
 
 export interface ArticleText {
   sections: { heading: string; paragraphs: string[]; steps?: string[] }[];
   faqs: { question: string; answer: string }[];
 }
 
-export const ARTICLES_HUB_PATH = `/${encodeURIComponent('مقالات')}`;
+export const articlesHubPath = (lang: Lang): string => (lang === 'en' ? '/en/articles' : `/${encodeURIComponent('مقالات')}`);
+export const ARTICLES_HUB_PATH = articlesHubPath(LANG);
 
-export const ARTICLES: Article[] = [
+// Every article in Arabic; each also has an English version in ./articlesEn.ts
+export const ALL_ARTICLES: Article[] = [
   {
     slug: 'تحويل-كتاب-pdf-الى-كتاب-صوتي',
     textId: 'pdf-to-audiobook',
@@ -96,7 +109,26 @@ export const ARTICLES: Article[] = [
   },
 ];
 
-export const articlePath = (a: Article): string => `${ARTICLES_HUB_PATH}/${encodeURIComponent(a.slug)}`;
+// The articles in one language (English: the ones with an English version)
+export function articlesFor(lang: Lang): Article[] {
+  if (lang === 'ar') return ALL_ARTICLES.map((a) => ({ ...a, lang: 'ar', baseSlug: a.slug }));
+  return ALL_ARTICLES.filter((a) => ARTICLES_EN[a.slug]).map((a) => ({ ...a, ...ARTICLES_EN[a.slug], lang: 'en', baseSlug: a.slug }));
+}
+
+// The articles in the language of the page being viewed (Arabic on the server)
+export const ARTICLES: Article[] = articlesFor(LANG);
+
+export const articlePath = (a: Article): string => `${articlesHubPath(a.lang || 'ar')}/${encodeURIComponent(a.slug)}`;
+
+// Where an article's text lives: ./article-texts/<textId>.ts, or en/<textId>.ts in English
+export const articleTextKey = (a: Article): string => (a.lang === 'en' ? `en/${a.textId}` : a.textId);
+
+// The same article in each language
+export function articleAlternates(a: Article): { ar: string; en?: string } {
+  const base = a.baseSlug || a.slug;
+  const en = ARTICLES_EN[base];
+  return { ar: `${articlesHubPath('ar')}/${encodeURIComponent(base)}`, ...(en ? { en: `${articlesHubPath('en')}/${encodeURIComponent(en.slug)}` } : {}) };
+}
 
 function decodePath(pathname: string): string {
   try {
@@ -106,21 +138,25 @@ function decodePath(pathname: string): string {
   }
 }
 
-export const isArticlesHub = (pathname: string): boolean => decodePath(pathname) === 'مقالات';
+export const isArticlesHub = (pathname: string): boolean => ['مقالات', 'en/articles'].includes(decodePath(pathname));
 
 export function findArticle(pathname: string): Article | undefined {
   const path = decodePath(pathname);
+  if (path.startsWith('en/articles/')) return articlesFor('en').find((a) => a.slug === path.slice('en/articles/'.length));
   if (!path.startsWith('مقالات/')) return undefined;
   const slug = path.slice('مقالات/'.length);
-  return ARTICLES.find((a) => a.slug === slug);
+  return articlesFor('ar').find((a) => a.slug === slug);
 }
 
-export const ARTICLES_HUB = {
+const ARTICLES_HUB_AR = {
   title: 'مقالات عن الكتب الصوتية وتحويل النص إلى صوت | Hakawati AI',
   description: 'أدلة ونصائح عملية عن تحويل الكتب والنصوص العربية إلى صوت، والاستماع الذكي، والكتب الصوتية، من فريق Hakawati AI.',
   h1: 'المقالات',
   lead: 'أدلة ونصائح عملية عن الكتب الصوتية وتحويل النصوص العربية إلى صوت. ويمكنك الاستماع إلى أي مقالة بدل قراءتها.',
 };
+
+export const articlesHubFor = (lang: Lang) => (lang === 'en' ? ARTICLES_HUB_EN : ARTICLES_HUB_AR);
+export const ARTICLES_HUB = articlesHubFor(LANG);
 
 // "[text](/path)" -> parts, for React and for the server pre-render
 export function splitLinks(text: string): ({ text: string } | { text: string; href: string })[] {

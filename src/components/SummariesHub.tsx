@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { tr, DIR, HOME_PATH } from '../lib/i18n';
 import { ChevronLeft, Clock, Loader2, Pause, Play } from 'lucide-react';
-import { BOOK_SUMMARIES, BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, UPCOMING_SUMMARIES, summaryAudioUrl, summaryPath } from '../data/summaries';
+import { BOOK_SUMMARIES, BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, UPCOMING_SUMMARIES, summaryAudioUrl, summaryName, summaryPath } from '../data/summaries';
 import { SummaryCover } from './SummaryPage';
 import { toast } from '../lib/toast';
 
@@ -34,7 +35,7 @@ function usePreview() {
     audio.onended = () => setCurrent(null);
     audio.onerror = () => {
       setCurrent(null);
-      toast('النسخة الصوتية من هذا الملخص قيد التجهيز، ويمكنك قراءته الآن.', 'info');
+      toast(tr('النسخة الصوتية من هذا الملخص قيد التجهيز، ويمكنك قراءته الآن.', 'The audio for this summary is on its way; you can read it now.'), 'info');
     };
     audio.play().catch(() => setCurrent(null));
   };
@@ -48,13 +49,13 @@ const SummaryCard: React.FC<{ summary: BookSummary; preview: ReturnType<typeof u
   return (
     <div className="flex flex-col gap-2.5">
       <div className="relative group">
-        <a href={summaryPath(s)} aria-label={`ملخص كتاب ${s.bookTitle}`} className="block transition-transform group-hover:-translate-y-1">
+        <a href={summaryPath(s)} aria-label={summaryName(s)} className="block transition-transform group-hover:-translate-y-1">
           <SummaryCover summary={s} />
         </a>
         <button
           type="button"
           onClick={() => preview.toggle(s)}
-          aria-label={state ? `إيقاف مقطع ${s.bookTitle}` : `استمع إلى أول 30 ثانية من ملخص ${s.bookTitle}`}
+          aria-label={state ? tr(`إيقاف مقطع ${s.bookTitle}`, `Stop the ${s.bookTitle} preview`) : tr(`استمع إلى أول 30 ثانية من ملخص ${s.bookTitle}`, `Hear the first 30 seconds of the ${s.bookTitle} summary`)}
           className="absolute bottom-2.5 end-2.5 w-11 h-11 rounded-full bg-white text-ink shadow-lg shadow-black/40 flex items-center justify-center cursor-pointer hover:scale-105 transition-transform"
         >
           {state === 'loading' ? (
@@ -67,9 +68,9 @@ const SummaryCard: React.FC<{ summary: BookSummary; preview: ReturnType<typeof u
         </button>
       </div>
       <a href={summaryPath(s)} className="flex flex-col gap-1 group">
-        <span className="text-white font-semibold group-hover:text-brand-soft">ملخص كتاب {s.bookTitle}</span>
+        <span className="text-white font-semibold group-hover:text-brand-soft">{summaryName(s)}</span>
         <span className="text-sm text-slate-400">{s.author}</span>
-        <span className="text-xs text-slate-500 flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{s.minutes} دقيقة · {s.category}</span>
+        <span className="text-xs text-slate-500 flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{s.minutes} {tr("دقيقة", "min")} · {s.category}</span>
       </a>
     </div>
   );
@@ -84,11 +85,11 @@ export const SummariesHub: React.FC = () => {
   const shown = category ? BOOK_SUMMARIES.filter((s) => s.category === category) : BOOK_SUMMARIES;
 
   return (
-    <section className="px-4 sm:px-6 py-10 sm:py-14" dir="rtl">
+    <section className="px-4 sm:px-6 py-10 sm:py-14" dir={DIR}>
       <div className="max-w-[960px] mx-auto flex flex-col gap-8">
-        <nav aria-label="مسار التنقل" className="flex items-center gap-1.5 text-sm text-slate-400">
-          <a href="/" className="hover:text-white">الرئيسية</a>
-          <ChevronLeft className="w-3.5 h-3.5" />
+        <nav aria-label={tr("مسار التنقل", "Breadcrumb")} className="flex items-center gap-1.5 text-sm text-slate-400">
+          <a href={HOME_PATH} className="hover:text-white">{tr("الرئيسية", "Home")}</a>
+          <ChevronLeft className="w-3.5 h-3.5 ltr:rotate-180" />
           <span className="text-slate-300">{SUMMARIES_HUB.h1}</span>
         </nav>
 
@@ -98,7 +99,7 @@ export const SummariesHub: React.FC = () => {
         </header>
 
         {CATEGORIES.length > 1 && (
-          <div role="group" aria-label="التصنيفات" className="flex gap-2 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap pb-1">
+          <div role="group" aria-label={tr("التصنيفات", "Categories")} className="flex gap-2 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap pb-1">
             {[null, ...CATEGORIES].map((c) => (
               <button
                 key={c ?? 'all'}
@@ -109,7 +110,7 @@ export const SummariesHub: React.FC = () => {
                   category === c ? 'bg-brand border-brand text-white' : 'border-line text-slate-300 hover:text-white hover:border-line-strong'
                 }`}
               >
-                {c ?? `الكل (${BOOK_SUMMARIES.length})`}
+                {c ?? `${tr("الكل", "All")} (${BOOK_SUMMARIES.length})`}
               </button>
             ))}
           </div>
@@ -123,7 +124,7 @@ export const SummariesHub: React.FC = () => {
 
         {UPCOMING_SUMMARIES.length > 0 && (
           <section className="flex flex-col gap-3">
-            <h2 className="font-display font-extrabold text-xl text-white">قريباً</h2>
+            <h2 className="font-display font-extrabold text-xl text-white">{tr("قريباً", "Coming soon")}</h2>
             <ul className="flex flex-wrap gap-2">
               {UPCOMING_SUMMARIES.map((t) => (
                 <li key={t} className="px-3 py-1.5 rounded-full border border-line text-sm text-slate-400">{t}</li>
@@ -134,11 +135,11 @@ export const SummariesHub: React.FC = () => {
 
         <div className="p-6 rounded-[20px] border border-brand/40 bg-brand-deep/30 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
           <span className="flex flex-col gap-1">
-            <strong className="text-white text-lg">تريد سماع كتاب غير موجود هنا؟</strong>
-            <span className="text-slate-400 text-sm">ارفع ملف PDF واستمع إليه كاملاً، أو اطلب ملخصاً له من الاستوديو.</span>
+            <strong className="text-white text-lg">{tr("تريد سماع كتاب غير موجود هنا؟", "Want to hear a book that isn’t here?")}</strong>
+            <span className="text-slate-400 text-sm">{tr("ارفع ملف PDF واستمع إليه كاملاً، أو اطلب ملخصاً له من الاستوديو.", "Upload an Arabic PDF and listen to all of it, or ask the studio for a summary.")}</span>
           </span>
-          <a href="/" className="min-h-12 px-6 rounded-xl bg-brand hover:bg-indigo-500 text-white font-bold flex items-center justify-center shrink-0">
-            حوّل كتابك إلى صوت
+          <a href={HOME_PATH} className="min-h-12 px-6 rounded-xl bg-brand hover:bg-indigo-500 text-white font-bold flex items-center justify-center shrink-0">
+            {tr("حوّل كتابك إلى صوت", "Turn your book into audio")}
           </a>
         </div>
       </div>
@@ -150,16 +151,16 @@ export const SummariesHub: React.FC = () => {
 export const SummariesShowcase: React.FC = () => {
   const preview = usePreview();
   return (
-    <section id="summaries" className="border-t border-raised py-[72px] px-4 sm:px-6" dir="rtl">
+    <section id="summaries" className="border-t border-raised py-[72px] px-4 sm:px-6" dir={DIR}>
       <div className="max-w-[1160px] mx-auto flex flex-col gap-8">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div className="flex flex-col gap-2">
-            <h2 className="font-display font-extrabold text-3xl sm:text-4xl text-white">ملخصات كتب صوتية مجانية</h2>
-            <p className="text-slate-400 text-lg">أهم أفكار أشهر الكتب في ربع ساعة، بصوت عربي فصيح. اضغط ▶ لتسمع مقطعاً.</p>
+            <h2 className="font-display font-extrabold text-3xl sm:text-4xl text-white">{tr("ملخصات كتب صوتية مجانية", "Free audio book summaries")}</h2>
+            <p className="text-slate-400 text-lg">{tr("أهم أفكار أشهر الكتب في ربع ساعة، بصوت عربي فصيح. اضغط ▶ لتسمع مقطعاً.", "The key ideas of famous books in fifteen minutes. Press ▶ to hear a preview.")}</p>
           </div>
           <a href={SUMMARIES_HUB_PATH} className="self-start sm:self-auto min-h-11 px-5 rounded-xl border border-line text-slate-200 hover:text-white hover:border-line-strong flex items-center gap-1.5 shrink-0">
-            كل الملخصات
-            <ChevronLeft className="w-4 h-4" />
+            {tr("كل الملخصات", "All summaries")}
+            <ChevronLeft className="w-4 h-4 ltr:rotate-180" />
           </a>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-5 gap-y-8">

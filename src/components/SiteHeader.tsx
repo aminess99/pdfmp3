@@ -3,8 +3,9 @@ import { ChevronDown, Menu, X } from 'lucide-react';
 import { LANDING_PAGES, landingPath } from '../data/landingPages';
 import { DIALECTS } from '../data/voices';
 import { dialectLabel } from '../lib/voiceLabel';
-import { tr, DIR, HOME_PATH, OTHER_LANG_PATH, isEn } from '../lib/i18n';
-import { SUMMARIES_HUB_PATH } from '../data/summaries';
+import { tr, DIR, HOME_PATH, isEn } from '../lib/i18n';
+import { otherLanguagePath } from '../lib/alternates';
+import { BOOK_SUMMARIES, SUMMARIES_HUB_PATH } from '../data/summaries';
 import { ARTICLES_HUB_PATH } from '../data/articles';
 import { useAuth } from '../lib/AuthContext';
 
@@ -44,14 +45,13 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenAuth, onNavigate }
       mark: tr('نص', 'Txt'),
       name: tr('تحويل النص إلى صوت', 'Arabic text to speech'),
       desc: tr('الصق أي نص واسمعه فوراً', 'Paste any text and hear it instantly'),
-      href: !isEn && textToSpeechPage ? landingPath(textToSpeechPage) : `${HOME_PATH}#top`,
+      href: textToSpeechPage ? landingPath(textToSpeechPage) : `${HOME_PATH}#top`,
     },
-    ...(isEn
-      ? []
-      : [
-          { mark: 'ملخص', name: 'ملخصات كتب صوتية', desc: 'أهم أفكار أشهر الكتب في ربع ساعة', href: SUMMARIES_HUB_PATH },
-          { mark: 'دليل', name: 'المقالات', desc: 'أدلة ونصائح عن الكتب الصوتية، واستمع إليها', href: ARTICLES_HUB_PATH },
-        ]),
+    // The English summaries hub appears once English summaries exist
+    ...(BOOK_SUMMARIES.length
+      ? [{ mark: tr('ملخص', 'Sum'), name: tr('ملخصات كتب صوتية', 'Audio book summaries'), desc: tr('أهم أفكار أشهر الكتب في ربع ساعة', 'The key ideas of famous books in 15 minutes'), href: SUMMARIES_HUB_PATH }]
+      : []),
+    { mark: tr('دليل', 'Read'), name: tr('المقالات', 'Articles'), desc: tr('أدلة ونصائح عن الكتب الصوتية، واستمع إليها', 'Guides to Arabic audiobooks and text to speech'), href: ARTICLES_HUB_PATH },
     { mark: tr('سؤال', 'Ask'), name: tr('اسأل كتابك', 'Ask your book'), desc: tr('ارفع كتاباً ثم اطرح عليه أسئلتك من الاستوديو', 'Upload a book, then ask it questions from the studio'), href: `${HOME_PATH}#top` },
   ];
 
@@ -105,7 +105,7 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenAuth, onNavigate }
 
         <div className="flex items-center gap-2">
           <a
-            href={OTHER_LANG_PATH}
+            href={otherLanguagePath()}
             hrefLang={isEn ? 'ar' : 'en'}
             lang={isEn ? 'ar' : 'en'}
             className="flex items-center min-h-11 px-3 rounded-[10px] text-[15px] text-slate-300 hover:text-white hover:bg-raised/60"

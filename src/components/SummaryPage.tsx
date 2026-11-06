@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { tr, DIR, HOME_PATH } from '../lib/i18n';
 import { ChevronLeft, Clock, Download, Headphones, Loader2, Mic, Pause, Play, RotateCcw, RotateCw } from 'lucide-react';
 import {
   BOOK_SUMMARIES,
@@ -6,6 +7,7 @@ import {
   SummaryText,
   SummaryAudioManifest,
   SUMMARIES_HUB_PATH,
+  summaryName,
   summaryAudioUrl,
   summaryCoverUrl,
   summaryManifestUrl,
@@ -29,7 +31,7 @@ export const SummaryCover: React.FC<{ summary: BookSummary; size?: 'sm' | 'lg' }
   summary.textId && summary.hasCover ? (
     <img
       src={summaryCoverUrl(summary)}
-      alt={`غلاف كتاب ${summary.bookTitle}`}
+      alt={tr(`غلاف كتاب ${summary.bookTitle}`, `${summary.bookTitle} book cover`)}
       width={480}
       height={800}
       loading={size === 'lg' ? 'eager' : 'lazy'}
@@ -40,7 +42,7 @@ export const SummaryCover: React.FC<{ summary: BookSummary; size?: 'sm' | 'lg' }
     aria-hidden="true"
     className={`relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#312e81] via-[#4338ca] to-[#0e7490] flex flex-col justify-between shrink-0 p-4 ${COVER_SIZE[size]}`}
   >
-    <span className="text-[11px] font-semibold text-cyan-100/80">ملخص صوتي</span>
+    <span className="text-[11px] font-semibold text-cyan-100/80">{tr("ملخص صوتي", "Audio summary")}</span>
     <span className={`font-display font-extrabold text-white leading-tight ${size === 'lg' ? 'text-2xl sm:text-[28px]' : 'text-xl'}`}>
       {summary.bookTitle}
     </span>
@@ -125,13 +127,13 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
     .map((x) => x.s);
 
   return (
-    <article className="px-4 sm:px-6 py-10 sm:py-14" dir="rtl">
+    <article className="px-4 sm:px-6 py-10 sm:py-14" dir={DIR}>
       <div className="max-w-[820px] mx-auto flex flex-col gap-8">
-        <nav aria-label="مسار التنقل" className="flex items-center gap-1.5 text-sm text-slate-400 flex-wrap">
-          <a href="/" className="hover:text-white">الرئيسية</a>
-          <ChevronLeft className="w-3.5 h-3.5" />
-          <a href={SUMMARIES_HUB_PATH} className="hover:text-white">ملخصات كتب صوتية</a>
-          <ChevronLeft className="w-3.5 h-3.5" />
+        <nav aria-label={tr("مسار التنقل", "Breadcrumb")} className="flex items-center gap-1.5 text-sm text-slate-400 flex-wrap">
+          <a href={HOME_PATH} className="hover:text-white">{tr("الرئيسية", "Home")}</a>
+          <ChevronLeft className="w-3.5 h-3.5 ltr:rotate-180" />
+          <a href={SUMMARIES_HUB_PATH} className="hover:text-white">{tr("ملخصات كتب صوتية", "Audio book summaries")}</a>
+          <ChevronLeft className="w-3.5 h-3.5 ltr:rotate-180" />
           <span className="text-slate-300">{summary.bookTitle}</span>
         </nav>
 
@@ -139,20 +141,20 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
           <SummaryCover summary={summary} size="lg" />
           <div className="flex flex-col gap-3">
             <span className="self-start px-3 py-1 rounded-full bg-raised text-brand-soft text-xs font-semibold">{summary.category}</span>
-            <h1 className="font-display font-extrabold text-3xl sm:text-[40px] leading-tight text-white">ملخص كتاب {summary.bookTitle}</h1>
-            <p className="text-slate-300">تأليف: {summary.author}</p>
+            <h1 className="font-display font-extrabold text-3xl sm:text-[40px] leading-tight text-white">{summaryName(summary)}</h1>
+            <p className="text-slate-300">{tr("تأليف:", "By")} {summary.author}</p>
             <p className="text-slate-400 leading-[1.8]">{summary.lead}</p>
             <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-400">
-              <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" />{minutes} دقيقة استماع</span>
-              {voice && <span className="flex items-center gap-1.5"><Mic className="w-4 h-4" />بصوت {voiceLabel(voice)}</span>}
+              <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" />{minutes} {tr("دقيقة استماع", "min listen")}</span>
+              {voice && <span className="flex items-center gap-1.5"><Mic className="w-4 h-4" />{tr(`بصوت ${voiceLabel(voice)}`, "Narrated in English")}</span>}
             </div>
           </div>
         </header>
 
         {/* Player */}
-        <section id="summary-player" aria-label="الملخص الصوتي" className="rounded-[20px] border border-brand/50 bg-brand-deep/30 p-4 sm:p-5 flex flex-col gap-4 scroll-mt-24">
+        <section id="summary-player" aria-label={tr("الملخص الصوتي", "Audio summary")} className="rounded-[20px] border border-brand/50 bg-brand-deep/30 p-4 sm:p-5 flex flex-col gap-4 scroll-mt-24">
           {audioState === 'missing' ? (
-            <p className="text-slate-300 leading-relaxed">النسخة الصوتية من هذا الملخص قيد التجهيز، وستكون متاحة قريباً. يمكنك قراءة الملخص كاملاً أدناه.</p>
+            <p className="text-slate-300 leading-relaxed">{tr("النسخة الصوتية من هذا الملخص قيد التجهيز، وستكون متاحة قريباً. يمكنك قراءة الملخص كاملاً أدناه.", "The audio version of this summary is on its way. You can read the full summary below.")}</p>
           ) : (
             <>
               {audioState === 'ready' && (
@@ -175,7 +177,7 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
                   type="button"
                   onClick={toggle}
                   disabled={audioState !== 'ready'}
-                  aria-label={playing ? 'إيقاف مؤقت' : 'تشغيل الملخص'}
+                  aria-label={playing ? tr('إيقاف مؤقت', 'Pause') : tr('تشغيل الملخص', 'Play the summary')}
                   className="w-14 h-14 rounded-full bg-white text-ink flex items-center justify-center shrink-0 cursor-pointer disabled:opacity-60"
                 >
                   {audioState === 'loading' || (playing && buffering) ? (
@@ -188,7 +190,7 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
                 </button>
                 <div className="flex-1 min-w-0 flex flex-col gap-1">
                   <span className="text-sm text-white font-semibold truncate">
-                    {manifest && currentSection >= 0 ? sections[currentSection]?.heading : `ملخص كتاب ${summary.bookTitle}`}
+                    {manifest && currentSection >= 0 ? sections[currentSection]?.heading : summaryName(summary)}
                   </span>
                   <div className="flex items-center gap-2" dir="ltr">
                     <span className="text-[13px] text-slate-400 tabular-nums">{fmt(time)}</span>
@@ -199,7 +201,7 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
                       step={1}
                       value={time}
                       onChange={(e) => seekTo(Number(e.target.value))}
-                      aria-label="موضع التشغيل"
+                      aria-label={tr("موضع التشغيل", "Playback position")}
                       className="flex-1 min-w-0 accent-accent cursor-pointer"
                     />
                     <span className="text-[13px] text-slate-400 tabular-nums">{fmt(duration)}</span>
@@ -207,16 +209,16 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <button type="button" onClick={() => seekTo(time - 15)} aria-label="رجوع 15 ثانية" className="w-11 h-11 rounded-[10px] bg-raised hover:bg-line-strong text-white flex items-center justify-center cursor-pointer">
+                <button type="button" onClick={() => seekTo(time - 15)} aria-label={tr("رجوع 15 ثانية", "Back 15 seconds")} className="w-11 h-11 rounded-[10px] bg-raised hover:bg-line-strong text-white flex items-center justify-center cursor-pointer">
                   <RotateCcw className="w-4 h-4" />
                 </button>
-                <button type="button" onClick={() => seekTo(time + 15)} aria-label="تقديم 15 ثانية" className="w-11 h-11 rounded-[10px] bg-raised hover:bg-line-strong text-white flex items-center justify-center cursor-pointer">
+                <button type="button" onClick={() => seekTo(time + 15)} aria-label={tr("تقديم 15 ثانية", "Forward 15 seconds")} className="w-11 h-11 rounded-[10px] bg-raised hover:bg-line-strong text-white flex items-center justify-center cursor-pointer">
                   <RotateCw className="w-4 h-4" />
                 </button>
                 <button
                   type="button"
                   onClick={() => setSpeedIdx((i) => (i + 1) % SPEEDS.length)}
-                  aria-label="سرعة التشغيل"
+                  aria-label={tr("سرعة التشغيل", "Playback speed")}
                   className="min-w-11 h-11 px-3 rounded-[10px] bg-raised hover:bg-line-strong text-white text-sm font-semibold tabular-nums cursor-pointer"
                 >
                   {SPEEDS[speedIdx]}×
@@ -224,11 +226,11 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
                 {audioState === 'ready' && (
                   <a
                     href={summaryAudioUrl(summary)}
-                    download={`ملخص كتاب ${summary.bookTitle}.mp3`}
+                    download={`${summaryName(summary)}.mp3`}
                     className="min-h-11 px-4 rounded-[10px] border border-line text-slate-300 hover:text-white text-sm flex items-center gap-2 ms-auto"
                   >
                     <Download className="w-4 h-4" />
-                    تحميل MP3
+                    {tr("تحميل MP3", "Download MP3")}
                   </a>
                 )}
               </div>
@@ -259,9 +261,9 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
         {!text && (
           <div role="status" className="py-10 flex justify-center text-slate-400">
             {textError ? (
-              <button type="button" onClick={() => window.location.reload()} className="min-h-11 px-5 rounded-[10px] border border-line text-slate-200 cursor-pointer">تعذّر تحميل النص، أعد المحاولة</button>
+              <button type="button" onClick={() => window.location.reload()} className="min-h-11 px-5 rounded-[10px] border border-line text-slate-200 cursor-pointer">{tr("تعذّر تحميل النص، أعد المحاولة", "Couldn’t load the text. Try again")}</button>
             ) : (
-              <Loader2 className="w-7 h-7 animate-spin" aria-label="جاري التحميل" />
+              <Loader2 className="w-7 h-7 animate-spin" aria-label={tr("جاري التحميل", "Loading")} />
             )}
           </div>
         )}
@@ -274,11 +276,11 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
                   <button
                     type="button"
                     onClick={() => playSection(i)}
-                    aria-label={`استمع إلى: ${sec.heading}`}
+                    aria-label={tr(`استمع إلى: ${sec.heading}`, `Listen: ${sec.heading}`)}
                     className="shrink-0 mt-1 min-h-10 px-3 rounded-full border border-line text-slate-300 hover:text-white text-xs flex items-center gap-1.5 cursor-pointer"
                   >
                     <Play className="w-3.5 h-3.5 fill-current" />
-                    استمع
+                    {tr("استمع", "Listen")}
                   </button>
                 )}
               </div>
@@ -291,7 +293,7 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
 
         {text && (
         <section className="flex flex-col gap-4">
-          <h2 className="font-display font-extrabold text-2xl text-white">أسئلة شائعة عن كتاب {summary.bookTitle}</h2>
+          <h2 className="font-display font-extrabold text-2xl text-white">{tr(`أسئلة شائعة عن كتاب ${summary.bookTitle}`, `${summary.bookTitle}: frequently asked questions`)}</h2>
           {text.faqs.map((f) => (
             <div key={f.question} className="rounded-[14px] bg-card border border-line p-5 flex flex-col gap-2">
               <h3 className="text-[17px] font-semibold text-white">{f.question}</h3>
@@ -303,17 +305,17 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
 
         <div className="p-6 rounded-[20px] border border-brand/40 bg-brand-deep/30 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
           <span className="flex flex-col gap-1">
-            <strong className="text-white text-lg">عندك كتاب PDF تريد سماعه؟</strong>
-            <span className="text-slate-400 text-sm">ارفعه واستمع إليه بنفس جودة هذا الملخص، بالفصحى أو بلهجتك.</span>
+            <strong className="text-white text-lg">{tr("عندك كتاب PDF تريد سماعه؟", "Have an Arabic PDF you want to hear?")}</strong>
+            <span className="text-slate-400 text-sm">{tr("ارفعه واستمع إليه بنفس جودة هذا الملخص، بالفصحى أو بلهجتك.", "Upload it and listen in the same quality, in formal Arabic or a dialect.")}</span>
           </span>
-          <a href="/" className="min-h-12 px-6 rounded-xl bg-brand hover:bg-indigo-500 text-white font-bold flex items-center justify-center shrink-0">
-            حوّل كتابك إلى صوت
+          <a href={HOME_PATH} className="min-h-12 px-6 rounded-xl bg-brand hover:bg-indigo-500 text-white font-bold flex items-center justify-center shrink-0">
+            {tr("حوّل كتابك إلى صوت", "Turn your book into audio")}
           </a>
         </div>
 
         {others.length > 0 && (
           <section className="flex flex-col gap-4">
-            <h2 className="font-display font-extrabold text-2xl text-white">ملخصات أخرى</h2>
+            <h2 className="font-display font-extrabold text-2xl text-white">{tr("ملخصات أخرى", "More summaries")}</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {others.slice(0, 8).map((s) => (
                 <a key={s.slug} href={summaryPath(s)} className="flex flex-col gap-2 group">
@@ -325,7 +327,7 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
           </section>
         )}
 
-        <a href={SUMMARIES_HUB_PATH} className="self-start text-brand-soft hover:text-indigo-200">← كل ملخصات الكتب الصوتية</a>
+        <a href={SUMMARIES_HUB_PATH} className="self-start text-brand-soft hover:text-indigo-200">{tr("← كل ملخصات الكتب الصوتية", "All audio book summaries →")}</a>
       </div>
     </article>
   );
