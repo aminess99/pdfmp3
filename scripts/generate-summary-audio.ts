@@ -1,6 +1,7 @@
 // Narrates every book summary once and saves it as a static file the site serves for free:
 //   public/summaries/<slug>.mp3   the whole summary
 //   public/summaries/<slug>.json  { hash, duration, sections: [start second of each section] }
+// English versions go to public/summaries/en/, read in English by the same narrator voice.
 //
 //   OPENROUTER_API_KEY=sk-or-v1-... npx tsx scripts/generate-summary-audio.ts [--force] [slug...]
 //
@@ -11,7 +12,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
-import { BOOK_SUMMARIES, BookSummary, SummaryAudioManifest } from '../src/data/summaries';
+import { BookSummary, SummaryAudioManifest, summariesFor, summaryName } from '../src/data/summaries';
 import { summaryText } from '../src/data/summaryTexts';
 import { VOICES } from '../src/data/voices';
 
@@ -19,6 +20,7 @@ dotenv.config();
 
 const MODEL = process.env.TTS_MODEL || 'google/gemini-3.8-flash-lite-tts';
 const OUT_DIR = path.join(process.cwd(), 'public', 'summaries');
+const outDir = (s: BookSummary): string => (s.lang === 'en' ? path.join(OUT_DIR, 'en') : OUT_DIR);
 const SAMPLE_RATE = 24000;
 const BYTES_PER_SECOND = SAMPLE_RATE * 2;
 // One request at a time: a low OpenRouter balance refuses parallel requests (402 in-flight budget)
@@ -111,10 +113,14 @@ function hashFor(summary: BookSummary, voiceName: string, instructions: string):
 async function generate(summary: BookSummary, apiKey: string): Promise<void> {
   const voice = VOICES.find((v) => v.id === summary.voiceId);
   if (!voice?.geminiVoiceName) throw new Error(`unknown voice ${summary.voiceId}`);
-  const instructions = `${voice.stylePrompt?.trim() || ''} اقرأ بإيقاع متأنٍّ وواضح كراوي كتب صوتية، مع وقفات طبيعية بين الجمل.`.trim();
+  const instructions =
+    summary.lang === 'en'
+      ? 'Read in clear, natural English as an audiobook narrator, at a calm pace with natural pauses between sentences. Pronounce Arabic names and titles correctly.'
+      : `${voice.stylePrompt?.trim() || ''} اقرأ بإيقاع متأنٍّ وواضح كراوي كتب صوتية، مع وقفات طبيعية بين الجمل.`.trim();
 
-  const mp3File = path.join(OUT_DIR, `${summary.slug}.mp3`);
-  const jsonFile = path.join(OUT_DIR, `${summary.slug}.json`);
+  fs.mkdirSync(outDir(summary), { recursive: true });
+  const mp3File = path.join(outDir(summary), `${summary.slug}.mp3`);
+  const jsonFile = path.join(outDir(summary), `${summary.slug}.json`);
   const hash = hashFor(summary, voice.geminiVoiceName, instructions);
   if (!force && fs.existsSync(mp3File) && fs.existsSync(jsonFile)) {
     const old = JSON.parse(fs.readFileSync(jsonFile, 'utf8')) as SummaryAudioManifest;
@@ -176,7 +182,7 @@ async function generate(summary: BookSummary, apiKey: string): Promise<void> {
     '-y', '-loglevel', 'error', '-i', wavFile,
     '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11', '-ar', '24000', '-ac', '1',
     '-codec:a', 'libmp3lame', '-b:a', '48k',
-    '-metadata', `title=ملخص كتاب ${summary.bookTitle}`, '-metadata', `artist=Hakawati AI`,
+    '-metadata', `title=${summaryName(summary)}`, '-metadata', `artist=Hakawati AI`,
     mp3File,
   ]);
   fs.unlinkSync(wavFile);
@@ -196,7 +202,7 @@ async function main() {
   fs.mkdirSync(PIECE_CACHE, { recursive: true });
 
   let failed = 0;
-  for (const summary of BOOK_SUMMARIES) {
+  for (const summary of [...summariesFor('ar'), ...summariesFor('en')]) {
     if (only.length && !only.includes(summary.slug)) continue;
     console.log(`==    ${summary.slug}`);
     try {
