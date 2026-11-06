@@ -3,9 +3,15 @@
 import type { Article, ArticleText } from './articles';
 import { plainText } from './articles';
 import pdfToAudiobook from './article-texts/pdf-to-audiobook';
+import aiVoiceover from './article-texts/ai-voiceover';
+import naturalArabicAiVoice from './article-texts/natural-arabic-ai-voice';
+import freeArabicAudiobooks from './article-texts/free-arabic-audiobooks';
 
 export const ARTICLE_TEXTS: Record<string, ArticleText> = {
   'pdf-to-audiobook': pdfToAudiobook,
+  'ai-voiceover': aiVoiceover,
+  'natural-arabic-ai-voice': naturalArabicAiVoice,
+  'free-arabic-audiobooks': freeArabicAudiobooks,
 };
 
 export const articleText = (a: Article): ArticleText => {

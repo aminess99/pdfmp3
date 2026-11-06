@@ -117,7 +117,12 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
   };
 
   const sections = text?.sections ?? [];
-  const others = BOOK_SUMMARIES.filter((s) => s.slug !== summary.slug);
+  // Same author first, then the same category, then the newest: the links a reader is most
+  // likely to follow (and that tell search engines which pages belong together)
+  const others = BOOK_SUMMARIES.filter((s) => s.slug !== summary.slug)
+    .map((s, i) => ({ s, rank: (s.author === summary.author ? 0 : s.category === summary.category ? 1 : 2) * 1000 - i }))
+    .sort((x, y) => x.rank - y.rank)
+    .map((x) => x.s);
 
   return (
     <article className="px-4 sm:px-6 py-10 sm:py-14" dir="rtl">
