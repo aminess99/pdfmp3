@@ -3110,6 +3110,14 @@ async function startServer() {
     const notFoundHtml = indexTemplate
       .replace(/<title>[^<]*<\/title>/, () => "<title>الصفحة غير موجودة – Hakawati AI</title>")
       .replace(/<meta name="robots" content="[^"]*" \/>/, () => '<meta name="robots" content="noindex" />');
+    // Under /en the 404 page is English
+    const notFoundHtmlEn = notFoundHtml
+      .replace(/<html lang="ar" dir="rtl">/, () => '<html lang="en" dir="ltr">')
+      .replace(/<title>[^<]*<\/title>/, () => "<title>Page not found – Hakawati AI</title>");
+    const notFound = (p: string) => (/^\/en(\/|$)/.test(p) ? notFoundHtmlEn : notFoundHtml);
+
+    // Browsers and some crawlers ask for /favicon.ico whatever the page declares
+    app.get("/favicon.ico", (_req, res) => res.sendFile(path.join(distPath, "brand", "icon-32.png")));
 
     app.get("/s/:id", async (req, res, next) => {
       const id = req.params.id.replace(/\/$/, "");
@@ -3125,7 +3133,7 @@ async function startServer() {
 
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      res.status(404).type("html").send(notFoundHtml);
+      res.status(404).type("html").send(notFound(req.path));
     });
   }
 

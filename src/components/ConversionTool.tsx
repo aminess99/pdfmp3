@@ -38,7 +38,6 @@ import { DIALECTS, VOICES, AUDIO_STYLES } from '../data/voices';
 import { SAMPLE_BOOKS } from '../data/sampleBooks';
 import { Dialect, Voice, AudioStyle, SampleBook, ConversionJob, BookChapter, ListeningMode } from '../types';
 import { extractTextFromPDFFile, purifyTextWithAI, startOcrPdfSession, startProgressivePdfExtraction, ProgressivePdfSession, cleanArabicExtractedText } from '../lib/pdfUtils';
-import { extractTextFromEpubFile } from '../lib/epubUtils';
 import { detectArabicChapters, detectArabicChaptersWithAI, estimateDurationMinutes } from '../lib/chapterUtils';
 import { RunningHeadFilter, classifyPage, classifySequence, cleanPages, findContentStart } from '../lib/bookCleaner';
 import { isMeaninglessName } from '../lib/bookTitle';
@@ -413,6 +412,8 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
     try {
       if (isEpub) {
         setExtractionStatusText(tr("جاري استخراج نصوص وفصول كتاب ePub...", "Extracting the ePub text and chapters..."));
+        // The ePub reader (JSZip) loads only for ePub files
+        const { extractTextFromEpubFile } = await import('../lib/epubUtils');
         const epubRes = await extractTextFromEpubFile(file);
         if (epubRes.text && epubRes.text.trim().length > 20) {
           setExtractedText(epubRes.text);

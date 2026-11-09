@@ -1,4 +1,3 @@
-import * as pdfjsLib from 'pdfjs-dist';
 // @ts-ignore
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { tr } from './i18n';
@@ -8,11 +7,24 @@ import { apiFetch } from './apiFetch';
 // the installed pdfjs-dist (server.ts /pdfjs), so they always match the library version
 const PDFJS_ASSETS = typeof location !== 'undefined' ? `${location.origin}/pdfjs` : '/pdfjs';
 
-// Configure pdfjs worker locally from bundle, with unpkg fallback
-try {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker || `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-} catch (e) {
-  console.warn('Could not set pdf workerSrc', e);
+// pdf.js (~0.8 MB) is loaded the first time a book is opened, not with every page of the site
+let pdfjsLib: typeof import('pdfjs-dist');
+let pdfjsLoading: Promise<void> | null = null;
+function loadPdfjs(): Promise<void> {
+  pdfjsLoading ??= import('pdfjs-dist').then((lib) => {
+    pdfjsLib = lib;
+    // Configure pdfjs worker locally from bundle, with unpkg fallback
+    try {
+      lib.GlobalWorkerOptions.workerSrc = pdfWorker || `https://unpkg.com/pdfjs-dist@${lib.version}/build/pdf.worker.min.mjs`;
+    } catch (e) {
+      console.warn('Could not set pdf workerSrc', e);
+    }
+    for (const k of IMAGE_OP_NAMES) {
+      const op = (lib.OPS as any)[k];
+      if (op !== undefined) IMAGE_OPS.add(op);
+    }
+  });
+  return pdfjsLoading;
 }
 
 // Helper to convert File to Base64
@@ -190,6 +202,7 @@ export async function extractTextFromPDFFile(
   // 1. Client-side PDF.js fast digital extraction (only if not forced AI OCR)
   if (!forceAiOCR) {
     try {
+      await loadPdfjs();
       const arrayBuffer = await file.arrayBuffer();
       // Configure pdfjs with robust recovery flags for corrupted or malformed XRef tables
       const loadingTask = pdfjsLib.getDocument({
@@ -456,11 +469,9 @@ function makeOcrReader(pdfDoc: any, totalPages: number) {
 
 // A page's own text, and whether it must be read by OCR instead: little real text (none, or
 // only a watermark) on a page that carries an image, i.e. a scanned page
-const IMAGE_OPS = new Set(
-  ['paintImageXObject', 'paintInlineImageXObject', 'paintImageMaskXObject', 'paintJpegXObject', 'paintImageXObjectRepeat', 'paintInlineImageXObjectGroup']
-    .map((k) => (pdfjsLib.OPS as any)[k])
-    .filter((v) => v !== undefined)
-);
+const IMAGE_OP_NAMES = ['paintImageXObject', 'paintInlineImageXObject', 'paintImageMaskXObject', 'paintJpegXObject', 'paintImageXObjectRepeat', 'paintInlineImageXObjectGroup'];
+// Filled when pdf.js loads (loadPdfjs)
+const IMAGE_OPS = new Set<number>();
 const MIN_TEXT_WORDS = 25;
 
 async function readPageLayer(pdfDoc: any, n: number): Promise<{ text: string; needsOcr: boolean }> {
@@ -496,6 +507,7 @@ function makeHybridReader(pdfDoc: any, totalPages: number) {
 }
 
 async function openPdf(file: File): Promise<any> {
+  await loadPdfjs();
   const arrayBuffer = await file.arrayBuffer();
   return pdfjsLib.getDocument({
     data: arrayBuffer,
@@ -539,6 +551,7 @@ export async function startProgressivePdfExtraction(
   initialPagesCount: number = 6
 ): Promise<ProgressivePdfSession> {
   try {
+    await loadPdfjs();
     const arrayBuffer = await file.arrayBuffer();
     const loadingTask = pdfjsLib.getDocument({
       data: arrayBuffer,

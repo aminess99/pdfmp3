@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { WaitingNote } from './WaitingNote';
 import { ArrowRight, BookOpen, Check, FileDown, Headphones, Loader2, RefreshCw, Sparkles, AlertCircle } from 'lucide-react';
-import { GeneratedBookStructure, createProfessionalArabicPdf } from '../lib/bookPdfGenerator';
+// The PDF builder (jsPDF + html2canvas, ~0.7 MB) loads only when a book is downloaded
+import type { GeneratedBookStructure } from '../lib/bookPdfGenerator';
 import { generateCrispBookCoverPng } from '../lib/bookCoverCanvas';
 import { ConversionJob, Voice } from '../types';
 import { chaptersAr, pagesAr } from '../lib/arabicPlural';
@@ -277,6 +278,7 @@ export const AIBookCreator: React.FC<AIBookCreatorProps> = ({
   const handleDownloadPdf = async () => {
     if (!generatedBook) return;
     try {
+      const { createProfessionalArabicPdf } = await import('../lib/bookPdfGenerator');
       const pdfBlob = await createProfessionalArabicPdf(generatedBook);
       const url = URL.createObjectURL(pdfBlob);
       const a = document.createElement('a');

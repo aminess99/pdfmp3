@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { SiteHeader } from './components/SiteHeader';
 import { HeroSection } from './components/HeroSection';
 import { ConversionTool } from './components/ConversionTool';
@@ -7,8 +7,6 @@ import { HowItWorks, UseCasesSection } from './components/HowItWorks';
 import { PricingSection } from './components/PricingSection';
 import { FAQSection } from './components/FAQSection';
 import { AuthModals } from './components/AuthModals';
-import { StudioView } from './components/StudioView';
-import { UserDashboard } from './components/UserDashboard';
 import { Footer } from './components/Footer';
 import { PaymentCheckoutModal } from './components/PaymentCheckoutModal';
 import { LegalModal } from './components/LegalModal';
@@ -33,6 +31,15 @@ import { BOOK_STREAM_EVENT, BookStreamUpdate } from './lib/bookStream';
 import { useVoices } from './lib/useVoices';
 import { useAuth } from './lib/AuthContext';
 import { tr, HOME_PATH, isEn } from './lib/i18n';
+
+// Loaded on demand: visitors from search never need the studio or the signed-in dashboard
+const StudioView = lazy(() => import('./components/StudioView').then((m) => ({ default: m.StudioView })));
+const UserDashboard = lazy(() => import('./components/UserDashboard').then((m) => ({ default: m.UserDashboard })));
+const PageLoading = () => (
+  <div role="status" aria-label={tr('جاري التحميل', 'Loading')} className="fixed inset-0 z-40 flex items-center justify-center bg-ink">
+    <span className="w-9 h-9 rounded-full border-4 border-brand/30 border-t-brand animate-spin" />
+  </div>
+);
 
 export default function App() {
   const [darkMode, setDarkMode] = useState<boolean>(true);
@@ -236,24 +243,26 @@ export default function App() {
     return (
       <div className="min-h-screen bg-ink text-slate-100 font-body">
       <Toaster />
-        <UserDashboard
-          user={{ name: user.name, email: user.email }}
-          isAdmin={isAdmin}
-          onLogout={handleLogout}
-          onStartJob={(job) => setActiveJob(job)}
-          availableVoices={allVoices}
-          onOpenCheckout={(plan) => setCheckoutModal({ isOpen: true, plan })}
-        />
-
-        {/* Studio View (Single-Screen 100vh Immersion Dashboard with 0-Scroll) */}
-        {activeJob && (
-          <StudioView
-            job={activeJob}
-            onExit={() => setActiveJob(null)}
+        <Suspense fallback={<PageLoading />}>
+          <UserDashboard
+            user={{ name: user.name, email: user.email }}
+            isAdmin={isAdmin}
+            onLogout={handleLogout}
+            onStartJob={(job) => setActiveJob(job)}
             availableVoices={allVoices}
-            isUserLoggedIn={true}
+            onOpenCheckout={(plan) => setCheckoutModal({ isOpen: true, plan })}
           />
-        )}
+
+          {/* Studio View (Single-Screen 100vh Immersion Dashboard with 0-Scroll) */}
+          {activeJob && (
+            <StudioView
+              job={activeJob}
+              onExit={() => setActiveJob(null)}
+              availableVoices={allVoices}
+              isUserLoggedIn={true}
+            />
+          )}
+        </Suspense>
 
         {/* Payment Checkout Modal */}
         {checkoutModal.isOpen && (
@@ -296,7 +305,7 @@ export default function App() {
           <LandingContent
             sections={landingPage.sections}
             faqs={landingPage.faqs}
-            faqTitle={`أسئلة حول ${landingPage.linkLabel}`}
+            faqTitle={tr(`أسئلة حول ${landingPage.linkLabel}`, `${landingPage.linkLabel}: frequently asked questions`)}
             currentSlug={landingPage.slug}
           />
         ) : (
@@ -304,8 +313,8 @@ export default function App() {
         )}
 
         <VoiceSamplesSection availableVoicesList={allVoices} />
-        {/* The summaries are Arabic only */}
-        {!isEn && <SummariesShowcase />}
+        {/* The latest summaries, in the page's language */}
+        <SummariesShowcase />
         <HowItWorks />
         <UseCasesSection />
         <PricingSection onSelectPlan={handleSelectPlan} />
@@ -321,13 +330,15 @@ export default function App() {
 
       {/* Studio View (Single-Screen 100vh Immersion Dashboard with 0-Scroll) */}
       {activeJob && (
-        <StudioView
-          job={activeJob}
-          onExit={() => setActiveJob(null)}
-          availableVoices={allVoices}
-          isUserLoggedIn={false}
-          onRequestAuth={handleOpenAuth}
-        />
+        <Suspense fallback={<PageLoading />}>
+          <StudioView
+            job={activeJob}
+            onExit={() => setActiveJob(null)}
+            availableVoices={allVoices}
+            isUserLoggedIn={false}
+            onRequestAuth={handleOpenAuth}
+          />
+        </Suspense>
       )}
 
 
