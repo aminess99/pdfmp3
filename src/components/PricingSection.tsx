@@ -5,7 +5,7 @@ interface PricingSectionProps {
   onSelectPlan?: (planId: string, minutes: number, price: number) => void;
 }
 
-const PLANS = [
+export const PLANS = [
   { id: 'starter', name: tr("باقة القارئ", "Reader"), minutes: 400, priceUsd: 9.99, note: tr("قرابة 7 ساعات استماع", "About 7 hours of listening"), featured: false },
   { id: 'popular', name: tr("باقة الشغوف", "Book lover"), minutes: 900, priceUsd: 19.99, note: tr("15 ساعة استماع", "15 hours of listening"), featured: true },
   { id: 'master', name: tr("باقة النخبة", "Pro"), minutes: 2000, priceUsd: 29.99, note: tr("أكثر من 33 ساعة، وأقل سعر للدقيقة", "33+ hours, lowest price per minute"), featured: false },

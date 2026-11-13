@@ -3,6 +3,7 @@ import { X, Clock, Loader2, ShieldCheck } from 'lucide-react';
 import { tr, DIR } from '../lib/i18n';
 import { apiFetch, REQUIRE_AUTH_EVENT } from '../lib/apiFetch';
 import { auth } from '../lib/firebase';
+import { PLANS } from './PricingSection';
 
 // Buying a plan sends the user to Dodo Payments' hosted checkout (card details never touch
 // this site). The minutes are added by the server's payment webhook, not here.
@@ -19,9 +20,12 @@ interface PaymentCheckoutModalProps {
   onSuccessPayment: (addedMinutes: number) => void;
 }
 
-export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({ isOpen, onClose, plan }) => {
+export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({ isOpen, onClose, plan: requested }) => {
   const [state, setState] = useState<'idle' | 'loading' | 'unavailable' | 'error'>('idle');
-  if (!isOpen || !plan) return null;
+  // All plans are offered; the one the user clicked (or the suggested one) starts selected
+  const [planId, setPlanId] = useState(requested?.id || 'popular');
+  if (!isOpen || !requested) return null;
+  const plan = PLANS.find((p) => p.id === planId) || PLANS[1];
 
   const pay = async () => {
     if (!auth.currentUser) {
@@ -69,17 +73,42 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({ isOp
           </>
         ) : (
           <>
-            <h2 id="pay-title" className="font-display font-extrabold text-2xl text-white pe-10">{plan.name}</h2>
-            <div className="rounded-[14px] bg-raised p-4 flex items-end justify-between gap-3">
-              <span className="flex flex-col gap-1">
-                <span className="text-slate-300">{plan.minutes.toLocaleString('en-US')} {tr('دقيقة استماع كل شهر', 'listening minutes a month')}</span>
-                <span className="text-xs text-slate-500">{tr('اشتراك شهري يتجدد تلقائياً، وتلغيه متى شئت من «مكتبتي». الدقائق غير المستخدمة تبقى في رصيدك.', 'Renews monthly; cancel anytime from your library. Unused minutes stay in your balance.')}</span>
-              </span>
-              <span className="flex flex-col items-end">
-                <span className="font-display font-extrabold text-3xl text-white" dir="ltr">${plan.priceUsd}</span>
-                <span className="text-xs text-slate-500">{tr('شهرياً', 'per month')}</span>
-              </span>
+            <h2 id="pay-title" className="font-display font-extrabold text-2xl text-white pe-10">{tr('اختر باقتك', 'Choose your plan')}</h2>
+            <div role="radiogroup" aria-labelledby="pay-title" className="flex flex-col gap-2.5">
+              {PLANS.map((p) => {
+                const selected = p.id === plan.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setPlanId(p.id)}
+                    className={`rounded-[14px] p-4 flex items-center justify-between gap-3 text-start cursor-pointer transition-colors ${
+                      selected ? 'bg-raised border-2 border-brand' : 'bg-card border border-line hover:border-line-strong'
+                    }`}
+                  >
+                    <span className="flex items-center gap-3 min-w-0">
+                      <span className={`w-[18px] h-[18px] rounded-full shrink-0 border-2 flex items-center justify-center ${selected ? 'border-brand' : 'border-line-strong'}`} aria-hidden="true">
+                        {selected && <span className="w-2 h-2 rounded-full bg-brand" />}
+                      </span>
+                      <span className="flex flex-col gap-0.5 min-w-0">
+                        <span className="flex items-center gap-2 text-white font-semibold">
+                          {p.name}
+                          {p.featured && <span className="text-[11px] font-medium text-brand-soft">{tr('الأكثر اختياراً', 'Most popular')}</span>}
+                        </span>
+                        <span className="text-sm text-slate-400">{p.minutes.toLocaleString('en-US')} {tr('دقيقة كل شهر', 'minutes a month')}</span>
+                      </span>
+                    </span>
+                    <span className="flex flex-col items-end shrink-0">
+                      <span className="font-display font-extrabold text-2xl text-white" dir="ltr">${p.priceUsd}</span>
+                      <span className="text-xs text-slate-500">{tr('شهرياً', 'per month')}</span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+            <p className="text-xs text-slate-500">{tr('اشتراك شهري يتجدد تلقائياً، وتلغيه متى شئت من «مكتبتي». الدقائق غير المستخدمة تبقى في رصيدك.', 'Renews monthly; cancel anytime from your library. Unused minutes stay in your balance.')}</p>
             {state === 'error' && (
               <p role="alert" className="text-rose-300 text-sm">{tr('تعذّر بدء الدفع الآن، حاول بعد قليل.', 'Couldn’t start the payment right now. Please try again shortly.')}</p>
             )}
@@ -90,7 +119,7 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({ isOp
               className="min-h-12 rounded-xl bg-brand hover:bg-indigo-500 text-white font-bold cursor-pointer flex items-center justify-center gap-2 disabled:opacity-70"
             >
               {state === 'loading' && <Loader2 className="w-5 h-5 animate-spin" />}
-              {tr('اشترك الآن', 'Subscribe now')}
+              {tr(`اشترك في ${plan.name}`, `Subscribe to ${plan.name}`)} · <span dir="ltr">${plan.priceUsd}</span>
             </button>
             <p className="flex items-center gap-2 text-xs text-slate-500">
               <ShieldCheck className="w-4 h-4 shrink-0" />
