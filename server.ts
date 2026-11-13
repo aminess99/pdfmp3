@@ -7,7 +7,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { VOICES } from "./src/data/voices";
 import { LANDING_PAGES, LandingPage, landingAlternates, landingPagesFor, landingPath } from "./src/data/landingPages";
-import { isAdminUser, overview as adminOverview, usersTable as adminUsersTable, recentPayments as adminRecentPayments, giftMinutes as adminGiftMinutes } from "./server/admin";
+import { isAdminUser, overview as adminOverview, usersTable as adminUsersTable, recentPayments as adminRecentPayments, giftMinutes as adminGiftMinutes, listeningOverview as adminListening, userListens as adminUserListens } from "./server/admin";
 import { libraryEnabled, listBooks, getBook, saveBook, deleteBook, isValidBookId } from "./server/library";
 import { summaryText } from "./src/data/summaryTexts";
 import { ARTICLES_HUB_PATH, Article, articleAlternates, articlePath, articlesFor, articlesHubFor, articlesHubPath, splitLinks } from "./src/data/articles";
@@ -38,6 +38,7 @@ import {
   useDailyQuota,
   recordTtsUsage,
 } from "./server/credits";
+import { recordListen, recordSummaryPlay, firstPlayInWindow, ListenKind } from "./server/listens";
 import { PLANS, paymentsEnabled, planAvailable, createCheckout, verifyWebhook, planOfPayment, billingPortalUrl } from "./server/payments";
 
 dotenv.config();
@@ -1505,7 +1506,8 @@ async function gateTts(
   req: express.Request,
   res: express.Response,
   text: string,
-  chargeKey: string
+  chargeKey: string,
+  listen?: { title?: unknown; kind?: unknown }
 ): Promise<(() => Promise<void>) | null> {
   const noop = async () => {};
   if (!creditsEnabled() || isPublicText(text)) return noop;
@@ -1522,6 +1524,9 @@ async function gateTts(
     return null;
   }
   rememberCharge(uid, chargeKey);
+  // For the admin's listening log (what was heard, by whom)
+  const kind: ListenKind = listen?.kind === "book" || listen?.kind === "summary" ? listen.kind : "text";
+  recordListen(uid, listen?.title, kind, seconds);
   res.setHeader("X-Credits-Remaining", String(result.remaining));
   return async () => {
     forgetCharge(uid, chargeKey);
@@ -1726,6 +1731,28 @@ app.get("/api/admin/payments", async (req, res) => {
   }
 });
 
+app.get("/api/admin/listening", async (req, res) => {
+  if (!(await adminUser(req, res))) return;
+  try {
+    const titles = Object.fromEntries(summariesFor("ar").map((s) => [s.slug, summaryName(s)]));
+    res.json(await adminListening(titles));
+  } catch (err: any) {
+    console.error("[admin] listening", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+app.get("/api/admin/users/:uid/listens", async (req, res) => {
+  if (!(await adminUser(req, res))) return;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(req.params.uid)) return res.status(400).json({ error: "bad request" });
+  try {
+    res.json({ listens: await adminUserListens(req.params.uid) });
+  } catch (err: any) {
+    console.error("[admin] user listens", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
 app.post("/api/admin/users/:uid/gift", async (req, res) => {
   const admin = await adminUser(req, res);
   if (!admin) return;
@@ -1741,6 +1768,22 @@ app.post("/api/admin/users/:uid/gift", async (req, res) => {
     console.error("[admin] gift", err?.message || err);
     res.status(500).json({ error: err?.message || "failed" });
   }
+});
+
+// A summary's MP3 started playing (public; signed-in listeners are named in the admin log)
+app.post("/api/listens/summary", async (req, res) => {
+  const slug = String(req.body?.slug || "");
+  const lang = req.body?.lang === "en" ? "en" : "ar";
+  const preview = req.body?.preview === true;
+  const s = summariesFor(lang).find((x) => x.slug === slug);
+  if (!s) return res.status(400).json({ error: "unknown summary" });
+  const key = s.baseSlug || s.slug;
+  const uid = await uidFromRequest(req).catch(() => null);
+  if (firstPlayInWindow(`${uid || req.ip}|${key}|${preview ? "p" : "f"}`)) {
+    const arabic = summariesFor("ar").find((x) => x.slug === key);
+    recordSummaryPlay(key, summaryName(arabic || s), lang, uid, preview);
+  }
+  res.status(204).end();
 });
 
 app.get("/api/credits", async (req, res) => {
@@ -1759,7 +1802,7 @@ app.get("/api/credits", async (req, res) => {
 app.post("/api/tts/speak", async (req, res) => {
   let refundCharge: () => Promise<void> = async () => {};
   try {
-    const { text, voice, speed = 1.0 } = req.body;
+    const { text, voice, speed = 1.0, listen } = req.body;
     if (!text || typeof text !== "string") {
       return res.status(400).json({ error: "النص مطلوب." });
     }
@@ -1769,7 +1812,7 @@ app.post("/api/tts/speak", async (req, res) => {
     const diskPath = getAudioDiskCachePath(cacheKey);
 
     // Charge the listener (cached clips cost us nothing but are still listening time)
-    const gate = await gateTts(req, res, trimmedText, `speak:${voice?.id || "def"}:${trimmedText}`);
+    const gate = await gateTts(req, res, trimmedText, `speak:${voice?.id || "def"}:${trimmedText}`, listen);
     if (!gate) return;
     refundCharge = gate;
 

@@ -4,6 +4,7 @@ import { ChevronLeft, Clock, Loader2, Pause, Play } from 'lucide-react';
 import { BOOK_SUMMARIES, BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, UPCOMING_SUMMARIES, summaryAudioUrl, summaryName, summaryPath } from '../data/summaries';
 import { SummaryCover } from './SummaryPage';
 import { toast } from '../lib/toast';
+import { reportSummaryPlay } from '../lib/listens';
 
 const PREVIEW_SECONDS = 30;
 
@@ -31,7 +32,10 @@ function usePreview() {
         setCurrent(null);
       }
     };
-    audio.onplaying = () => setCurrent({ slug: s.slug, state: 'playing' });
+    audio.onplaying = () => {
+      setCurrent({ slug: s.slug, state: 'playing' });
+      reportSummaryPlay(s.slug, true);
+    };
     audio.onended = () => setCurrent(null);
     audio.onerror = () => {
       setCurrent(null);

@@ -16,6 +16,7 @@ import {
 import { VOICES } from '../data/voices';
 import { voiceLabel } from '../lib/voiceLabel';
 import { loadSummaryText } from '../lib/summaryLoader';
+import { reportSummaryPlay } from '../lib/listens';
 
 const fmt = (sec: number) => {
   if (!isFinite(sec) || sec < 0) sec = 0;
@@ -164,7 +165,10 @@ export const SummaryPage: React.FC<SummaryPageProps> = ({ summary }) => {
                   preload="metadata"
                   onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
                   onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
-                  onPlay={() => setPlaying(true)}
+                  onPlay={() => {
+                    setPlaying(true);
+                    reportSummaryPlay(summary.slug);
+                  }}
                   onPause={() => setPlaying(false)}
                   onEnded={() => setPlaying(false)}
                   onWaiting={() => setBuffering(true)}

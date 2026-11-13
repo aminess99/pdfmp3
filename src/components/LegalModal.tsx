@@ -19,7 +19,7 @@ const CONTENT_AR: LegalContent = {
     sections: [
       {
         heading: 'البيانات التي نجمعها',
-        body: 'عند التسجيل: اسمك وبريدك الإلكتروني عبر Firebase Authentication. عند الاستخدام: نص الكتب التي ترفعها أو تلصقها، وإعداداتك (مثل الصوت والسرعة) التي تُحفظ في متصفحك.',
+        body: 'عند التسجيل: اسمك وبريدك الإلكتروني عبر Firebase Authentication. عند الاستخدام: نص الكتب التي ترفعها أو تلصقها، وإعداداتك (مثل الصوت والسرعة) التي تُحفظ في متصفحك. ونسجّل ما تستمع إليه (عنوان الكتاب أو الملخص، والمدة، والتاريخ) لاحتساب دقائقك وتحسين الخدمة، ولا يطّلع عليه إلا فريق الموقع. وتُعدّ مرات تشغيل الملخصات من الزوار دون ربطها بهم.',
       },
       {
         heading: 'كيف نعالج ملفاتك',
@@ -66,7 +66,7 @@ const CONTENT_EN: LegalContent = {
     sections: [
       {
         heading: 'What we collect',
-        body: 'When you sign up: your name and email, through Firebase Authentication. When you use the site: the text of the books you upload or paste, and your preferences (such as voice and speed), which are stored in your browser.',
+        body: 'When you sign up: your name and email, through Firebase Authentication. When you use the site: the text of the books you upload or paste, and your preferences (such as voice and speed), which are stored in your browser. We also log what you listen to (the title of the book or summary, how long and when) to count your minutes and improve the service; only the site team can see it. Plays of the summaries by visitors are counted without being linked to them.',
       },
       {
         heading: 'How your files are processed',

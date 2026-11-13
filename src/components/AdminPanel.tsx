@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Gift, Loader2, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, Gift, Headphones, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { apiFetch } from '../lib/apiFetch';
 import { toast } from '../lib/toast';
 
@@ -38,6 +38,31 @@ interface Payment {
   at: number;
 }
 
+interface ListenStats { listens: number; listeners: number; minutes: number }
+interface Listening {
+  today: ListenStats;
+  week: ListenStats;
+  month: ListenStats;
+  summaryPlaysWeek: { total: number; guests: number };
+  topListeners: { uid: string; email: string; minutes: number; listens: number; titles: number; lastAt: number }[];
+  recent: { uid: string; email: string; title: string; kind: string; day: string; minutes: number; seconds: number; clips: number; lastAt: number }[];
+  summaries: { slug: string; title: string; plays: number; previews: number; signedIn: number; en: number; listeners: string[]; listenerCount: number }[];
+}
+interface UserListen { title: string; kind: string; day: string; minutes: number; seconds: number; clips: number; lastAt: number }
+
+const KIND_NAMES: Record<string, string> = { book: 'كتاب', summary: 'ملخص', text: 'نص' };
+const ago = (ms: number) => {
+  if (!ms) return '—';
+  const m = Math.round((Date.now() - ms) / 60000);
+  if (m < 1) return 'الآن';
+  if (m < 60) return `قبل ${m} د`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `قبل ${h} س`;
+  return date(ms);
+};
+// Listening time: minutes, or seconds when under a minute (summaries are counted as plays)
+const listenTime = (seconds: number, kind: string) => (kind === 'summary' ? 'تشغيل' : seconds < 60 ? `${seconds} ث` : `${Math.round(seconds / 60)} د`);
+
 const PLAN_NAMES: Record<string, string> = { starter: 'Reader', popular: 'Book Lover', master: 'Pro' };
 const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const date = (ms: number | null) => (ms ? new Date(ms).toLocaleDateString('ar', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
@@ -67,6 +92,21 @@ export const AdminPanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [gift, setGift] = useState<{ user: AdminUser; minutes: string; note: string; saving: boolean } | null>(null);
+  const [listening, setListening] = useState<Listening | null>(null);
+  const [listeningError, setListeningError] = useState(false);
+  const [openSummary, setOpenSummary] = useState<string | null>(null);
+  const [userListens, setUserListens] = useState<{ email: string; rows: UserListen[] | null } | null>(null);
+
+  const showUserListens = async (uid: string, email: string) => {
+    setUserListens({ email, rows: null });
+    try {
+      const d = await getJson<{ listens: UserListen[] }>(`/api/admin/users/${encodeURIComponent(uid)}/listens`);
+      setUserListens({ email, rows: d.listens });
+    } catch {
+      toast('تعذّر تحميل سجل الاستماع.', 'error');
+      setUserListens(null);
+    }
+  };
 
   const loadUsers = (q = search) =>
     getJson<{ users: AdminUser[] }>(`/api/admin/users?q=${encodeURIComponent(q)}`).then((d) => setUsers(d.users));
@@ -78,6 +118,13 @@ export const AdminPanel: React.FC = () => {
       const [o, p] = await Promise.all([getJson<Overview>('/api/admin/overview'), getJson<{ payments: Payment[] }>('/api/admin/payments')]);
       setOverview(o);
       setPayments(p.payments);
+      // Listening is loaded on its own: an error there must not hide the rest
+      getJson<Listening>('/api/admin/listening')
+        .then((l) => {
+          setListening(l);
+          setListeningError(false);
+        })
+        .catch(() => setListeningError(true));
       await loadUsers('');
     } catch (e: any) {
       setError(e.message || 'تعذّر تحميل البيانات');
@@ -175,6 +222,145 @@ export const AdminPanel: React.FC = () => {
           hint={`≈ ${usd((o.audio.cachedMinutes * o.audio.costPerMinuteUsd))} لم تُدفع لـ OpenRouter`}
           tone="good"
         />
+      </section>
+
+      {/* Listening */}
+      <section className="flex flex-col gap-3">
+        <h2 className="font-display font-extrabold text-xl text-white">الاستماع</h2>
+        {!listening ? (
+          <p className="text-slate-400 text-sm">{listeningError ? 'تعذّر تحميل بيانات الاستماع.' : 'جاري التحميل…'}</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card label="استماعات اليوم" value={listening.today.listens.toLocaleString('en-US')} hint={`${listening.today.listeners} شخص · ${listening.today.minutes} دقيقة`} />
+              <Card label="آخر 7 أيام" value={listening.week.listens.toLocaleString('en-US')} hint={`${listening.week.listeners} شخص · ${listening.week.minutes.toLocaleString('en-US')} دقيقة`} />
+              <Card label="آخر 30 يوماً" value={listening.month.listeners.toLocaleString('en-US')} hint={`شخص مختلف استمعوا · ${listening.month.minutes.toLocaleString('en-US')} دقيقة`} />
+              <Card label="تشغيل الملخصات (7 أيام)" value={listening.summaryPlaysWeek.total.toLocaleString('en-US')} hint={`منها ${listening.summaryPlaysWeek.guests} من زوار بلا حساب`} />
+            </div>
+            <p className="text-xs text-slate-500">الاستماع = مقطع صوتي شغّله مستخدم مسجّل (الفقرة تقريباً). الإعادة خلال 12 ساعة لا تُحسب مرة ثانية. الأرقام تبدأ من يوم تفعيل السجل.</p>
+
+            <div className="grid lg:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <h3 className="font-semibold text-white">أنشط المستمعين (30 يوماً)</h3>
+                <div className="overflow-x-auto rounded-[16px] border border-line">
+                  <table className="w-full text-sm">
+                    <thead className="bg-raised text-slate-300">
+                      <tr>
+                        {['المستخدم', 'الدقائق', 'استماعات', 'عناوين', 'آخر استماع'].map((h) => (
+                          <th key={h} className="px-3 py-2.5 text-start font-semibold whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {listening.topListeners.map((u) => (
+                        <tr key={u.uid} className="border-t border-line text-slate-200">
+                          <td className="px-3 py-2.5">
+                            <button type="button" onClick={() => showUserListens(u.uid, u.email)} className="text-brand-soft hover:text-white cursor-pointer text-start" dir="ltr">{u.email}</button>
+                          </td>
+                          <td className="px-3 py-2.5">{u.minutes}</td>
+                          <td className="px-3 py-2.5">{u.listens}</td>
+                          <td className="px-3 py-2.5">{u.titles}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">{ago(u.lastAt)}</td>
+                        </tr>
+                      ))}
+                      {listening.topListeners.length === 0 && (
+                        <tr><td colSpan={5} className="px-3 py-5 text-center text-slate-500">لا استماع بعد.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <h3 className="font-semibold text-white">آخر ما استُمع إليه</h3>
+                <div className="overflow-x-auto rounded-[16px] border border-line max-h-[420px] overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-raised text-slate-300 sticky top-0">
+                      <tr>
+                        {['من', 'ماذا', 'المدة', 'متى'].map((h) => (
+                          <th key={h} className="px-3 py-2.5 text-start font-semibold whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {listening.recent.map((r, i) => (
+                        <tr key={i} className="border-t border-line text-slate-200">
+                          <td className="px-3 py-2.5">
+                            <button type="button" onClick={() => showUserListens(r.uid, r.email)} className="text-brand-soft hover:text-white cursor-pointer text-start max-w-[180px] truncate block" dir="ltr" title={r.email}>{r.email}</button>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className="flex flex-col">
+                              <span className="line-clamp-1" title={r.title}>{r.title}</span>
+                              <span className="text-xs text-slate-500">{KIND_NAMES[r.kind] || r.kind}</span>
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">{listenTime(r.seconds, r.kind)}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">{ago(r.lastAt)}</td>
+                        </tr>
+                      ))}
+                      {listening.recent.length === 0 && (
+                        <tr><td colSpan={4} className="px-3 py-5 text-center text-slate-500">لا استماع بعد.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <h3 className="font-semibold text-white">الملخصات الأكثر استماعاً</h3>
+              <div className="overflow-x-auto rounded-[16px] border border-line">
+                <table className="w-full text-sm">
+                  <thead className="bg-raised text-slate-300">
+                    <tr>
+                      {['الملخص', 'تشغيل كامل', 'معاينات', 'مسجّلون', 'بالإنجليزية', 'من استمع'].map((h) => (
+                        <th key={h} className="px-3 py-2.5 text-start font-semibold whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listening.summaries.map((s) => (
+                      <React.Fragment key={s.slug}>
+                        <tr className="border-t border-line text-slate-200">
+                          <td className="px-3 py-2.5 font-semibold text-white">{s.title}</td>
+                          <td className="px-3 py-2.5">{s.plays}</td>
+                          <td className="px-3 py-2.5">{s.previews}</td>
+                          <td className="px-3 py-2.5">{s.signedIn}</td>
+                          <td className="px-3 py-2.5">{s.en}</td>
+                          <td className="px-3 py-2.5">
+                            {s.listenerCount === 0 ? (
+                              <span className="text-slate-500">زوار فقط</span>
+                            ) : (
+                              <button type="button" onClick={() => setOpenSummary(openSummary === s.slug ? null : s.slug)} aria-expanded={openSummary === s.slug} className="text-brand-soft hover:text-white cursor-pointer whitespace-nowrap">
+                                {s.listenerCount} مستخدم {openSummary === s.slug ? '▴' : '▾'}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                        {openSummary === s.slug && (
+                          <tr className="bg-raised/40">
+                            <td colSpan={6} className="px-3 py-2.5">
+                              <span className="flex flex-wrap gap-2" dir="ltr">
+                                {s.listeners.map((e) => (
+                                  <span key={e} className="px-2 py-1 rounded-lg bg-card border border-line text-xs text-slate-300">{e}</span>
+                                ))}
+                                {s.listenerCount > s.listeners.length && <span className="text-xs text-slate-500">+{s.listenerCount - s.listeners.length}</span>}
+                              </span>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                    {listening.summaries.length === 0 && (
+                      <tr><td colSpan={6} className="px-3 py-5 text-center text-slate-500">لم يُشغَّل أي ملخص بعد.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-slate-500">تشغيل كامل = من صفحة الملخص؛ معاينة = زر ▶ القصير في البطاقات. يُحسب كل زائر مرة كل نصف ساعة لكل ملخص. الزوار بلا حساب يظهرون كعدد فقط.</p>
+            </div>
+          </>
+        )}
       </section>
 
       {/* Plans */}
@@ -301,9 +487,14 @@ export const AdminPanel: React.FC = () => {
                   </td>
                   <td className="px-4 py-3">{u.books}</td>
                   <td className="px-4 py-3">
+                    <span className="flex gap-2">
+                    <button type="button" onClick={() => showUserListens(u.uid, u.email)} className="min-h-9 px-3 rounded-lg border border-line text-slate-300 hover:text-white flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+                      <Headphones className="w-4 h-4" /> ماذا سمع
+                    </button>
                     <button type="button" onClick={() => setGift({ user: u, minutes: '30', note: '', saving: false })} className="min-h-9 px-3 rounded-lg border border-line text-brand-soft hover:text-white flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
                       <Gift className="w-4 h-4" /> إهداء دقائق
                     </button>
+                    </span>
                   </td>
                 </tr>
               ))}
@@ -317,6 +508,55 @@ export const AdminPanel: React.FC = () => {
         </div>
         <p className="text-xs text-slate-500">تظهر آخر 50 مستخدماً؛ استخدم البحث للوصول إلى غيرهم.</p>
       </section>
+
+      {userListens && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/85" onClick={() => setUserListens(null)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="listens-title" onClick={(e) => e.stopPropagation()} className="w-full max-w-[640px] max-h-[85vh] bg-card border border-line rounded-[20px] p-6 flex flex-col gap-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-1 min-w-0">
+                <h2 id="listens-title" className="font-display font-extrabold text-xl text-white">سجل الاستماع</h2>
+                <span className="text-sm text-slate-400 truncate" dir="ltr">{userListens.email}</span>
+              </div>
+              <button type="button" onClick={() => setUserListens(null)} aria-label="إغلاق" className="w-10 h-10 rounded-full text-slate-400 hover:text-white hover:bg-raised flex items-center justify-center cursor-pointer shrink-0">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {!userListens.rows ? (
+              <div role="status" className="py-10 flex justify-center text-slate-400"><Loader2 className="w-6 h-6 animate-spin" aria-label="جاري التحميل" /></div>
+            ) : userListens.rows.length === 0 ? (
+              <p className="text-slate-400 text-sm">لم يستمع إلى شيء منذ تفعيل السجل.</p>
+            ) : (
+              <>
+                <p className="text-sm text-slate-300">
+                  {new Set(userListens.rows.map((r) => r.title)).size} عنوان · {Math.round(userListens.rows.reduce((n, r) => n + r.seconds, 0) / 60)} دقيقة · {userListens.rows.reduce((n, r) => n + r.clips, 0)} استماع
+                </p>
+                <div className="overflow-y-auto rounded-[14px] border border-line">
+                  <table className="w-full text-sm">
+                    <thead className="bg-raised text-slate-300 sticky top-0">
+                      <tr>
+                        {['اليوم', 'العنوان', 'النوع', 'المدة', 'مقاطع'].map((h) => (
+                          <th key={h} className="px-3 py-2.5 text-start font-semibold whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {userListens.rows.map((r, i) => (
+                        <tr key={i} className="border-t border-line text-slate-200">
+                          <td className="px-3 py-2.5 whitespace-nowrap" dir="ltr">{r.day}</td>
+                          <td className="px-3 py-2.5">{r.title}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">{KIND_NAMES[r.kind] || r.kind}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">{listenTime(r.seconds, r.kind)}</td>
+                          <td className="px-3 py-2.5">{r.clips}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {gift && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/85" onClick={() => !gift.saving && setGift(null)}>

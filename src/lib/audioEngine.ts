@@ -88,6 +88,9 @@ export class AudioEngine {
     return `${voice.id || 'default'}_${text.trim()}`;
   }
 
+  // What is being listened to, for the admin's listening log (set by the studio)
+  public listenContext: { title: string; kind: 'book' | 'summary' | 'text' } | null = null;
+
   // Set when the last failure was already explained to the user (sign in / out of minutes)
   private lastFailureHandled = false;
 
@@ -126,6 +129,7 @@ export class AudioEngine {
               stylePrompt: voice.stylePrompt,
             },
             speed: 1.0,
+            listen: this.listenContext || undefined,
           }),
         });
         // Retries ride out a server restart too (an update takes the site down for up to a minute)

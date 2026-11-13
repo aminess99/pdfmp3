@@ -223,6 +223,14 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const elapsedSeconds = Math.round(estimatedTotalSeconds * (shownPercent / 100));
   const remainingSeconds = Math.max(0, estimatedTotalSeconds - elapsedSeconds);
 
+  // Name the book in the admin's listening log
+  useEffect(() => {
+    audioEngine.listenContext = { title: cleanBookTitle(job.fileName), kind: 'book' };
+    return () => {
+      audioEngine.listenContext = null;
+    };
+  }, [job.fileName]);
+
   // Auto-scroll active text into view smoothly
   useEffect(() => {
     if (activeSentenceRef.current) {
