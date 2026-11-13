@@ -1,0 +1,115 @@
+name: Inspect a PDF
+
+# Debug tool: downloads a book PDF from a URL (or a page that links to it) and prints what
+# the site's readers would see: page count, damage, text per page. Run from the Actions tab.
+# Also runs when .github/inspect-pdf-url.txt changes (the URL is read from that file).
+on:
+  push:
+    paths:
+      - .github/inspect-pdf-url.txt
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "PDF URL, or a download page that links to the PDF"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: sudo apt-get install -y -qq poppler-utils qpdf > /dev/null
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Download
+        env:
+          URL: ${{ inputs.url }}
+        run: |
+          [ -z "$URL" ] && URL=$(head -1 .github/inspect-pdf-url.txt | awk '{print $1}')
+          UA="Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36"
+          curl -sSL -A "$UA" -c jar -b jar -o first "$URL" -D headers1 || true
+          echo "--- first response"; grep -iE '^(HTTP|content-type|content-length|content-disposition|location)' headers1 || true
+          file first
+          if file first | grep -q PDF; then mv first book.pdf; else
+            echo "--- links on the page"
+            grep -oE "https?://[^\"' <>]+" first | grep -iE 'pdf|download|file|drive|mediafire|archive' | sort -u | head -40
+            LINK=$(grep -oE "https?://[^\"' <>]+\.pdf[^\"' <>]*" first | head -1)
+            [ -z "$LINK" ] && LINK=$(grep -oE "https?://[^\"' <>]*(download|get)[^\"' <>]*" first | grep -v "$URL" | head -1)
+            echo "--- following: $LINK"
+            curl -sSL -A "$UA" -c jar -b jar -e "$URL" -o book.pdf -D headers2 "$LINK" || true
+            grep -iE '^(HTTP|content-type|content-length|content-disposition)' headers2 || true
+          fi
+          ls -la book.pdf; file book.pdf; head -c 8 book.pdf | od -c | head -2
+          echo "--- tail of file"; tail -c 200 book.pdf | strings | tail -5
+      - name: Inspect
+        run: |
+          echo "--- pdfinfo"; pdfinfo book.pdf || true
+          echo "--- qpdf --check"; qpdf --check book.pdf 2>&1 | tail -15 || true
+          echo "--- pdffonts (first 5 pages)"; pdffonts -l 5 book.pdf 2>&1 | head -15 || true
+          echo "--- images on first 5 pages"; pdfimages -list -l 5 book.pdf 2>&1 | head -15 || true
+          for p in 1 2 3 5 10 20; do echo "--- pdftotext page $p"; pdftotext -f $p -l $p -layout book.pdf - 2>/dev/null | head -12; done
+          cat > inspect.mjs <<'JS'
+          import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+          import fs from 'fs';
+          const doc = await pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync('book.pdf')), stopAtErrors: false }).promise;
+          console.log('pdf.js numPages', doc.numPages);
+          for (let i = 1; i <= Math.min(doc.numPages, 15); i++) {
+            try {
+              const t = (await (await doc.getPage(i)).getTextContent()).items.map((x) => x.str).join(' ');
+              console.log(`page ${i}: ${t.length} chars: ${t.slice(0, 120)}`);
+            } catch (e) { console.log(`page ${i}: ERROR ${e.message}`); }
+          }
+          JS
+          node inspect.mjs || true
+      - name: Try the site's OCR on the opening pages
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          [ -z "$OPENROUTER_API_KEY" ] && { echo "no OPENROUTER_API_KEY secret"; exit 0; }
+          # Models to compare: second line of .github/inspect-pdf-url.txt (comma-separated)
+          export OCR_MODELS=$(sed -n 2p .github/inspect-pdf-url.txt | tr -d ' ')
+          # Same rendering size as the browser (about 1400px wide) and the same prompt as server.ts
+          pdftoppm -f 1 -l 12 -scale-to-x 1400 -scale-to-y -1 -jpeg -jpegopt quality=72 book.pdf pg
+          ls -la pg-*.jpg | awk '{print $5, $9}'
+          cat > ocr.mjs <<'JS'
+          import fs from 'fs';
+          const src = fs.readFileSync('server.ts', 'utf8');
+          const sep = src.match(/OCR_PAGE_SEPARATOR = "([^"]+)"/)[1];
+          const prompt = src.match(/const OCR_PAGES_PROMPT = `([\s\S]*?)`;/)[1].replaceAll('${OCR_PAGE_SEPARATOR}', sep);
+          const files = fs.readdirSync('.').filter((f) => /^pg-\d+\.jpg$/.test(f)).sort();
+          for (const spec of (process.env.OCR_MODELS || 'google/gemini-2.5-flash').split(',')) {
+          // "model@effort" sets the reasoning effort (minimal, low, ...)
+          const [model, effort] = spec.split('@');
+          console.log(`\n################ ${spec}`);
+          for (let i = 0; i < files.length; i += 4) {
+            const group = files.slice(i, i + 4);
+            const t0 = Date.now();
+            const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model, temperature: 0, ...(effort ? { reasoning: { effort } } : {}), max_tokens: 2500 * group.length,
+                messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, ...group.map((f) => ({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + fs.readFileSync(f).toString('base64') } }))] }],
+              }),
+            });
+            const d = await r.json();
+            const out = d.choices?.[0]?.message?.content || JSON.stringify(d).slice(0, 300);
+            console.log(`\n===== pages ${group.join(',')} | ${((Date.now() - t0) / 1000).toFixed(1)}s | usage ${JSON.stringify(d.usage || {})}`);
+            out.split(sep).forEach((p, k) => console.log(`--- [${group[k] || '?'}] ${p.trim().length} chars\n${p.trim().slice(0, 400)}`));
+          }
+          }
+          JS
+          node ocr.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: inspected-pdf
+          path: first
+          retention-days: 3
+          if-no-files-found: ignore

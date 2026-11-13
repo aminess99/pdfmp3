@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /api/
 
-Sitemap: https://ais-pre-nw6muqub3fxbnuftseqa4l-177651204991.europe-west2.run.app/sitemap.xml
+Sitemap: https://hakawatiai.com/sitemap.xml
