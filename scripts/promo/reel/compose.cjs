@@ -34,9 +34,13 @@ const plan = {
   chapters: { from: 'app.chapters', to: 'app.chaptersEnd' },
 };
 
+// A segment's "shot" in the reel file wins over the plan above (reel1 uses the plan)
+const shotFor = (seg) => seg.shot || plan[seg.id];
+
 function cut(seg, target, file) {
-  const p = plan[seg];
-  const src = path.join(clips, marks['app.file']);
+  const p = shotFor(seg);
+  // The recording that holds the shot: "voices.msa" -> voices.mp4
+  const src = path.join(clips, m(`${p.from.split('.')[0]}.file`));
   const total = clipLen(src);
   const from = Math.min(m(p.from), total - 0.3);
   const to = Math.min(Math.max(m(p.to), from + 0.3), total);
@@ -79,7 +83,7 @@ function cut(seg, target, file) {
     const spoken = durations[seg.id].total;
     const target = spoken + PAD + (seg.id === 'outro' ? 1 : 0);
     const base = path.join(work, `${seg.id}.base.mp4`);
-    if (seg.id === 'hook') {
+    if (seg.id === 'hook' && !shotFor(seg)) {
       // The scanned page, darkened, with a slow push-in
       // The whole page over a blurred copy of itself (a portrait page is wider than the phone)
       ff(['-loop', '1', '-i', pageImage, '-filter_complex',
@@ -88,13 +92,15 @@ function cut(seg, target, file) {
         '-t', target.toFixed(3), ...ENC, base]);
     } else if (seg.id === 'outro') {
       const card = path.join(work, 'outro.png');
+      const c = seg.card || {};
       await shot(`<div style="width:1080px;height:1920px;background:radial-gradient(circle at 70% 25%,#4f46e5 0%,#1e1b4b 45%,#0b0c1a 100%);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:40px">
-        <div style="font-size:150px;font-weight:900">حكواتي</div><div style="font-size:62px;color:#c7cbfa">كتبك بصوت عربي</div>
+        <div style="font-size:150px;font-weight:900">حكواتي</div><div style="font-size:62px;color:#c7cbfa">${c.sub || 'كتبك بصوت عربي'}</div>
         <div style="font-size:72px;font-weight:900;color:#22d3ee;direction:ltr">hakawatiai.com</div>
-        <div style="font-size:50px;padding:18px 44px;border-radius:999px;background:#22d3ee;color:#0b0c1a;font-weight:900">30 دقيقة مجاناً</div></div>`, card, false);
+        <div style="font-size:50px;padding:18px 44px;border-radius:999px;background:#22d3ee;color:#0b0c1a;font-weight:900">30 دقيقة مجاناً</div>
+        ${c.question ? `<div style="margin-top:50px;font-size:84px;font-weight:900;padding:24px 50px;border-radius:30px;background:#fff;color:#1e1b4b">${c.question}</div>` : ''}</div>`, card, false);
       ff(['-loop', '1', '-i', card, '-vf', `zoompan=z='1+0.0009*on':d=${Math.ceil(target * FPS)}:s=1080x1920:fps=${FPS}`, '-t', target.toFixed(3), ...ENC, base]);
     } else {
-      cut(seg.id, target, base);
+      cut(seg, target, base);
     }
     // Headline + word-by-word caption (the outro card already says it all)
     const piece = path.join(work, `${seg.id}.mp4`);

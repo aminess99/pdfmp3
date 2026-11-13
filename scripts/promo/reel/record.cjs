@@ -1,7 +1,7 @@
 // Films the site as a phone for the vertical reels (1080x1920): the page is laid out at
 // 432 CSS pixels wide and drawn at 2.5x, captured frame by frame through the browser's
 // screencast, so text stays sharp. Writes <out>/clips/<scene>.mp4 and marks.json.
-// Usage: node scripts/promo/reel/record.cjs <demo-book.pdf> <outDir>
+// Usage: node scripts/promo/reel/record.cjs <demo-book.pdf> <outDir> [reel name]
 const { chromium } = require('playwright');
 const { execFileSync } = require('child_process');
 const fs = require('fs');
@@ -119,10 +119,69 @@ async function scene(name, fn) {
   marks[`${name}.file`] = path.basename(mp4);
 }
 
+const REEL = process.argv[4] || 'reel1';
+
+// Which scenes each reel films
+const REELS = {
+  reel1: ['app'],
+  reel2: ['voices'],
+};
+
+// reel2: one sentence in six dialects, filmed on the home page's voice section: the region
+// tab, the dialect, then the sample of the voice that speaks that line in the reel
+const DIALECT_SHOTS = [
+  { id: 'msa', region: 'الفصحى', voice: 'فاطمة (الفصحى)' },
+  { id: 'sa', region: 'الخليج', dialect: /السعودية/, voice: 'فيصل (السعودية)' },
+  { id: 'eg', region: 'مصر والسودان', dialect: /المصرية/, voice: 'مريم (مصر)' },
+  { id: 'sy', region: 'الشام', dialect: /السورية/, voice: 'زياد (سوريا)' },
+  { id: 'iq', region: 'العراق واليمن', dialect: /العراقية/, voice: 'زينب (العراق)' },
+  { id: 'ma', region: 'المغرب العربي', dialect: /المغربية/, voice: 'أمين (المغرب)' },
+];
+
+const SCENES = {
+  voices: async ({ page, mark, wait, tap }) => {
+    await page.goto(BASE + '/', { waitUntil: 'load' });
+    await wait(2000);
+    const section = page.locator('#voices');
+    // The reel's own headline takes the place of the section title
+    await page.addStyleTag({ content: '#voices h2, #voices h2 + p { visibility: hidden }' });
+    // The region tabs just under the reel's headline (the section title goes off screen)
+    const toTabs = () => section.getByRole('tablist').first().evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 150));
+    await toTabs();
+    await wait(800);
+    mark('hook');
+    // A slow look over the voices
+    for (let i = 0; i < 6; i++) {
+      await page.mouse.wheel(0, 90);
+      await wait(250);
+    }
+    await wait(600);
+    mark('hookEnd');
+    for (const d of DIALECT_SHOTS) {
+      await toTabs();
+      await wait(300);
+      mark(d.id);
+      await tap(section.getByRole('tab', { name: d.region, exact: true }));
+      if (d.dialect) await tap(section.getByRole('tab', { name: d.dialect }));
+      const play = section.getByRole('button', { name: `تشغيل عينة ${d.voice}` });
+      // The voice's card in the middle of the screen, clear of the captions at the bottom
+      await play.evaluate((el) => el.closest('div.rounded-2xl').scrollIntoView({ block: 'center', behavior: 'smooth' }));
+      await wait(700);
+      await tap(play);
+      await wait(2600);
+      mark(`${d.id}End`);
+      // Stop the sample before the next dialect
+      await section.getByRole('button', { name: `إيقاف عينة ${d.voice}` }).tap().catch(() => {});
+    }
+  },
+};
+
 (async () => {
   scene.browser = await chromium.launch();
 
-  await scene('app', async ({ page, mark, wait, tap, until }) => {
+  for (const name of REELS[REEL] || []) if (SCENES[name]) await scene(name, SCENES[name]);
+
+  if ((REELS[REEL] || []).includes('app')) await scene('app', async ({ page, mark, wait, tap, until }) => {
     await page.goto(BASE + '/?demo=1', { waitUntil: 'load' });
     await wait(2500);
     await tap(page.getByRole('button', { name: /^تحويل/ }).last());

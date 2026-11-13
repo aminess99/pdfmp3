@@ -1,0 +1,10 @@
+[
+  { "id": "hook", "text": "تخيّل كتابك يقرأه لك واحد من بلدك...", "headline": "كتابك بلهجتك 🎧", "shot": { "from": "voices.hook", "to": "voices.hookEnd" } },
+  { "id": "msa", "voice": "fatima_msa", "text": "هل تريد أن أقرأ لك الكتاب الآن؟", "headline": "🌐 الفصحى", "shot": { "from": "voices.msa", "to": "voices.msaEnd" } },
+  { "id": "sa", "voice": "faisal_sa", "text": "تبي أقرا لك الكتاب الحين؟", "headline": "🇸🇦 السعودية", "shot": { "from": "voices.sa", "to": "voices.saEnd" } },
+  { "id": "eg", "voice": "maryam_eg", "text": "عايز أقرالك الكتاب دلوقتي؟", "headline": "🇪🇬 مصر", "shot": { "from": "voices.eg", "to": "voices.egEnd" } },
+  { "id": "sy", "voice": "ziad_sy", "text": "بدّك إقرالك الكتاب هلّق؟", "headline": "🇸🇾 سوريا", "shot": { "from": "voices.sy", "to": "voices.syEnd" } },
+  { "id": "iq", "voice": "zainab_iq", "text": "تريد أقرالك الكتاب هسّه؟", "headline": "🇮🇶 العراق", "shot": { "from": "voices.iq", "to": "voices.iqEnd" } },
+  { "id": "ma", "voice": "amine_ma", "text": "بغيتي نقرا ليك الكتاب دابا؟", "headline": "🇲🇦 المغرب", "shot": { "from": "voices.ma", "to": "voices.maEnd" } },
+  { "id": "outro", "text": "واحد وعشرون لهجة، وستة وثمانون صوتاً... جرّبه مجاناً على حكواتي.", "card": { "sub": "21 لهجة · 86 صوتاً", "question": "أي لهجة أحلى؟ 👇" } }
+]

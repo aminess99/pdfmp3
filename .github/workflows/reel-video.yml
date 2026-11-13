@@ -43,7 +43,7 @@ jobs:
           sleep 5
           node scripts/promo/demo-book.cjs reel-out/demo-book.pdf
           npx tsx scripts/promo/narrate.ts reel-out scripts/promo/reel/$NAME.json
-          node scripts/promo/reel/record.cjs reel-out/demo-book.pdf reel-out
+          node scripts/promo/reel/record.cjs reel-out/demo-book.pdf reel-out $NAME
           node scripts/promo/reel/compose.cjs reel-out scripts/promo/reel/$NAME.json reel-out/demo-book-page.jpg
           grep -E '^\[(OCR|filter|toc)\]|402|error' server.log | tail -20 || true
       - name: Commit the reel
