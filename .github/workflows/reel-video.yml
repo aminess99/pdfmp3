@@ -44,12 +44,18 @@ jobs:
           node scripts/promo/demo-book.cjs reel-out/demo-book.pdf
           npx tsx scripts/promo/narrate.ts reel-out scripts/promo/reel/$NAME.json
           node scripts/promo/reel/record.cjs reel-out/demo-book.pdf reel-out $NAME
-          node scripts/promo/reel/compose.cjs reel-out scripts/promo/reel/$NAME.json reel-out/demo-book-page.jpg
+          # Motion-graphics reels ("motion": true) are drawn frame by frame; the others are edited recordings
+          if grep -q '"motion": true' scripts/promo/reel/$NAME.json; then
+            node scripts/promo/reel/motion.cjs reel-out scripts/promo/reel/$NAME.json
+          else
+            node scripts/promo/reel/compose.cjs reel-out scripts/promo/reel/$NAME.json reel-out/demo-book-page.jpg
+          fi
           grep -E '^\[(OCR|filter|toc)\]|402|error' server.log | tail -20 || true
       - name: Commit the reel
         run: |
           mkdir -p public/promo/reels
           cp reel-out/reel.mp4 public/promo/reels/$NAME.mp4
+          if [ -f reel-out/reel-voice.mp4 ]; then cp reel-out/reel-voice.mp4 public/promo/reels/$NAME-voice.mp4; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/promo/reels

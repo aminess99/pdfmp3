@@ -125,6 +125,7 @@ const REEL = process.argv[4] || 'reel1';
 const REELS = {
   reel1: ['app'],
   reel2: ['voices'],
+  reel3: ['voices'],
 };
 
 // reel2: one sentence in six dialects, filmed on the home page's voice section: the region
