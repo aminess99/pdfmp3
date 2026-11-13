@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useDialog } from '../lib/useDialog';
 import { Check, Loader2, X } from 'lucide-react';
 import { BookChapter } from '../types';
 import { chaptersAr, elapsedAr, pagesAr } from '../lib/arabicPlural';
@@ -46,6 +47,7 @@ export const BookProcessingModal: React.FC<BookProcessingModalProps> = ({
   chapters,
   onCancel,
 }) => {
+  const dialogRef = useDialog(onCancel);
   // Time since this window opened, so a long read never looks frozen
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -75,7 +77,7 @@ export const BookProcessingModal: React.FC<BookProcessingModalProps> = ({
   return (
     <div className="fixed inset-0 z-[60] bg-slate-950/85 flex items-center justify-center p-4 font-body" dir={DIR}>
       <div
-        role="dialog"
+        ref={dialogRef} role="dialog"
         aria-modal="true"
         aria-labelledby="processing-title"
         className="w-full max-w-[480px] max-h-[calc(100dvh-32px)] overflow-y-auto bg-card border border-line rounded-[20px] p-6 sm:p-7 flex flex-col gap-5"
@@ -131,7 +133,7 @@ export const BookProcessingModal: React.FC<BookProcessingModalProps> = ({
 
         {mode === 'converting' && voiceName && (
           <div className="flex items-center gap-3 text-sm text-slate-400">
-            <span className="w-9 h-9 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-display font-extrabold shrink-0">
+            <span className="w-9 h-9 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-display font-extrabold shrink-0" aria-hidden="true">
               {voiceName.charAt(0)}
             </span>
             <span>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useDialog } from '../lib/useDialog';
 import { X, Clock, Loader2, ShieldCheck } from 'lucide-react';
 import { tr, DIR } from '../lib/i18n';
 import { apiFetch, REQUIRE_AUTH_EVENT } from '../lib/apiFetch';
@@ -21,6 +22,7 @@ interface PaymentCheckoutModalProps {
 }
 
 export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({ isOpen, onClose, plan: requested }) => {
+  const dialogRef = useDialog(onClose);
   const [state, setState] = useState<'idle' | 'loading' | 'unavailable' | 'error'>('idle');
   // All plans are offered; the one the user clicked (or the suggested one) starts selected
   const [planId, setPlanId] = useState(requested?.id || 'popular');
@@ -52,7 +54,7 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({ isOp
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/85 font-body" dir={DIR} onClick={onClose}>
       <div
-        role="dialog"
+        ref={dialogRef} role="dialog"
         aria-modal="true"
         aria-labelledby="pay-title"
         onClick={(e) => e.stopPropagation()}

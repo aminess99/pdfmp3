@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useDialog } from '../lib/useDialog';
 import { X, AlertCircle, Loader2, Check } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { tr, DIR } from '../lib/i18n';
@@ -35,6 +36,7 @@ const inputClass =
   'w-full min-h-12 bg-ink border border-line rounded-[10px] px-3.5 text-base text-white placeholder-slate-500 focus:outline-none focus:border-brand';
 
 export const AuthModals: React.FC<AuthModalsProps> = ({ isOpen, mode, onClose, onSwitchMode }) => {
+  const dialogRef = useDialog(onClose);
   const { signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -97,7 +99,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({ isOpen, mode, onClose, o
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/85 font-body" dir={DIR} onClick={onClose}>
       <div
-        role="dialog"
+        ref={dialogRef} role="dialog"
         aria-modal="true"
         aria-labelledby="auth-title"
         onClick={(e) => e.stopPropagation()}

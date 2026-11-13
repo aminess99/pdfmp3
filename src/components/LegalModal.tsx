@@ -1,4 +1,5 @@
 import React from 'react';
+import { useDialog } from '../lib/useDialog';
 import { X } from 'lucide-react';
 import { LANG, Lang, tr, DIR } from '../lib/i18n';
 
@@ -109,13 +110,14 @@ const CONTENT_EN: LegalContent = {
 const CONTENT: Record<Lang, LegalContent> = { ar: CONTENT_AR, en: CONTENT_EN };
 
 export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose, type }) => {
+  const dialogRef = useDialog(onClose);
   if (!isOpen) return null;
   const c = CONTENT[LANG][type];
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/85 font-body" dir={DIR} onClick={onClose}>
       <div
-        role="dialog"
+        ref={dialogRef} role="dialog"
         aria-modal="true"
         aria-labelledby="legal-title"
         onClick={(e) => e.stopPropagation()}

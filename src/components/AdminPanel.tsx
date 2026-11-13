@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useDialog } from '../lib/useDialog';
 import { AlertTriangle, Gift, Headphones, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { apiFetch } from '../lib/apiFetch';
 import { toast } from '../lib/toast';
@@ -96,6 +97,8 @@ export const AdminPanel: React.FC = () => {
   const [listeningError, setListeningError] = useState(false);
   const [openSummary, setOpenSummary] = useState<string | null>(null);
   const [userListens, setUserListens] = useState<{ email: string; rows: UserListen[] | null } | null>(null);
+  const listensDialogRef = useDialog(() => setUserListens(null));
+  const giftDialogRef = useDialog(() => setGift((g) => (g && !g.saving ? null : g)));
 
   const showUserListens = async (uid: string, email: string) => {
     setUserListens({ email, rows: null });
@@ -511,7 +514,7 @@ export const AdminPanel: React.FC = () => {
 
       {userListens && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/85" onClick={() => setUserListens(null)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="listens-title" onClick={(e) => e.stopPropagation()} className="w-full max-w-[640px] max-h-[85vh] bg-card border border-line rounded-[20px] p-6 flex flex-col gap-4">
+          <div ref={listensDialogRef} role="dialog" aria-modal="true" aria-labelledby="listens-title" onClick={(e) => e.stopPropagation()} className="w-full max-w-[640px] max-h-[85vh] bg-card border border-line rounded-[20px] p-6 flex flex-col gap-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex flex-col gap-1 min-w-0">
                 <h2 id="listens-title" className="font-display font-extrabold text-xl text-white">سجل الاستماع</h2>
@@ -560,7 +563,7 @@ export const AdminPanel: React.FC = () => {
 
       {gift && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/85" onClick={() => !gift.saving && setGift(null)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="gift-title" onClick={(e) => e.stopPropagation()} className="w-full max-w-[420px] bg-card border border-line rounded-[20px] p-6 flex flex-col gap-4">
+          <div ref={giftDialogRef} role="dialog" aria-modal="true" aria-labelledby="gift-title" onClick={(e) => e.stopPropagation()} className="w-full max-w-[420px] bg-card border border-line rounded-[20px] p-6 flex flex-col gap-4">
             <h2 id="gift-title" className="font-display font-extrabold text-xl text-white">إهداء دقائق</h2>
             <span className="text-sm text-slate-400" dir="ltr">{gift.user.email}</span>
             <label className="flex flex-col gap-1.5 text-sm text-slate-300">

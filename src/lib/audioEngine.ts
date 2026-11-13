@@ -134,8 +134,12 @@ export class AudioEngine {
         });
         // Retries ride out a server restart too (an update takes the site down for up to a minute)
         let res = await call().catch(() => null);
+        // Our server's own "the voice failed" answer is JSON: retry it once, quickly. A restart
+        // (no answer, or the host's HTML error page) gets the long retries.
+        let appErrors = 0;
         for (const wait of [2500, 5000, 10000, 20000, 25000]) {
           if (res && res.status < 500) break;
+          if (res && (res.headers.get('content-type') || '').includes('application/json') && ++appErrors > 1) break;
           await new Promise((r) => setTimeout(r, wait));
           res = await call().catch(() => null);
         }

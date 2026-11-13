@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useDialog } from '../lib/useDialog';
 import { 
   Play, 
   Pause, 
@@ -117,6 +118,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
   const [chaptersOpen, setChaptersOpen] = useState(false);
   // Full-screen player on phones
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
+  const playerDialogRef = useDialog(() => setNowPlayingOpen(false));
 
   // Resume where the listener stopped last time (per book, in this browser)
   const positionKey = `studio_pos_${job.id}`;
@@ -1243,7 +1245,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
             }}
             className="min-h-11 flex items-center gap-2 px-3 rounded-[10px] border border-line-strong text-white text-sm cursor-pointer hover:bg-raised"
           >
-            <span className="w-[26px] h-[26px] rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center text-[13px] font-bold">
+            <span className="w-[26px] h-[26px] rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center text-[13px] font-bold" aria-hidden="true">
               {voiceInitial(selectedVoice)}
             </span>
             <span className="hidden sm:inline">{voiceLabel(selectedVoice)}</span>
@@ -1294,7 +1296,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
                 }`}
               >
                 <span className="flex items-center gap-2.5">
-                  <span className="w-[30px] h-[30px] rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-bold">{voiceInitial(v)}</span>
+                  <span className="w-[30px] h-[30px] rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-bold" aria-hidden="true">{voiceInitial(v)}</span>
                   {voiceLabel(v)}
                 </span>
                 <span className="text-[13px] text-slate-400">{genderLabel(v)}</span>
@@ -1338,7 +1340,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
       {/* Phone: full-screen now playing */}
       {nowPlayingOpen && (
-        <div role="dialog" aria-modal="true" aria-label={tr("المشغّل", "Player")} className="md:hidden fixed inset-0 z-[55] bg-ink flex flex-col px-5 pt-3 pb-6 overflow-y-auto">
+        <div ref={playerDialogRef} role="dialog" aria-modal="true" aria-label={tr("المشغّل", "Player")} className="md:hidden fixed inset-0 z-[55] bg-ink flex flex-col px-5 pt-3 pb-6 overflow-y-auto">
           <div className="flex items-center justify-between shrink-0">
             <button type="button" onClick={() => setNowPlayingOpen(false)} aria-label={tr("إغلاق المشغّل", "Close player")} className="w-11 h-11 -ms-2 rounded-full text-slate-300 flex items-center justify-center cursor-pointer">
               <ChevronDown className="w-6 h-6" />
@@ -1424,7 +1426,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
 
           <div className="shrink-0 grid grid-cols-4 gap-2">
             <label className="relative min-h-14 rounded-xl bg-card border border-line flex flex-col items-center justify-center text-[12px] text-slate-400 cursor-pointer">
-              <span className="w-6 h-6 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center text-[12px] font-bold">{voiceInitial(selectedVoice)}</span>
+              <span className="w-6 h-6 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center text-[12px] font-bold" aria-hidden="true">{voiceInitial(selectedVoice)}</span>
               {tr("الصوت", "Voice")}
               <select
                 value={selectedVoice.id}

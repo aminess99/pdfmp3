@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useDialog } from '../lib/useDialog';
 import { X, Check } from 'lucide-react';
 import { VOICES } from '../data/voices';
 import { tr, DIR } from '../lib/i18n';
@@ -28,6 +29,7 @@ const readSetting = (key: string, fallback: string) => {
 };
 
 export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, onClose, user }) => {
+  const dialogRef = useDialog(onClose);
   const [voiceId, setVoiceId] = useState(() => readSetting(SETTINGS_KEYS.voice, ''));
   const [speed, setSpeed] = useState(() => String(Number(readSetting(SETTINGS_KEYS.speed, '1')) || 1));
   const [autoNext, setAutoNext] = useState(() => readSetting(SETTINGS_KEYS.autoNext, 'true') !== 'false');
@@ -50,7 +52,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/85 font-body" dir={DIR} onClick={onClose}>
       <form
-        role="dialog"
+        ref={dialogRef} role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
         onSubmit={handleSave}

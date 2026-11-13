@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
+import { useDialog } from '../lib/useDialog';
 import { 
   BookOpen, 
   LayoutGrid, 
@@ -47,7 +48,7 @@ const AdminPanel = lazy(() => import('./AdminPanel').then((m) => ({ default: m.A
 import { VoiceSamplesSection } from './VoiceSamplesSection';
 import { PricingSection } from './PricingSection';
 import { SUBSCRIBE_EVENT } from '../lib/apiFetch';
-import { listServerBooks, getServerBook, deleteServerBook, saveBookToServer, needsText } from '../lib/library';
+import { listServerBooks, getServerBook, deleteServerBook, saveBookToServer, needsText, writeLocalLibrary } from '../lib/library';
 import { apiFetch, fetchAccount, CREDITS_CHANGED_EVENT } from '../lib/apiFetch';
 import { isEn, tr, DIR } from '../lib/i18n';
 import { voiceLabel } from '../lib/voiceLabel';
@@ -74,6 +75,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   const [convertMode, setConvertMode] = useState<'pdf' | 'text'>('pdf');
   // Tools that work on one of the user's books ask which book first
   const [toolPick, setToolPick] = useState<'ask' | 'summary' | 'download' | null>(null);
+  const pickDialogRef = useDialog(() => setToolPick(null));
   // Listening minutes from the server (null: not enforced / not loaded yet)
   const [balanceSeconds, setBalanceSeconds] = useState<number | null>(null);
   const [isSubscriber, setIsSubscriber] = useState(false);
@@ -184,9 +186,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     if (!confirm(tr("هل تريد حذف هذا الكتاب من مكتبتك؟", "Delete this book from your library?"))) return;
     const updated = savedBooks.filter((b) => b.id !== id);
     setSavedBooks(updated);
-    try {
-      localStorage.setItem('pdf_audio_library', JSON.stringify(updated));
-    } catch {}
+    writeLocalLibrary(updated);
     if (authUser?.uid) {
       deleteServerBook(id);
       try {
@@ -687,7 +687,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 
       {toolPick && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/85" dir={DIR} onClick={() => setToolPick(null)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="pick-title" onClick={(e) => e.stopPropagation()} className="w-full max-w-[440px] max-h-[80vh] bg-card border border-line rounded-[20px] p-6 flex flex-col gap-4">
+          <div ref={pickDialogRef} role="dialog" aria-modal="true" aria-labelledby="pick-title" onClick={(e) => e.stopPropagation()} className="w-full max-w-[440px] max-h-[80vh] bg-card border border-line rounded-[20px] p-6 flex flex-col gap-4">
             <h2 id="pick-title" className="font-display font-extrabold text-xl text-white">{tr('اختر كتاباً', 'Choose a book')}</h2>
             <ul className="flex flex-col gap-2 overflow-y-auto">
               {savedBooks.map((b) => (

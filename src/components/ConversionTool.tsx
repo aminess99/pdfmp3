@@ -56,7 +56,7 @@ import { voiceLabel, voiceInitial, dialectLabel, genderLabel } from '../lib/voic
 import { tr, DIR } from '../lib/i18n';
 import { VoiceOptionGroups } from './VoiceOptions';
 import { apiFetch } from '../lib/apiFetch';
-import { saveBookToServer } from '../lib/library';
+import { saveBookToServer, saveLocalBook } from '../lib/library';
 
 // "320 KB" under a megabyte, "2.4 MB" above it
 const formatFileSize = (bytes: number): string =>
@@ -775,11 +775,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
             };
 
             // Save to localStorage library
-            try {
-              const existing = JSON.parse(localStorage.getItem('pdf_audio_library') || '[]');
-              const updated = [newJob, ...existing.filter((j: any) => j.id !== newJob.id)];
-              localStorage.setItem('pdf_audio_library', JSON.stringify(updated));
-            } catch (e) {}
+            saveLocalBook(newJob);
 
             // Signed-in users: save to the server library (no size limit), or to Firestore
             // (1 MB per book) when the server library is unavailable
@@ -1069,7 +1065,7 @@ export const ConversionTool: React.FC<ConversionToolProps> = ({
         {/* Voice + convert */}
         <div className="border-t border-line px-4 sm:px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <span className="w-10 h-10 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-display font-extrabold shrink-0">
+            <span className="w-10 h-10 rounded-full bg-brand-deep text-indigo-200 flex items-center justify-center font-display font-extrabold shrink-0" aria-hidden="true">
               {voiceInitial(selectedVoice)}
             </span>
             <label className="flex flex-col leading-tight min-w-0">

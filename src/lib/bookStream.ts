@@ -1,7 +1,7 @@
 import type { BookChapter, ConversionJob } from '../types';
 import { findChapterHeadings, estimateDurationMinutes, normTitle, partTitle, nextPartTitle } from './chapterUtils';
 import { RunningHeadFilter, cleanPages } from './bookCleaner';
-import { saveBookToServer } from './library';
+import { saveBookToServer, saveLocalBook } from './library';
 import { smartFilterWithHeadings, FoundHeading } from './smartFilter';
 import { tr } from './i18n';
 
@@ -219,13 +219,8 @@ export class ChapterAssembler {
 
 // Keeps the browser copy of the library and the server copy in step with the book
 export function persistJob(job: ConversionJob): void {
-  try {
-    const existing = JSON.parse(localStorage.getItem('pdf_audio_library') || '[]');
-    const list = Array.isArray(existing) ? existing : [];
-    localStorage.setItem('pdf_audio_library', JSON.stringify([job, ...list.filter((j: ConversionJob) => j.id !== job.id)]));
-  } catch {
-    // storage full or blocked: the server copy still has it
-  }
+  // Storage full: the oldest browser copies make room (the server copy keeps them for members)
+  saveLocalBook(job);
   saveBookToServer(job);
 }
 

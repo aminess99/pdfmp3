@@ -54,3 +54,33 @@ export async function deleteServerBook(id: string): Promise<boolean> {
 // A book from the server list has no text yet; it must be fetched before it can play
 export const needsText = (book: ConversionJob): boolean =>
   !book.extractedText && !(book.chapters || []).some((c) => c.text && c.text.trim().length > 0);
+
+// The browser copy of the library (guests, and a fallback for signed-in users). Storage holds
+// about 5 MB: when a book does not fit, the oldest books are dropped so the newest is kept.
+const LOCAL_LIBRARY_KEY = 'pdf_audio_library';
+
+export function readLocalLibrary(): ConversionJob[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(LOCAL_LIBRARY_KEY) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+export function writeLocalLibrary(list: ConversionJob[]): boolean {
+  for (let keep = list.length; keep >= 1; keep--) {
+    try {
+      localStorage.setItem(LOCAL_LIBRARY_KEY, JSON.stringify(list.slice(0, keep)));
+      return keep === list.length;
+    } catch {
+      // full: try again without the oldest book
+    }
+  }
+  return false;
+}
+
+// Puts a book at the top of the browser library (replacing an older copy of it)
+export function saveLocalBook(book: ConversionJob): boolean {
+  return writeLocalLibrary([book, ...readLocalLibrary().filter((j) => j.id !== book.id)]);
+}

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useDialog } from '../lib/useDialog';
 import { WaitingNote } from './WaitingNote';
 import { 
   X, 
@@ -47,6 +48,7 @@ export const ChatPdfModal: React.FC<ChatPdfModalProps> = ({
   stillReading,
   availableVoices,
 }) => {
+  const dialogRef = useDialog(onClose);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
@@ -166,7 +168,7 @@ export const ChatPdfModal: React.FC<ChatPdfModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 font-body" dir={DIR}>
-      <div role="dialog" aria-modal="true" aria-labelledby="chat-title" className="w-full max-w-2xl h-[85dvh] sm:h-[620px] bg-card border border-line rounded-[20px] overflow-hidden flex flex-col text-slate-200">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="chat-title" className="w-full max-w-2xl h-[85dvh] sm:h-[620px] bg-card border border-line rounded-[20px] overflow-hidden flex flex-col text-slate-200">
         <div className="px-5 py-4 border-b border-line flex items-center justify-between gap-3 shrink-0">
           <div className="min-w-0">
             <h2 id="chat-title" className="font-display font-extrabold text-xl text-white">{tr("اسأل الكتاب", "Ask the book")}</h2>
