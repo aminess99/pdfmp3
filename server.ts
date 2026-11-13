@@ -1329,6 +1329,23 @@ function ttsStyleFor(voice?: any): string | undefined {
 const TTS_CACHE_VERSION = "v2";
 
 // Synthesize audio using google/gemini-3.8-flash-lite-tts via OpenRouter with system instructions & dialect prompting
+// OpenRouter reserves credit for every request in flight: with a low balance, many requests at
+// once are refused ("would exceed your available credits given your current in-flight
+// requests") even though each one alone would pass. Keep a few in flight; the rest wait.
+const TTS_MAX_PARALLEL = Number(process.env.TTS_MAX_PARALLEL) || 4;
+let ttsInFlight = 0;
+const ttsQueue: (() => void)[] = [];
+async function withTtsSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (ttsInFlight >= TTS_MAX_PARALLEL) await new Promise<void>((resolve) => ttsQueue.push(resolve));
+  ttsInFlight++;
+  try {
+    return await fn();
+  } finally {
+    ttsInFlight--;
+    ttsQueue.shift()?.();
+  }
+}
+
 async function synthesizeWithOpenRouterGeminiTts(
   text: string,
   options: { voice?: any; speed?: number; preferredModel?: string } = {}
@@ -1354,12 +1371,15 @@ async function synthesizeWithOpenRouterGeminiTts(
   const uniqueModels = [...new Set(ttsModelsToTry)];
 
   // Method 1: Try OpenRouter /audio/speech endpoint with response_format="pcm"
-  for (const model of uniqueModels) {
+  for (let m = 0, inFlightRetries = 0; m < uniqueModels.length; m++) {
+    const model = uniqueModels[m];
     try {
+      // The 20 s limit starts when the request is sent, not while it waits for a slot
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-      const res = await fetch("https://openrouter.ai/api/v1/audio/speech", {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const res = await withTtsSlot(() => {
+        timeoutId = setTimeout(() => controller.abort(), 20000);
+        return fetch("https://openrouter.ai/api/v1/audio/speech", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${openRouterKey}`,
@@ -1376,21 +1396,32 @@ async function synthesizeWithOpenRouterGeminiTts(
           response_format: "pcm",
         }),
         signal: controller.signal,
+      }).then(async (r) => ({ r, body: r.ok ? Buffer.from(await r.arrayBuffer()) : null, errText: r.ok ? "" : await r.text().catch(() => "") }));
       });
 
       clearTimeout(timeoutId);
 
-      if (res.ok) {
-        const arrayBuf = await res.arrayBuffer();
-        const pcmRaw = Buffer.from(arrayBuf);
+      if (res.r.ok && res.body) {
+        const pcmRaw = res.body;
         if (pcmRaw.length > 200) {
           const wavBuffer = pcmToWav(pcmRaw, 24000, 1, 16);
           console.log(`[OpenRouter Audio/Speech] Generated successfully with model: ${model}, voice: ${voiceName}, wav size: ${wavBuffer.length} bytes`);
           return { buffer: wavBuffer, contentType: "audio/wav", engine: `openrouter-${model}` };
         }
       } else {
-        const errText = await res.text().catch(() => "");
-        console.warn(`[OpenRouter Audio/Speech] ${model} status ${res.status}:`, errText.slice(0, 150));
+        const errText = res.errText;
+        console.warn(`[OpenRouter Audio/Speech] ${model} status ${res.r.status}:`, errText.slice(0, 150));
+        if (res.r.status === 402) {
+          // Credit held by requests in flight: wait for them and retry the same model. Out of
+          // credit: the other models would be refused too.
+          if (/in-flight/i.test(errText) && inFlightRetries < 2) {
+            inFlightRetries++;
+            m--;
+            await new Promise((r) => setTimeout(r, 2000 * inFlightRetries));
+            continue;
+          }
+          break;
+        }
       }
     } catch (e: any) {
       if (e?.name === "AbortError" || e?.message?.includes("aborted")) {
