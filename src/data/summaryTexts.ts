@@ -21,6 +21,11 @@ import fullOfEmptiness from './summary-texts/full-of-emptiness';
 import psychologicalFragility from './summary-texts/psychological-fragility';
 import whoMovedMyCheese from './summary-texts/who-moved-my-cheese';
 import stopWorrying from './summary-texts/stop-worrying';
+import dontBeSad from './summary-texts/dont-be-sad';
+import theAlchemist from './summary-texts/the-alchemist';
+import thinkAndGrowRich from './summary-texts/think-and-grow-rich';
+import powerOfNow from './summary-texts/power-of-now';
+import artOfWar from './summary-texts/art-of-war';
 import enFortyeightLawsOfPower from './summary-texts/en/48-laws-of-power';
 import enAtomicHabits from './summary-texts/en/atomic-habits';
 import enEmotionalIntelligence from './summary-texts/en/emotional-intelligence';
@@ -63,6 +68,11 @@ export const SUMMARY_TEXTS: Record<string, SummaryText> = {
   'psychological-fragility': psychologicalFragility,
   'who-moved-my-cheese': whoMovedMyCheese,
   'stop-worrying': stopWorrying,
+  'dont-be-sad': dontBeSad,
+  'the-alchemist': theAlchemist,
+  'think-and-grow-rich': thinkAndGrowRich,
+  'power-of-now': powerOfNow,
+  'art-of-war': artOfWar,
   // English versions, under en/<textId>
   'en/48-laws-of-power': enFortyeightLawsOfPower,
   'en/atomic-habits': enAtomicHabits,

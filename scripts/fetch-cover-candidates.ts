@@ -11,6 +11,11 @@ const ENGLISH: Record<string, { title: string; author: string }> = {
   '48-laws-of-power': { title: 'The 48 Laws of Power', author: 'Robert Greene' },
   'subtle-art': { title: 'The Subtle Art of Not Giving', author: 'Mark Manson' },
   'rich-dad-poor-dad': { title: 'Rich Dad Poor Dad', author: 'Robert Kiyosaki' },
+  'dont-be-sad': { title: "Don't Be Sad", author: 'Aaidh al-Qarni' },
+  'the-alchemist': { title: 'The Alchemist', author: 'Paulo Coelho' },
+  'think-and-grow-rich': { title: 'Think and Grow Rich', author: 'Napoleon Hill' },
+  'power-of-now': { title: 'The Power of Now', author: 'Eckhart Tolle' },
+  'art-of-war': { title: 'The Art of War', author: 'Sun Tzu' },
 };
 
 const OUT = path.join(process.cwd(), 'covers-candidates');
@@ -46,7 +51,8 @@ async function openLibrary(title: string, author: string): Promise<{ url: string
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   const index: Record<string, { file: string; label: string; url: string }[]> = {};
-  for (const s of BOOK_SUMMARIES) {
+  // Only books still without a cover (public/covers/<textId>.webp)
+  for (const s of BOOK_SUMMARIES.filter((x) => !x.hasCover)) {
     const dir = path.join(OUT, s.textId);
     fs.mkdirSync(dir, { recursive: true });
     const en = ENGLISH[s.textId];

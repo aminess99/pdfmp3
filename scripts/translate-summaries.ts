@@ -41,6 +41,11 @@ const ENGLISH_TITLES: Record<string, string> = {
   'psychological-fragility': '"Psychological Fragility" (Al-Hashasha al-Nafsiya) by Ismail Arafa',
   'who-moved-my-cheese': 'Who Moved My Cheese? by Spencer Johnson',
   'stop-worrying': 'How to Stop Worrying and Start Living by Dale Carnegie',
+  'dont-be-sad': '"Don\'t Be Sad" (La Tahzan) by Aaidh al-Qarni',
+  'the-alchemist': 'The Alchemist by Paulo Coelho',
+  'think-and-grow-rich': 'Think and Grow Rich by Napoleon Hill',
+  'power-of-now': 'The Power of Now by Eckhart Tolle',
+  'art-of-war': 'The Art of War by Sun Tzu',
 };
 
 const prompt = (book: string, text: SummaryText) => `You are translating an audiobook summary of ${book} from Arabic into English.
