@@ -46,6 +46,11 @@ import enSurroundedByIdiots from './summary-texts/en/surrounded-by-idiots';
 import enTheDiseaseAndTheCure from './summary-texts/en/the-disease-and-the-cure';
 import enThePrince from './summary-texts/en/the-prince';
 import enWhoMovedMyCheese from './summary-texts/en/who-moved-my-cheese';
+import enDontBeSad from './summary-texts/en/dont-be-sad';
+import enTheAlchemist from './summary-texts/en/the-alchemist';
+import enThinkAndGrowRich from './summary-texts/en/think-and-grow-rich';
+import enPowerOfNow from './summary-texts/en/power-of-now';
+import enArtOfWar from './summary-texts/en/art-of-war';
 
 export const SUMMARY_TEXTS: Record<string, SummaryText> = {
   'atomic-habits': atomicHabits,
@@ -94,6 +99,11 @@ export const SUMMARY_TEXTS: Record<string, SummaryText> = {
   'en/the-disease-and-the-cure': enTheDiseaseAndTheCure,
   'en/the-prince': enThePrince,
   'en/who-moved-my-cheese': enWhoMovedMyCheese,
+  'en/dont-be-sad': enDontBeSad,
+  'en/the-alchemist': enTheAlchemist,
+  'en/think-and-grow-rich': enThinkAndGrowRich,
+  'en/power-of-now': enPowerOfNow,
+  'en/art-of-war': enArtOfWar,
 };
 
 export const summaryText = (s: BookSummary): SummaryText => {
