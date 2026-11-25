@@ -413,6 +413,7 @@ export const ALL_SUMMARIES: BookSummary[] = [
     lead: 'وصايا تخرج القارئ من الهم إلى الرضا: لا تحمل هم الماضي ولا المستقبل، وعش يومك، وتعلّق بالله، واصبر، وأحسن إلى الناس دون انتظار شكر.',
     publishedAt: '2026-11-25',
     textId: 'dont-be-sad',
+    hasCover: true,
   },
   {
     slug: 'الخيميائي',
@@ -429,6 +430,7 @@ export const ALL_SUMMARIES: BookSummary[] = [
     lead: 'رحلة راعٍ شاب من الأندلس إلى أهرامات مصر بحثاً عن كنز رآه في منامه، وما تعلمه في الطريق عن الحلم والخوف والحب والإشارات.',
     publishedAt: '2026-11-25',
     textId: 'the-alchemist',
+    hasCover: true,
   },
   {
     slug: 'فكر-تصبح-غنيا',
@@ -445,6 +447,7 @@ export const ALL_SUMMARIES: BookSummary[] = [
     lead: 'ثلاث عشرة خطوة تبدأ بفكرة ورغبة قوية وتنتهي بالنجاح: الهدف المحدد، والتخطيط، والقرار السريع، والمثابرة، والعقل المدبر، والتغلب على الخوف.',
     publishedAt: '2026-11-25',
     textId: 'think-and-grow-rich',
+    hasCover: true,
   },
   {
     slug: 'قوة-الآن',
@@ -461,6 +464,7 @@ export const ALL_SUMMARIES: BookSummary[] = [
     lead: 'كيف تتحرر من ضجيج العقل والقلق من المستقبل والندم على الماضي، وتجد السلام في اللحظة الحاضرة، المكان الوحيد الذي تحدث فيه الحياة.',
     publishedAt: '2026-11-25',
     textId: 'power-of-now',
+    hasCover: true,
   },
   {
     slug: 'فن-الحرب',
@@ -477,6 +481,7 @@ export const ALL_SUMMARIES: BookSummary[] = [
     lead: 'أقدم كتاب في الاستراتيجية: التخطيط قبل المعركة، ومعرفة النفس والخصم، والنصر دون قتال، والتكيف كالماء، ودروسه في الإدارة والحياة.',
     publishedAt: '2026-11-25',
     textId: 'art-of-war',
+    hasCover: true,
   },
 ];
 

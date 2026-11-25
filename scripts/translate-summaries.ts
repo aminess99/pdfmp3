@@ -66,6 +66,48 @@ Reply with JSON only, exactly: {"sections":[{"heading":"...","paragraphs":["..."
 The Arabic summary as JSON:
 ${JSON.stringify(text)}`;
 
+// Models sometimes quote inside a string with plain double quotes ("Do not be sad"), which
+// breaks the JSON. Escape every quote inside a string that is not followed by the JSON
+// syntax that closes a string (, } ] :), keeping the real string boundaries.
+export function repairJson(raw: string): string {
+  let out = '';
+  let inString = false;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (inString && c === '\\') {
+      out += c + (raw[i + 1] ?? '');
+      i++;
+      continue;
+    }
+    if (c === '"') {
+      if (!inString) {
+        inString = true;
+        out += c;
+        continue;
+      }
+      // A closing quote is followed by } ] : or by a comma and then the next value
+      const after = raw.slice(i + 1, i + 40);
+      if (/^\s*($|[}\]:]|,\s*["{\[])/.test(after)) {
+        inString = false;
+        out += c;
+      } else {
+        out += '\\"';
+      }
+      continue;
+    }
+    out += inString && c === '\n' ? '\\n' : c;
+  }
+  return out;
+}
+
+const parseReply = (raw: string): SummaryText => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return JSON.parse(repairJson(raw));
+  }
+};
+
 async function translate(book: string, text: SummaryText, apiKey: string): Promise<SummaryText> {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -84,7 +126,7 @@ async function translate(book: string, text: SummaryText, apiKey: string): Promi
     // with trailing commas removed
     const raw = reply.slice(reply.indexOf('{'), reply.lastIndexOf('}') + 1).replace(/,\s*([}\]])/g, '$1');
     try {
-      const out = JSON.parse(raw) as SummaryText;
+      const out = parseReply(raw);
       // The narration and the section player rely on the same shape as the Arabic
       const same =
         out.sections?.length === text.sections.length &&
