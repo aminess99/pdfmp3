@@ -171,7 +171,7 @@ export function generateCrispBookCoverPng(
 
   ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
   ctx.font = '12px sans-serif';
-  ctx.fillText('استوديو PDF to Audio الذكي © 2026', cx, canvas.height - 55);
+  ctx.fillText('استوديو Hakawati AI الذكي © 2026', cx, canvas.height - 55);
 
   return canvas.toDataURL('image/png', 0.95);
 }

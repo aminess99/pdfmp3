@@ -13,8 +13,10 @@ service cloud.firestore {
     // Users Collection
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && request.resource.data.uid == request.auth.uid;
-      allow update: if isOwner(userId) && request.resource.data.uid == request.auth.uid;
+      // Only profile fields; roles are never client-writable
+      allow create, update: if isOwner(userId)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'displayName', 'email', 'createdAt']);
       allow delete: if isOwner(userId);
     }
 
@@ -27,10 +29,32 @@ service cloud.firestore {
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
 
+    // Listening minutes: written only by the server (Admin SDK bypasses these rules)
+    match /credits/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    // Shared clips: public read; signed-in users create short, well-formed clips; no edits
+    match /shares/{shareId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(['text', 'voiceId', 'bookTitle', 'chapterTitle', 'userId', 'createdAt'])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 600
+        && request.resource.data.voiceId is string && request.resource.data.voiceId.size() <= 40
+        && request.resource.data.bookTitle is string && request.resource.data.bookTitle.size() <= 150
+        && request.resource.data.chapterTitle is string && request.resource.data.chapterTitle.size() <= 150
+        && request.resource.data.createdAt == request.time;
+      allow update: if false;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
     // Custom Voices Collection
     match /voices/{voiceId} {
       allow read: if true;
-      allow create, update, delete: if true;
+      allow create, update, delete: if false;
     }
   }
 }

@@ -1,0 +1,47 @@
+name: Translate summaries
+
+# Writes the English text of book summaries that have none yet (scripts/translate-summaries.ts)
+# and commits it. Runs when the script changes, or manually from the Actions tab.
+on:
+  push:
+    paths:
+      - scripts/translate-summaries.ts
+      - .github/workflows/translate-summaries.yml
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Translate again even where an English text exists"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  translate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Translate
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: npx tsx scripts/translate-summaries.ts ${{ inputs.force && '--force' || '' }}
+      - name: Commit
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/data/summary-texts/en
+          if git diff --cached --quiet; then
+            echo "Nothing new"
+          else
+            git commit -m "Add English summary texts"
+            git pull --rebase
+            git push
+          fi

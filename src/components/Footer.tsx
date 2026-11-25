@@ -1,102 +1,76 @@
 import React from 'react';
-import { Headphones, Heart, Twitter, Facebook, Mail, ShieldCheck, FileText } from 'lucide-react';
+import { LANDING_PAGES, landingPath } from '../data/landingPages';
+import { tr, DIR, HOME_PATH, isEn } from '../lib/i18n';
+import { otherLanguagePath } from '../lib/alternates';
+import { DIALECT_COUNT } from '../data/voices';
+import { BOOK_SUMMARIES, SUMMARIES_HUB_PATH } from '../data/summaries';
+import { ARTICLES_HUB_PATH } from '../data/articles';
+import { SOCIAL_LINKS, SocialLink } from '../data/social';
+
+// Brand marks as simple inline SVG paths (24x24)
+const SOCIAL_ICONS: Record<SocialLink['id'], string> = {
+  youtube:
+    'M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.6V8.4l6.3 3.6-6.3 3.6Z',
+  facebook:
+    'M24 12a12 12 0 1 0-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.7 4.5-4.7 1.3 0 2.7.2 2.7.2v3h-1.5c-1.5 0-2 .9-2 1.9V12h3.4l-.5 3.5h-2.9v8.4A12 12 0 0 0 24 12Z',
+  tiktok:
+    'M19.6 6.7a4.8 4.8 0 0 1-3.8-4.2V2h-3.4v13.7a2.9 2.9 0 1 1-2-2.8V9.5a6.3 6.3 0 1 0 5.4 6.2V8.8a8.2 8.2 0 0 0 4.8 1.5V6.9l-1-.2Z',
+  instagram:
+    'M12 2.2c3.2 0 3.6 0 4.8.1 3.3.1 4.8 1.7 4.9 4.9.1 1.3.1 1.6.1 4.8s0 3.6-.1 4.8c-.1 3.2-1.7 4.8-4.9 4.9-1.3.1-1.6.1-4.8.1s-3.6 0-4.8-.1c-3.3-.1-4.8-1.7-4.9-4.9C2.2 15.6 2.2 15.2 2.2 12s0-3.6.1-4.8C2.4 3.9 3.9 2.4 7.2 2.3c1.2-.1 1.6-.1 4.8-.1ZM12 0C8.7 0 8.3 0 7.1.1 2.7.3.3 2.7.1 7.1 0 8.3 0 8.7 0 12s0 3.7.1 4.9c.2 4.4 2.6 6.8 7 7 1.2.1 1.6.1 4.9.1s3.7 0 4.9-.1c4.4-.2 6.8-2.6 7-7 .1-1.2.1-1.6.1-4.9s0-3.7-.1-4.9c-.2-4.4-2.6-6.8-7-7C15.7 0 15.3 0 12 0Zm0 5.8a6.2 6.2 0 1 0 0 12.4 6.2 6.2 0 0 0 0-12.4ZM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm6.4-11.8a1.4 1.4 0 1 0 0 2.9 1.4 1.4 0 0 0 0-2.9Z',
+};
 
 interface FooterProps {
   onNavigate: (id: string) => void;
-  onOpenLegal?: (type: 'terms' | 'privacy') => void;
+  onOpenLegal: (type: 'privacy' | 'terms') => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal }) => {
-  return (
-    <footer className="bg-[#070a12] text-slate-400 border-t border-slate-800/80 pt-12 pb-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
-        
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          
-          {/* Brand Info */}
-          <div className="space-y-3 md:col-span-1">
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white">
-                <Headphones className="w-5 h-5" />
-              </div>
-              <span className="text-xl font-black text-white font-['Tajawal']">
-                PDF<span className="text-blue-400">to</span><span className="text-purple-400">Audio</span>
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              منصة عربية متطورة لتحويل كتب ومستندات PDF إلى مقاطع صوتية نقية بـ 30+ صوتاً و14 لهجة عربية.
-            </p>
-          </div>
-
-          {/* Quick Links */}
-          <div className="space-y-2">
-            <h4 className="text-sm font-extrabold text-white">روابط سريعة</h4>
-            <ul className="space-y-1.5 text-xs">
-              <li>
-                <button onClick={() => onNavigate('home')} className="hover:text-white transition-colors cursor-pointer">الرئيسية</button>
-              </li>
-              <li>
-                <button onClick={() => onNavigate('features')} className="hover:text-white transition-colors cursor-pointer">الميزات والأصوات</button>
-              </li>
-              <li>
-                <button onClick={() => onNavigate('pricing')} className="hover:text-white transition-colors cursor-pointer">خطط الأسعار ورصيد الدقائق</button>
-              </li>
-              <li>
-                <button onClick={() => onNavigate('faq')} className="hover:text-white transition-colors cursor-pointer">الأسئلة الشائعة</button>
-              </li>
-            </ul>
-          </div>
-
-          {/* Dialects */}
-          <div className="space-y-2">
-            <h4 className="text-sm font-extrabold text-white">اللهجات واللغات المدعومة</h4>
-            <ul className="space-y-1.5 text-xs text-slate-400">
-              <li>الفصحى المعاصرة 🌐</li>
-              <li>المغربية (الدارجة) 🇲🇦</li>
-              <li>السعودية 🇸🇦 • المصرية 🇪🇬</li>
-              <li>الإماراتية، الشامية، الجزائرية...</li>
-            </ul>
-          </div>
-
-          {/* Legal / Social */}
-          <div className="space-y-3">
-            <h4 className="text-sm font-extrabold text-white">تواصل ودعم المنصة</h4>
-            <div className="flex items-center gap-3">
-              <a href="mailto:support@pdftoaudio.ai" className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center hover:text-white hover:border-indigo-500 transition-colors">
-                <Mail className="w-4 h-4" />
+export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal }) => (
+  <footer className="border-t border-raised py-10 px-4 sm:px-6" dir={DIR}>
+    <div className="max-w-[1160px] mx-auto flex flex-wrap gap-8 justify-between">
+      <div className="flex flex-col gap-1.5 max-w-xs">
+        <img src="/brand/logo.png" alt="Hakawati AI" width={151} height={32} className="h-8 w-auto self-start" />
+        <span className="text-slate-400 text-sm">{tr(`حوّل النصوص والكتب العربية إلى صوت طبيعي بـ${DIALECT_COUNT} لهجة.`, `Turn Arabic text and books into natural speech in ${DIALECT_COUNT} dialects.`)}</span>
+        <ul aria-label={tr('تابعنا', 'Follow us')} className="flex gap-2 mt-3">
+          {SOCIAL_LINKS.map((l) => (
+            <li key={l.id}>
+              <a
+                href={l.url}
+                target="_blank"
+                rel="noopener noreferrer me"
+                aria-label={tr(`حكواتي على ${l.name}`, `Hakawati AI on ${l.name}`)}
+                title={l.name}
+                className="w-10 h-10 rounded-full border border-line flex items-center justify-center text-slate-300 hover:text-white hover:border-brand hover:bg-raised"
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                  <path d={SOCIAL_ICONS[l.id]} />
+                </svg>
               </a>
-              <a href="#" className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center hover:text-white hover:border-indigo-500 transition-colors">
-                <Twitter className="w-4 h-4" />
-              </a>
-            </div>
-            <p className="text-xs text-slate-500">
-              جميع الحقوق محفوظة © 2026 PDFtoAudio.
-            </p>
-          </div>
-
-        </div>
-
-        {/* Bottom Bar */}
-        <div className="pt-6 border-t border-slate-900 text-center text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <span>صُنِع بـ <Heart className="w-3.5 h-3.5 text-rose-500 inline fill-rose-500 mx-0.5" /> للقراء العرب</span>
-          <div className="flex items-center gap-4 text-xs">
-            <button 
-              onClick={() => onOpenLegal && onOpenLegal('privacy')} 
-              className="hover:text-slate-300 transition-colors cursor-pointer"
-            >
-              سياسة الخصوصية
-            </button>
-            <span>•</span>
-            <button 
-              onClick={() => onOpenLegal && onOpenLegal('terms')} 
-              className="hover:text-slate-300 transition-colors cursor-pointer"
-            >
-              شروط الاستخدام
-            </button>
-          </div>
-        </div>
-
+            </li>
+          ))}
+        </ul>
+        <span className="text-slate-500 text-xs mt-2">© {new Date().getFullYear()} Hakawati AI</span>
       </div>
-    </footer>
-  );
-};
+      <nav aria-label={tr("الأدوات", "Tools")} className="flex flex-col gap-1 text-sm">
+        <strong className="text-white">{tr("الأدوات", "Tools")}</strong>
+        <a href={HOME_PATH} className="text-brand-soft hover:text-indigo-200">{tr('تحويل PDF إلى صوت', 'Arabic PDF to audio')}</a>
+        <a href={otherLanguagePath()} hrefLang={isEn ? 'ar' : 'en'} lang={isEn ? 'ar' : 'en'} className="text-brand-soft hover:text-indigo-200">
+          {isEn ? 'النسخة العربية' : 'English version'}
+        </a>
+        {BOOK_SUMMARIES.length > 0 && <a href={SUMMARIES_HUB_PATH} className="text-brand-soft hover:text-indigo-200">{tr('ملخصات كتب صوتية', 'Audio book summaries')}</a>}
+        <a href={ARTICLES_HUB_PATH} className="text-brand-soft hover:text-indigo-200">{tr('المقالات', 'Articles')}</a>
+        {LANDING_PAGES.map((page) => (
+          <a key={page.slug} href={landingPath(page)} className="text-brand-soft hover:text-indigo-200">
+            {page.linkLabel}
+          </a>
+        ))}
+      </nav>
+      <nav aria-label={tr("الدعم", "Support")} className="flex flex-col gap-1 text-sm">
+        <strong className="text-white">{tr("الدعم", "Support")}</strong>
+        <button type="button" onClick={() => onNavigate('faq')} className="text-start text-brand-soft hover:text-indigo-200 cursor-pointer">{tr("الأسئلة الشائعة", "FAQ")}</button>
+        <button type="button" onClick={() => onNavigate('pricing')} className="text-start text-brand-soft hover:text-indigo-200 cursor-pointer">{tr("الأسعار", "Pricing")}</button>
+        <button type="button" onClick={() => onOpenLegal('privacy')} className="text-start text-brand-soft hover:text-indigo-200 cursor-pointer">{tr("سياسة الخصوصية", "Privacy policy")}</button>
+        <button type="button" onClick={() => onOpenLegal('terms')} className="text-start text-brand-soft hover:text-indigo-200 cursor-pointer">{tr("شروط الاستخدام", "Terms of use")}</button>
+      </nav>
+    </div>
+  </footer>
+);

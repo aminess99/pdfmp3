@@ -1,0 +1,49 @@
+name: Test the paragraph filter
+
+# Runs the site's AI editor prompt (server.ts FILTER_PROMPT) on .github/filter-test.json
+on:
+  push:
+    paths:
+      - .github/filter-test.json
+      - .github/workflows/filter-test.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          cat > t.mjs <<'JS'
+          import fs from 'fs';
+          const src = fs.readFileSync('server.ts', 'utf8');
+          const prompt = src.match(/const FILTER_PROMPT = `([\s\S]*?)`;/)[1];
+          const paras = JSON.parse(fs.readFileSync('.github/filter-test.json', 'utf8'));
+          const list = paras.map((p, i) => `${i + 1}. (${p.split(/\s+/).length} كلمة) ${p.slice(0, 200)}`).join('\n');
+          for (const model of ['google/gemini-2.5-flash-lite', 'google/gemini-2.5-flash']) {
+            const t0 = Date.now();
+            const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ model, temperature: 0, max_tokens: 800, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: `${prompt}\n\nالفقرات:\n${list}` }] }),
+            });
+            const d = await r.json();
+            const c = d.choices?.[0]?.message?.content || JSON.stringify(d).slice(0, 300);
+            console.log(`\n### ${model} | ${Date.now() - t0} ms | cost ${d.usage?.cost}`);
+            console.log(c);
+            try {
+              const drop = new Set(JSON.parse(c.slice(c.indexOf('{'), c.lastIndexOf('}') + 1)).drop);
+              paras.forEach((p, i) => console.log(`${drop.has(i + 1) ? 'DROP' : 'keep'}  ${i + 1}. ${p.slice(0, 70)}`));
+            } catch (e) { console.log('parse error', e.message); }
+          }
+          JS
+          node t.mjs

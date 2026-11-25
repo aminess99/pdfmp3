@@ -6,23 +6,199 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { VOICES } from "./src/data/voices";
+import { LANDING_PAGES, LandingPage, landingAlternates, landingPagesFor, landingPath } from "./src/data/landingPages";
+import { isAdminUser, overview as adminOverview, usersTable as adminUsersTable, recentPayments as adminRecentPayments, giftMinutes as adminGiftMinutes, listeningOverview as adminListening, userListens as adminUserListens } from "./server/admin";
+import { libraryEnabled, listBooks, getBook, saveBook, deleteBook, isValidBookId } from "./server/library";
+import { summaryText } from "./src/data/summaryTexts";
+import { ARTICLES_HUB_PATH, Article, articleAlternates, articlePath, articlesFor, articlesHubFor, articlesHubPath, splitLinks } from "./src/data/articles";
+import { articleText } from "./src/data/articleTexts";
+import { BookSummary, SUMMARIES_HUB, SUMMARIES_HUB_PATH, summariesFor, summariesHubFor, summariesHubPath, summaryAlternates, summaryAudioUrl, summaryCoverUrl, summaryName, summaryPath, upcomingSummariesFor } from "./src/data/summaries";
+import { HOME_CONTENT, HOME_SEO } from "./src/data/homeContent";
+import firebaseConfig from "./src/lib/firebaseConfig";
+import {
+  creditsEnabled,
+  uidFromRequest,
+  secondsForText,
+  isPublicText,
+  getBalance,
+  charge,
+  refund,
+  alreadyCharged,
+  rememberCharge,
+  forgetCharge,
+  userFromRequest,
+  addPurchasedSeconds,
+  findSubscription,
+  recordSubscription,
+  saveCustomerId,
+  customerIdFor,
+  isSubscriber,
+  subscriberUntil,
+  forgetSubscriber,
+  useDailyQuota,
+  recordTtsUsage,
+} from "./server/credits";
+import { recordListen, recordSummaryPlay, firstPlayInWindow, ListenKind } from "./server/listens";
+import { PLANS, paymentsEnabled, planAvailable, createCheckout, verifyWebhook, planOfPayment, billingPortalUrl } from "./server/payments";
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
+
+// Dodo Payments webhook: the signature covers the raw body, so this route must read it
+// before express.json() parses it. Minutes are added only here, never by the client.
+app.post("/api/webhooks/dodo", express.raw({ type: "*/*", limit: "1mb" }), async (req, res) => {
+  const raw = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
+  let event: any;
+  try {
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") headers[k] = v;
+    event = verifyWebhook(raw, headers);
+  } catch (err: any) {
+    console.warn("[payments] rejected webhook:", err?.message || err);
+    return res.status(401).json({ error: "invalid signature" });
+  }
+  try {
+    if (event.type === "payment.succeeded") {
+      const payment = event.data;
+      let uid: string | undefined = payment.metadata?.uid;
+      let plan = planOfPayment(payment);
+      const customerId: string | undefined = payment.customer?.customer_id;
+      // Monthly renewals: find the owner recorded by the first payment of the subscription
+      const subscriptionId: string | undefined = payment.subscription_id || undefined;
+      if (subscriptionId) {
+        const sub = await findSubscription(subscriptionId);
+        if (sub) {
+          uid = uid || sub.uid;
+          plan = plan || sub.plan;
+        } else if (uid && plan) {
+          await recordSubscription(subscriptionId, { uid, plan, customerId });
+        }
+      }
+      if (uid && customerId) await saveCustomerId(uid, customerId);
+      if (!uid || !plan) {
+        console.error("[payments] paid but cannot credit (missing uid/plan):", payment.payment_id, payment.metadata);
+        return res.json({ ok: true });
+      }
+      const result = await addPurchasedSeconds(uid, PLANS[plan].minutes * 60, payment.payment_id, {
+        plan,
+        amount: payment.total_amount,
+        currency: payment.currency,
+        email: payment.customer?.email || null,
+      });
+      forgetSubscriber(uid);
+      console.log(`[payments] ${payment.payment_id}: ${plan} for ${uid} -> ${result}`);
+    }
+    res.json({ ok: true });
+  } catch (err: any) {
+    // 5xx makes Dodo retry; the payments/{id} record keeps the retry from double-crediting
+    console.error("[payments] webhook handling failed:", err?.message || err);
+    res.status(500).json({ error: "retry" });
+  }
+});
 
 app.use(express.json({ limit: "50mb" }));
 
-// Persistent Disk-based Audio Cache Directory
-const AUDIO_CACHE_DIR = path.join(process.cwd(), ".cache", "audio");
-try {
-  if (!fs.existsSync(AUDIO_CACHE_DIR)) {
-    fs.mkdirSync(AUDIO_CACHE_DIR, { recursive: true });
+// Render sits behind a proxy: trust it so req.ip is the visitor's IP
+app.set("trust proxy", 1);
+
+// Once the custom domain works, send visitors and search engines from the old
+// *.onrender.com address to it (enable with REDIRECT_TO_DOMAIN=on). GET/HEAD only,
+// so in-flight API POSTs from an open tab are not broken.
+app.use((req, res, next) => {
+  if (process.env.REDIRECT_TO_DOMAIN !== "on" || !process.env.APP_URL) return next();
+  if (!req.hostname.endsWith(".onrender.com")) return next();
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  res.redirect(301, process.env.APP_URL.replace(/\/+$/, "") + req.originalUrl);
+});
+
+// The AI text tools (summaries, chat, book writing, OCR, chapter detection) need a signed-in
+// user; TTS routes do their own check in gateTts() because the demo texts are public.
+app.use(["/api/ai", "/api/pdf", "/api/book", "/api/tts/fish-audio"], (req, res, next) => {
+  if (req.method !== "POST") return next();
+  requireUser(req, res).then((ok) => ok && next(), next);
+});
+
+// Simple in-memory per-IP rate limit on the paid AI / TTS endpoints, so a
+// single visitor or bot cannot drain the OpenRouter / Gemini credit.
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_PER_MINUTE = Number(process.env.RATE_LIMIT_PER_MINUTE) || 60;
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+app.use(["/api/ai", "/api/tts", "/api/pdf", "/api/book"], (req, res, next) => {
+  if (req.method !== "POST") return next();
+  const ip = req.ip || "unknown";
+  const now = Date.now();
+  let bucket = rateBuckets.get(ip);
+  if (!bucket || bucket.resetAt <= now) {
+    bucket = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+    rateBuckets.set(ip, bucket);
   }
-} catch (e) {
-  console.warn("Audio cache dir creation warning:", e);
+  bucket.count++;
+  if (bucket.count > RATE_LIMIT_PER_MINUTE) {
+    res.set("Retry-After", String(Math.ceil((bucket.resetAt - now) / 1000)));
+    return res.status(429).json({ error: "عدد الطلبات كبير جداً، يرجى المحاولة بعد دقيقة." });
+  }
+  next();
+});
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, bucket] of rateBuckets) {
+    if (bucket.resetAt <= now) rateBuckets.delete(ip);
+  }
+}, 5 * 60_000).unref();
+
+// Generated audio is cached on disk. On Render that must be the persistent disk mounted at
+// /var/data (DATA_DIR overrides it): the app directory is wiped on every deploy.
+function pickAudioCacheDir(): string {
+  const dataDir = process.env.DATA_DIR || "/var/data";
+  // The mount point exists only when the disk is attached; never create it ourselves
+  const candidates = fs.existsSync(dataDir) ? [path.join(dataDir, "audio")] : [];
+  for (const dir of [...candidates, path.join(process.cwd(), ".cache", "audio")]) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.accessSync(dir, fs.constants.W_OK);
+      return dir;
+    } catch {
+      // not mounted or not writable: try the next one
+    }
+  }
+  return path.join(process.cwd(), ".cache", "audio");
 }
+const AUDIO_CACHE_DIR = pickAudioCacheDir();
+const AUDIO_CACHE_PERSISTENT = !AUDIO_CACHE_DIR.startsWith(process.cwd());
+console.log(
+  `[audio-cache] ${AUDIO_CACHE_DIR} (${AUDIO_CACHE_PERSISTENT ? "persistent disk" : "temporary: cleared on every deploy"})`
+);
+
+// Keep the cache under a size budget by deleting the least recently used files
+const AUDIO_CACHE_MAX_BYTES = Number(process.env.AUDIO_CACHE_MAX_GB || 4) * 1024 ** 3;
+function pruneAudioCache(): void {
+  try {
+    const files = fs
+      .readdirSync(AUDIO_CACHE_DIR)
+      .map((name) => {
+        const full = path.join(AUDIO_CACHE_DIR, name);
+        const st = fs.statSync(full);
+        return { full, size: st.size, used: Math.max(st.atimeMs, st.mtimeMs) };
+      })
+      .sort((a, b) => a.used - b.used);
+    let total = files.reduce((n, f) => n + f.size, 0);
+    const before = total;
+    for (const f of files) {
+      if (total <= AUDIO_CACHE_MAX_BYTES * 0.9) break;
+      fs.unlinkSync(f.full);
+      total -= f.size;
+    }
+    console.log(`[audio-cache] ${files.length} files, ${(before / 1024 ** 2).toFixed(0)} MB` + (before !== total ? `, pruned to ${(total / 1024 ** 2).toFixed(0)} MB` : ""));
+  } catch (err: any) {
+    console.warn("[audio-cache] prune failed:", err?.message || err);
+  }
+}
+setTimeout(pruneAudioCache, 30_000).unref();
+setInterval(pruneAudioCache, 6 * 60 * 60_000).unref();
 
 function getAudioDiskCachePath(key: string): string {
   const hash = crypto.createHash("sha256").update(key).digest("hex");
@@ -37,10 +213,13 @@ function getGeminiClient() {
 }
 
 // OpenRouter API helper prioritizing Google Gemini and DeepSeek models
+// `prompt` may be a plain string or an OpenRouter multimodal content array (e.g. text + PDF file).
+// OPENROUTER_TEXT_MODEL (optional env) is tried first for every text request.
 async function callOpenRouter(
-  prompt: string, 
+  prompt: string | any[],
   preferredModel = "google/gemini-2.5-flash",
-  maxTokens: number = 4000
+  maxTokens: number = 4000,
+  timeoutMs: number = 35000
 ): Promise<string | null> {
   const openRouterKey = process.env.OPENROUTER_API_KEY;
   if (!openRouterKey || !openRouterKey.startsWith("sk-or-v1-")) {
@@ -52,6 +231,7 @@ async function callOpenRouter(
   // 2. deepseek/deepseek-chat (DeepSeek V3)
   // 3. meta-llama/llama-3.3-70b-instruct
   const modelsToTry = [
+    process.env.OPENROUTER_TEXT_MODEL,
     preferredModel,
     "google/gemini-2.5-flash",
     "google/gemini-2.5-flash-lite",
@@ -59,20 +239,20 @@ async function callOpenRouter(
     "meta-llama/llama-3.3-70b-instruct",
   ];
 
-  const uniqueModels = [...new Set(modelsToTry)];
+  const uniqueModels = [...new Set(modelsToTry.filter(Boolean) as string[])];
 
   for (const model of uniqueModels) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000);
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${openRouterKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": process.env.APP_URL || "https://ais-applet.local",
-          "X-Title": "PDF to Audio Arabic Studio",
+          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+          "X-Title": "Hakawati AI",
         },
         body: JSON.stringify({
           model,
@@ -103,7 +283,7 @@ async function callOpenRouter(
       }
     } catch (err: any) {
       if (err?.name === "AbortError" || err?.message?.includes("aborted")) {
-        console.info(`[OpenRouter] ${model} timed out after 35s, trying next model.`);
+        console.info(`[OpenRouter] ${model} timed out after ${timeoutMs / 1000}s, trying next model.`);
       } else {
         console.warn(`[OpenRouter] Failed calling ${model}:`, err?.message || err);
       }
@@ -113,9 +293,19 @@ async function callOpenRouter(
   return null;
 }
 
+// pdf.js support files for the browser (src/lib/pdfUtils.ts): character maps, standard fonts,
+// and the JBIG2 / JPEG 2000 decoders scanned books need. Served from the installed package so
+// they always match the library version.
+{
+  const pdfjsRoot = path.join(process.cwd(), "node_modules", "pdfjs-dist");
+  for (const dir of ["cmaps", "standard_fonts", "wasm", "iccs"]) {
+    app.use(`/pdfjs/${dir}`, express.static(path.join(pdfjsRoot, dir), { maxAge: "30d", immutable: true, fallthrough: false }));
+  }
+}
+
 // Health check
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", app: "PDFtoAudio", timestamp: new Date().toISOString() });
+  res.json({ status: "ok", app: "Hakawati AI", timestamp: new Date().toISOString() });
 });
 
 // AI Text-to-Audio Script Summarizer & Diacritics Optimizer
@@ -296,6 +486,28 @@ app.post("/api/pdf/extract", async (req, res) => {
       }
     }
 
+    // 2b. OpenRouter Vision OCR (PDF file input) when Gemini is not configured or failed
+    if (!extractedText || extractedText.length <= 20) {
+      const openRouterOcr = await callOpenRouter(
+        [
+          { type: "text", text: prompt },
+          {
+            type: "file",
+            file: {
+              filename: fileName || "book.pdf",
+              file_data: `data:application/pdf;base64,${cleanBase64}`,
+            },
+          },
+        ],
+        "google/gemini-2.5-flash",
+        16000,
+        120000
+      );
+      if (openRouterOcr && openRouterOcr.length > 20) {
+        extractedText = openRouterOcr;
+      }
+    }
+
     // 3. Fallback: If AI OCR failed (e.g. 429 Quota Exceeded), extract via digital PDF server engine
     if (!extractedText || extractedText.length <= 20) {
       console.log("AI OCR quota exceeded or unavailable. Running digital PDF fallback engine...");
@@ -321,6 +533,316 @@ app.post("/api/pdf/extract", async (req, res) => {
     console.error("PDF AI Extraction Error:", error);
     res.status(500).json({ error: error.message || "فشل استخراج النص من PDF" });
   }
+});
+
+// Progressive OCR for scanned books: a few page images per request (lib/pdfUtils.ts), so only
+// the pages a listener reaches are paid for. Returns the text of each page, in order.
+const OCR_PAGE_SEPARATOR = "<<<صفحة>>>";
+const OCR_PAGES_PROMPT = `أمامك صور صفحات متتالية من كتاب عربي ممسوح ضوئياً. استخرج نص كل صفحة بدقة كما هو مكتوب، دون تلخيص أو إعادة صياغة أو إضافة.
+- افصل بين الصفحات بسطر يحتوي فقط على ${OCR_PAGE_SEPARATOR}، وأخرج الصفحات بنفس ترتيب الصور، صفحة لكل صورة.
+- لا تكتب: أرقام الصفحات (إلا داخل صفحات الفهرس)، ولا العنوان أو اسم المؤلف المكرر أعلى الصفحة أو أسفلها، ولا أرقام الحواشي داخل النص مثل (1).
+- الحواشي في أسفل الصفحة لا تكتبها.
+- تجاهل العلامات المائية والأختام المكررة على الصفحات: روابط المواقع والمنتديات، وعبارات مثل "حصريات" أو "تحميل" أو اسم من رفع الكتاب.
+- اكتب صفحات الفهرس (المحتويات) كما هي: كل عنوان في سطر مع رقم صفحته، وابدأ كل صفحة منها بكلمة "المحتويات" حتى لو كانت تكملة لفهرس بدأ في صفحة سابقة (نستخدمها لأسماء الفصول ولن تُقرأ للمستمع).
+- إذا كانت الصفحة غلافاً، أو صفحة حقوق وطباعة ونشر، أو إعلاناً عن كتب أخرى، أو قائمة فروع وعناوين وأرقام هواتف، أو فارغة، أو صورة بلا نص؛ فاتركها فارغة (لا تكتب شيئاً بين الفاصلين).
+- لا تكرر أي كلمة أو سطر أكثر مما هو مكتوب فعلاً في الصفحة.
+- اكتب العناوين (مثل الفصل الأول أو المقدمة) كل عنوان في سطر مستقل.
+- أخرج النص فقط، دون أي تعليق منك.`;
+
+// Turned off for the rest of the process if OpenRouter refuses it
+let ocrNoThinking = true;
+
+async function ocrImagesOpenRouter(images: string[], info: { model?: string } = {}): Promise<string | null> {
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!key) return null;
+  // Vision models only: a text-only fallback would invent the page
+  for (const model of [process.env.OPENROUTER_OCR_MODEL, "google/gemini-2.5-flash", "google/gemini-2.5-flash-lite"].filter(Boolean) as string[]) {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 90000);
+      // Copying text off a page needs no "thinking": it is billed as output and only slows the
+      // scan. If a provider refuses the setting, the same request goes again without it.
+      const send = (noThinking: boolean) =>
+        fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+            "X-Title": "Hakawati AI",
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0,
+            max_tokens: 2500 * images.length,
+            ...(noThinking ? { reasoning: { max_tokens: 0 } } : {}),
+            messages: [
+              {
+                role: "user",
+                content: [{ type: "text", text: OCR_PAGES_PROMPT }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))],
+              },
+            ],
+          }),
+          signal: controller.signal,
+        });
+      let r = await send(ocrNoThinking);
+      if (r.status === 400 && ocrNoThinking) {
+        console.warn(`[OCR] ${model} refused reasoning=0 (${(await r.text()).slice(0, 200)}); sending without it`);
+        ocrNoThinking = false;
+        r = await send(false);
+      }
+      clearTimeout(t);
+      if (r.ok) {
+        const data: any = await r.json();
+        const text = data.choices?.[0]?.message?.content;
+        const u = data.usage || {};
+        const cost = u.cost !== undefined ? " cost " + u.cost + " USD" : "";
+        console.log(`[OCR usage] ${model} in ${u.prompt_tokens ?? "?"} out ${u.completion_tokens ?? "?"} thinking ${u.completion_tokens_details?.reasoning_tokens ?? 0}${cost}`);
+        if (typeof text === "string" && text.replace(/\s+/g, "").length > 0) {
+          info.model = model;
+          return text;
+        }
+        console.warn(`[OCR] ${model} returned an empty reply`);
+      } else {
+        console.warn(`[OCR] ${model} returned ${r.status}:`, (await r.text()).slice(0, 300));
+      }
+    } catch (err: any) {
+      console.warn(`[OCR] ${model} failed:`, err?.message || err);
+    }
+  }
+  return null;
+}
+
+app.post("/api/pdf/ocr-pages", async (req, res) => {
+  const t0 = Date.now();
+  const images: unknown = req.body?.images;
+  if (!Array.isArray(images) || images.length === 0 || images.length > 6) {
+    return res.status(400).json({ error: "صور الصفحات مطلوبة (6 كحد أقصى)." });
+  }
+  const valid = images.map((u) => (typeof u === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(u) && u.length < 4_000_000 ? u : ""));
+  const present = valid.filter(Boolean);
+  if (present.length < images.length) {
+    console.warn(`[OCR] ${images.length - present.length} of ${images.length} page images rejected (sizes: ${images.map((u) => (typeof u === "string" ? u.length : 0)).join(",")})`);
+  }
+  // Every image was unusable: say so instead of returning blank pages that look like a read
+  if (present.length === 0) return res.status(422).json({ error: "صور الصفحات غير صالحة للمسح الضوئي." });
+
+  // A reply with almost no text for a whole group of pages is a failed read (some models
+  // answer empty in a second), not blank pages: try the next model
+  const sepCount = (t: string) => t.split(OCR_PAGE_SEPARATOR).length - 1;
+  const looksRead = (t: string | null): t is string =>
+    typeof t === "string" && (t.replace(new RegExp(OCR_PAGE_SEPARATOR, "g"), "").replace(/\s+/g, "").length >= 40 * present.length || (present.length > 1 && sepCount(t) >= present.length - 1 && t.replace(/\s+/g, "").length > 60));
+
+  // OpenRouter's gemini-2.5-flash first: tested on real scanned Arabic books
+  const used: { model?: string } = {};
+  let raw: string | null = await ocrImagesOpenRouter(present, used);
+  if (!looksRead(raw)) {
+    const ai = getGeminiClient();
+    if (ai) {
+      for (const model of ["gemini-flash-latest", "gemini-3.1-flash-lite"]) {
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents: [
+              ...present.map((u) => ({ inlineData: { mimeType: u.slice(5, u.indexOf(";")), data: u.slice(u.indexOf(",") + 1) } })),
+              { text: OCR_PAGES_PROMPT },
+            ],
+            config: { temperature: 0 },
+          } as any);
+          if (looksRead(response.text ?? null)) {
+            raw = response.text as string;
+            used.model = `gemini-direct:${model}`;
+            break;
+          }
+          console.warn(`[OCR] Gemini ${model} returned almost no text (${(response.text || "").length} chars)`);
+        } catch (err: any) {
+          console.warn(`[OCR] Gemini ${model} failed:`, err?.message || err);
+        }
+      }
+    }
+  }
+  // Every model read (almost) nothing: genuinely blank pages, or keep what we got
+  if (raw === null) return res.status(502).json({ error: "تعذّر المسح الضوئي الآن، حاول بعد قليل." });
+  // Markdown the model may add (bold, headings) would be read aloud
+  raw = raw.replace(/\*\*|__|^#{1,6}\s+/gm, "");
+  // A repetition loop ("تليفون تليفون ...") is a misread, not text: collapse runs of the same word
+  raw = raw.replace(/(^|\s)(\S+)(?:\s+\2){2,}(?=\s|$)/g, "$1$2");
+
+  const parts = raw.split(OCR_PAGE_SEPARATOR).map((p) => p.trim());
+  // Map the model's pages back to the requested ones (pages that failed to render stay empty)
+  let k = 0;
+  const pages = valid.map((u) => (u ? parts[k++] || "" : ""));
+  // One line per request, to see what each scan really returned
+  console.log(
+    `[OCR] ${present.length} pages, image KB ${present.map((u) => Math.round(u.length / 1365)).join("/")}, model ${used.model || "none"}, ` +
+      `reply ${raw.length} chars, page chars ${pages.map((p) => p.length).join("/")}, ${Date.now() - t0} ms`
+  );
+  // The model ignored the separator: keep the text rather than lose it
+  if (parts.length === 1 && present.length > 1) {
+    pages.fill("");
+    pages[valid.findIndex(Boolean)] = parts[0];
+  }
+  res.json({ pages });
+});
+
+// AI editor for book text before it is read aloud (src/lib/smartFilter.ts): gets the start of
+// each paragraph and answers with the numbers of paragraphs a listener doesn't need. It only
+// selects; it never rewrites, so the book's words can't be changed.
+const FILTER_PROMPT = `أنت محرر كتب صوتية. أمامك فقرات مرقّمة من كتاب (أول كلمات كل فقرة وعدد كلماتها) سيُقرأ بصوت عالٍ لمستمع.
+حدّد أرقام الفقرات التي لا يحتاجها المستمع، مثل:
+- بيانات الناشر والطبعة والحقوق ورقم الإيداع وردمك والمطبعة وتصميم الغلاف
+- العناوين والفروع وأرقام الهواتف والبريد الإلكتروني والروابط والمواقع
+- الإعلانات عن كتب أخرى أو مواقع أو منتديات أو قنوات، وعبارات التحميل والعلامات المائية
+- الفهارس وجداول المحتويات وقوائم المراجع والمصادر وفهارس الأعلام، ومنها قوائم العناوين أو الأسئلة المتتالية بلا شرح (مثل "كيف يطرد الإيحاء المخاوف؟ كيف استعادت ذاكرتها؟ ...") فهي تكملة للفهرس
+- أرقام الصفحات والعناوين المتكررة أعلى الصفحات أو أسفلها، والحواشي وهوامش التوثيق
+- الأسطر المشوّهة أو غير المفهومة أو المكررة بلا معنى
+- صفحات المديح والتزكيات ("قالوا عن الكتاب"): اقتباسات قصيرة موقّعة باسم ومهنة وبلد
+- قوائم مؤلفات الكاتب الأخرى وبيانات التواصل معه وحساباته (أما نبذة حياة المؤلف فتُبقى)
+لا تحذف أي فقرة من متن الكتاب: المقدمة والتمهيد والإهداء وعناوين الفصول والفقرات والاقتباسات والأمثلة والحوار والشعر.
+عند الشك أبقِ الفقرة.
+وحدّد أيضاً الفقرات التي هي عنوان فصل أو باب أو قسم رئيسي في الكتاب (فقرة قصيرة هي العنوان وحده، مثل "الفصل الأول: كنز في داخلك" أو "كيف يعمل عقلك")، مع اسم الفصل كما هو مكتوب. لا تعدّ العناوين الفرعية الصغيرة داخل الفصل، ولا أسطر الفهرس، ولا العنوان المكرر أعلى الصفحات.
+أجب بـ JSON فقط بهذا الشكل: {"drop": [أرقام الفقرات المحذوفة], "headings": [{"n": رقم الفقرة, "title": "اسم الفصل"}]}، واترك أي قائمة فارغة إذا لم يوجد ما يناسبها.`;
+
+app.post("/api/pdf/filter-paragraphs", async (req, res) => {
+  const paragraphs: unknown = req.body?.paragraphs;
+  if (!Array.isArray(paragraphs) || paragraphs.length === 0 || paragraphs.length > 150) {
+    return res.status(400).json({ error: "paragraphs required (1-150)" });
+  }
+  const list = paragraphs
+    .map((p: any, i) => `${i + 1}. (${Number(p?.words) || 0} كلمة) ${String(p?.text ?? "").slice(0, 200).replace(/\s+/g, " ")}`)
+    .join("\n");
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!key) return res.json({ drop: [] });
+  const t0 = Date.now();
+  for (const model of [process.env.OPENROUTER_FILTER_MODEL, "google/gemini-2.5-flash", "google/gemini-2.5-flash-lite"].filter(Boolean) as string[]) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+          "X-Title": "Hakawati AI",
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          max_tokens: 1500,
+          response_format: { type: "json_object" },
+          messages: [{ role: "user", content: `${FILTER_PROMPT}\n\nالفقرات:\n${list}` }],
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!r.ok) {
+        console.warn(`[filter] ${model} returned ${r.status}`);
+        continue;
+      }
+      const data: any = await r.json();
+      const content = String(data.choices?.[0]?.message?.content || "");
+      const json = JSON.parse(content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1));
+      const drop = (Array.isArray(json.drop) ? json.drop : [])
+        .map((n: unknown) => Number(n))
+        .filter((n: number) => Number.isInteger(n) && n >= 1 && n <= paragraphs.length);
+      const headings = (Array.isArray(json.headings) ? json.headings : [])
+        .map((h: any) => ({ n: Number(h?.n), title: String(h?.title ?? "").trim().slice(0, 120) }))
+        .filter((h: { n: number; title: string }) => Number.isInteger(h.n) && h.n >= 1 && h.n <= paragraphs.length && h.title && !drop.includes(h.n));
+      console.log(`[filter] ${paragraphs.length} paragraphs, dropped ${drop.length} (${drop.slice(0, 20).join(",")}), headings ${headings.length} via ${model}, ${Date.now() - t0} ms`);
+      return res.json({ drop, headings });
+    } catch (err: any) {
+      console.warn(`[filter] ${model} failed:`, err?.message || err);
+    }
+  }
+  res.json({ drop: [], headings: [] });
+});
+
+// A title (and author) for a book whose file name says nothing ("69fb610a9299e.pdf") or for
+// pasted text without a title: read from the opening text (src/components/ConversionTool.tsx)
+app.post("/api/pdf/book-title", async (req, res) => {
+  const text = String(req.body?.text ?? "").slice(0, 3000);
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!text.trim() || !key) return res.json({ title: "", author: "" });
+  const prompt = `هذا بداية نص كتاب أو مقال (قد تحتوي على الغلاف وصفحة العنوان). ما عنوانه؟ وما اسم مؤلفه إن ذُكر؟
+- إذا كان العنوان مكتوباً في النص فانقله كما هو.
+- إذا لم يُذكر عنوان، فاقترح عنواناً عربياً قصيراً (2 إلى 6 كلمات) يصف موضوع النص بدقة، دون مبالغة.
+- لا تذكر مؤلفاً غير مكتوب في النص.
+أجب بـ JSON فقط: {"title": "...", "author": "..."} (اترك author فارغاً إذا لم يُذكر).
+
+النص:
+${text}`;
+  for (const model of ["google/gemini-2.5-flash", "google/gemini-2.5-flash-lite"]) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+          "X-Title": "Hakawati AI",
+        },
+        body: JSON.stringify({ model, temperature: 0, max_tokens: 300, response_format: { type: "json_object" }, messages: [{ role: "user", content: prompt }] }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!r.ok) continue;
+      const data: any = await r.json();
+      const content = String(data.choices?.[0]?.message?.content || "");
+      const json = JSON.parse(content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1));
+      const clean = (v: unknown, max: number) => String(v ?? "").replace(/[\r\n]+/g, " ").replace(/[<>]/g, "").trim().slice(0, max);
+      return res.json({ title: clean(json.title, 90), author: clean(json.author, 60) });
+    } catch (err: any) {
+      console.warn(`[book-title] ${model} failed:`, err?.message || err);
+    }
+  }
+  res.json({ title: "", author: "" });
+});
+
+// The book's own chapter names from its contents page(s) (src/components/ConversionTool.tsx):
+// shown in the studio as the chapters still to come, and used to recognise headings in the text
+app.post("/api/pdf/toc", async (req, res) => {
+  const text = String(req.body?.text ?? "").slice(0, 8000);
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!text.trim() || !key) return res.json({ chapters: [] });
+  const prompt = `هذا نص صفحة الفهرس (المحتويات) من كتاب. استخرج عناوين فصوله وأبوابه **الرئيسية فقط** بالترتيب كما هي مكتوبة، دون أرقام الصفحات ودون النقاط الفاصلة ودون رقم الفصل في أول العنوان. الفصول الرئيسية تكون عادة مرقّمة أو بخط أكبر، وتحتها عناوين فرعية كثيرة: لا تُدرج العناوين الفرعية. تجاهل ما ليس فصلاً (مثل كلمة "المحتويات" نفسها). إذا لم يكن النص فهرساً فأرجع قائمة فارغة.
+أجب بـ JSON فقط: {"chapters": ["العنوان الأول", "العنوان الثاني"]}
+
+النص:
+${text}`;
+  for (const model of ["google/gemini-2.5-flash", "google/gemini-2.5-flash-lite"]) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+          "X-Title": "Hakawati AI",
+        },
+        body: JSON.stringify({ model, temperature: 0, max_tokens: 2000, response_format: { type: "json_object" }, messages: [{ role: "user", content: prompt }] }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!r.ok) continue;
+      const data: any = await r.json();
+      const content = String(data.choices?.[0]?.message?.content || "");
+      const json = JSON.parse(content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1));
+      const chapters = (Array.isArray(json.chapters) ? json.chapters : [])
+        .map((t: unknown) => String(t ?? "").trim().replace(/^[0-9٠-٩]+\s*[-–.)]?\s*/, "").slice(0, 120))
+        .filter(Boolean)
+        .slice(0, 80);
+      console.log(`[toc] ${chapters.length} chapters via ${model}`);
+      return res.json({ chapters });
+    } catch (err: any) {
+      console.warn(`[toc] ${model} failed:`, err?.message || err);
+    }
+  }
+  res.json({ chapters: [] });
 });
 
 // Local High-Fidelity Arabic Extractive Summary Fallback (Activates if AI free quota is exceeded)
@@ -407,7 +929,39 @@ function localExtractKeyPoints(text: string, bookTitle?: string): string {
 }
 
 // AI Book Listening Mode Transformer: Generates Executive Summaries (10m) or Key Points (50%)
-app.post("/api/book/transform-mode", async (req, res) => {
+// A summary reads the whole book: Gemini Flash takes ~1M tokens, so a 300-page book
+// (~600k Arabic characters) fits in one request. Longer texts keep their start, middle and end.
+const SUMMARY_MAX_CHARS = 700000;
+function bookForSummary(text: string): string {
+  if (text.length <= SUMMARY_MAX_CHARS) return text;
+  const part = Math.floor(SUMMARY_MAX_CHARS / 3);
+  const mid = Math.floor(text.length / 2 - part / 2);
+  return `${text.slice(0, part)}\n\n[…]\n\n${text.slice(mid, mid + part)}\n\n[…]\n\n${text.slice(-part)}`;
+}
+
+// Summaries are kept on the persistent disk next to the audio clips
+const SUMMARY_CACHE_DIR = path.join(AUDIO_CACHE_DIR, "summaries");
+function summaryCacheKey(mode: string, title: string | undefined, text: string): string {
+  return crypto.createHash("sha256").update(`${mode}\n${title || ""}\n${text}`).digest("hex").slice(0, 40);
+}
+function readSummaryCache(key: string): string | null {
+  try {
+    return fs.readFileSync(path.join(SUMMARY_CACHE_DIR, `${key}.txt`), "utf8") || null;
+  } catch {
+    return null;
+  }
+}
+function writeSummaryCache(key: string, text: string): void {
+  try {
+    fs.mkdirSync(SUMMARY_CACHE_DIR, { recursive: true });
+    fs.writeFileSync(path.join(SUMMARY_CACHE_DIR, `${key}.txt`), text);
+  } catch {
+    // a cache miss next time is fine
+  }
+}
+
+// The client calls /api/ai/transform-book; keep the original path too
+app.post(["/api/book/transform-mode", "/api/ai/transform-book"], async (req, res) => {
   try {
     const { text, mode, bookTitle } = req.body;
     if (!text || typeof text !== "string" || !text.trim()) {
@@ -417,6 +971,7 @@ app.post("/api/book/transform-mode", async (req, res) => {
     if (!mode || mode === "full") {
       return res.json({ success: true, transformedText: text.trim(), mode: "full" });
     }
+    if (!(await useFreeDaily(req, res, "transform"))) return;
 
     const titleContext = bookTitle ? `عنوان الكتاب: "${bookTitle}"` : "";
 
@@ -442,7 +997,7 @@ ${titleContext}
 - اكتب النص الصوتي كاملاً مباشرة دون أي مقدمات أو تعليقات خارجية.
 
 النص المصدري للكتاب:
-${text.slice(0, 45000)}`;
+${bookForSummary(text)}`;
     } else if (mode === "key_points") {
       prompt = `أنت خبير إعداد الكتب الصوتية واستخلاص الرؤى الجوهرية.
 ${titleContext}
@@ -470,13 +1025,23 @@ ${titleContext}
 اكتب النص مباشرة دون أي مقدمات أو اعتذارات.
 
 النص الأصلي للكتاب:
-${text.slice(0, 35000)}`;
+${bookForSummary(text)}`;
     }
+
+    // The same book and mode asked again: answer from the cache (no new cost)
+    const cacheKey = summaryCacheKey(mode, bookTitle, text);
+    const cached = readSummaryCache(cacheKey);
+    if (cached) {
+      console.log(`[summary] ${mode} from cache (${text.length} chars)`);
+      return res.json({ success: true, transformedText: cached, mode, cached: true });
+    }
+    const t0 = Date.now();
 
     let transformedText = "";
 
     // 1. First priority: OpenRouter with Google Gemini (Massive context, deep narrative Arabic, full 10-minute output)
-    const openRouterResult = await callOpenRouter(prompt, "google/gemini-2.5-flash", 4000);
+    // A whole book (up to ~200k tokens) takes longer to read than a chapter
+    const openRouterResult = await callOpenRouter(prompt, "google/gemini-2.5-flash", 8000, text.length > 60000 ? 120000 : 45000);
     if (openRouterResult && openRouterResult.length > 30) {
       transformedText = openRouterResult;
     }
@@ -501,6 +1066,11 @@ ${text.slice(0, 35000)}`;
           }
         }
       }
+    }
+
+    if (transformedText.length > 30) {
+      writeSummaryCache(cacheKey, transformedText);
+      console.log(`[summary] ${mode} of ${text.length} chars -> ${transformedText.length} chars, ${Date.now() - t0} ms`);
     }
 
     // 3. High quality local fallback if AI services or quota are momentarily exhausted
@@ -630,8 +1200,7 @@ app.post("/api/ai/extract-chapters", async (req, res) => {
     const readerVoice = voiceName || "القارئ الصوتي";
 
     const ai = getGeminiClient();
-    if (ai) {
-      const prompt = `أنت كبير مخرجي ومنتجي الكتب الصوتية الاحترافية باللغة العربية (Audiobook Executive Producer).
+    const prompt = `أنت كبير مخرجي ومنتجي الكتب الصوتية الاحترافية باللغة العربية (Audiobook Executive Producer).
 قم بفحص النص التالي من الكتاب واستخراج البيانات بدقة متناهية:
 
 المطلوب بدقة:
@@ -640,7 +1209,7 @@ app.post("/api/ai/extract-chapters", async (req, res) => {
 3. إذا وجدت فصولاً حقيقية: قسّم الكتاب وفقاً لعناوين فصول المؤلف الأصلية حرفياً، واستخرج نص كل فصل منقّى من أرقام الصفحات والهوامش.
 4. إذا لم تجد فصولاً أو فهارس أصلية واضحة: قسّم النص تلقائياً إلى 3 إلى 8 أجزاء منطقية متوازنة بأسماء معبرة (مثل: "الجزء الأول: المقدمة والتمهيد"، "الجزء الثاني: صلب الموضوع"... إلخ).
 5. صِغ مقدمة صوتية افتتاحية فخمة ومشوقة (Cinematic Audio Intro) باللغة العربية الفصحى لوضعها في بداية الفصل الأول على هذا النمط:
-   "كتاب: [اسم الكتاب] .. للكاتب: [اسم المؤلف أو الكاتب إن وجد] .. بصوت: ${readerVoice} .. إنتاج منصة PDF to Audio .. استماعاً ممتعاً."
+   "كتاب: [اسم الكتاب] .. للكاتب: [اسم المؤلف أو الكاتب إن وجد] .. بصوت: ${readerVoice} .. إنتاج منصة Hakawati AI .. استماعاً ممتعاً."
 
 أرجع النتيجة بصيغة JSON حصراً على هذا الشكل الدقيق:
 {
@@ -659,6 +1228,8 @@ app.post("/api/ai/extract-chapters", async (req, res) => {
 نص الكتاب المراد تحليله:
 ${trimmedInput.slice(0, 35000)}`;
 
+    let rawJson = "";
+    if (ai) {
       try {
         const response = await ai.models.generateContent({
           model: "gemini-3.8-flash",
@@ -667,32 +1238,44 @@ ${trimmedInput.slice(0, 35000)}`;
             responseMimeType: "application/json",
           }
         });
-
-        const rawJson = response.text?.trim() || "";
-        if (rawJson) {
-          const parsed = JSON.parse(rawJson);
-          if (parsed && Array.isArray(parsed.chapters) && parsed.chapters.length > 0) {
-            // Prepend cinematic audio intro to the first chapter if provided
-            if (parsed.cinematicIntro && parsed.chapters[0]) {
-              const introPrefix = `🎙️ ${parsed.cinematicIntro.trim()}\n\n---\n\n`;
-              if (!parsed.chapters[0].text.startsWith('🎙️')) {
-                parsed.chapters[0].text = introPrefix + parsed.chapters[0].text;
-              }
-            }
-
-            return res.json({
-              success: true,
-              bookTitle: parsed.bookTitle || defaultTitle,
-              authorName: parsed.authorName || "",
-              isOriginalTOC: Boolean(parsed.isOriginalTOC),
-              cinematicIntro: parsed.cinematicIntro || "",
-              chapters: parsed.chapters
-            });
-          }
-        }
+        rawJson = response.text?.trim() || "";
       } catch (geminiErr: any) {
-        console.warn("AI chapter parsing note, using local engine:", geminiErr?.message || geminiErr);
+        console.warn("Gemini chapter parsing unavailable:", geminiErr?.message || geminiErr);
       }
+    }
+
+    // OpenRouter fallback (strip ```json fences some models add)
+    if (!rawJson) {
+      const openRouterJson = await callOpenRouter(prompt, "google/gemini-2.5-flash", 16000, 120000);
+      if (openRouterJson) {
+        rawJson = openRouterJson.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+      }
+    }
+
+    try {
+      if (rawJson) {
+        const parsed = JSON.parse(rawJson);
+        if (parsed && Array.isArray(parsed.chapters) && parsed.chapters.length > 0) {
+          // Prepend cinematic audio intro to the first chapter if provided
+          if (parsed.cinematicIntro && parsed.chapters[0]) {
+            const introPrefix = `🎙️ ${parsed.cinematicIntro.trim()}\n\n---\n\n`;
+            if (!parsed.chapters[0].text.startsWith('🎙️')) {
+              parsed.chapters[0].text = introPrefix + parsed.chapters[0].text;
+            }
+          }
+
+          return res.json({
+            success: true,
+            bookTitle: parsed.bookTitle || defaultTitle,
+            authorName: parsed.authorName || "",
+            isOriginalTOC: Boolean(parsed.isOriginalTOC),
+            cinematicIntro: parsed.cinematicIntro || "",
+            chapters: parsed.chapters
+          });
+        }
+      }
+    } catch (parseErr: any) {
+      console.warn("AI chapter parsing note, using local engine:", parseErr?.message || parseErr);
     }
 
     res.json({ success: false, message: "fallback to local regex" });
@@ -733,7 +1316,36 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitsPe
   return Buffer.concat([wavHeader, pcmBuffer]);
 }
 
+// The voice's dialect/style instruction, looked up in the trusted VOICES list (not taken
+// from the client). Gemini 3.8 TTS reads the text field verbatim, so this must never be
+// prepended to the text: it goes in OpenRouter's separate `instructions` field.
+// Set TTS_STYLE_PROMPT=off to send no instruction.
+function ttsStyleFor(voice?: any): string | undefined {
+  if (process.env.TTS_STYLE_PROMPT === "off") return undefined;
+  return VOICES.find((v) => v.id === voice?.id)?.stylePrompt?.trim() || undefined;
+}
+
+// Bump when the way audio is generated changes, so cached clips made the old way are not reused
+const TTS_CACHE_VERSION = "v2";
+
 // Synthesize audio using google/gemini-3.8-flash-lite-tts via OpenRouter with system instructions & dialect prompting
+// OpenRouter reserves credit for every request in flight: with a low balance, many requests at
+// once are refused ("would exceed your available credits given your current in-flight
+// requests") even though each one alone would pass. Keep a few in flight; the rest wait.
+const TTS_MAX_PARALLEL = Number(process.env.TTS_MAX_PARALLEL) || 4;
+let ttsInFlight = 0;
+const ttsQueue: (() => void)[] = [];
+async function withTtsSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (ttsInFlight >= TTS_MAX_PARALLEL) await new Promise<void>((resolve) => ttsQueue.push(resolve));
+  ttsInFlight++;
+  try {
+    return await fn();
+  } finally {
+    ttsInFlight--;
+    ttsQueue.shift()?.();
+  }
+}
+
 async function synthesizeWithOpenRouterGeminiTts(
   text: string,
   options: { voice?: any; speed?: number; preferredModel?: string } = {}
@@ -747,7 +1359,7 @@ async function synthesizeWithOpenRouterGeminiTts(
   const isFemale = voice?.gender === "female";
   const voiceName = voice?.geminiVoiceName || (isFemale ? "Kore" : "Puck");
 
-  const inputForSpeech = `${text}`;
+  const instructions = ttsStyleFor(voice);
 
   // List of active Gemini TTS models on OpenRouter (Notice: Gemini TTS strictly requires response_format: "pcm")
   const ttsModelsToTry = [
@@ -759,42 +1371,57 @@ async function synthesizeWithOpenRouterGeminiTts(
   const uniqueModels = [...new Set(ttsModelsToTry)];
 
   // Method 1: Try OpenRouter /audio/speech endpoint with response_format="pcm"
-  for (const model of uniqueModels) {
+  for (let m = 0, inFlightRetries = 0; m < uniqueModels.length; m++) {
+    const model = uniqueModels[m];
     try {
+      // The 20 s limit starts when the request is sent, not while it waits for a slot
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-      const res = await fetch("https://openrouter.ai/api/v1/audio/speech", {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const res = await withTtsSlot(() => {
+        timeoutId = setTimeout(() => controller.abort(), 20000);
+        return fetch("https://openrouter.ai/api/v1/audio/speech", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${openRouterKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": process.env.APP_URL || "https://ais-applet.local",
-          "X-Title": "PDF to Audio Arabic Studio",
+          "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+          "X-Title": "Hakawati AI",
         },
         body: JSON.stringify({
           model,
-          input: inputForSpeech,
+          input: text,
+          ...(instructions ? { instructions } : {}),
           voice: voiceName,
           speed: Number(speed) || 1.0,
           response_format: "pcm",
         }),
         signal: controller.signal,
+      }).then(async (r) => ({ r, body: r.ok ? Buffer.from(await r.arrayBuffer()) : null, errText: r.ok ? "" : await r.text().catch(() => "") }));
       });
 
       clearTimeout(timeoutId);
 
-      if (res.ok) {
-        const arrayBuf = await res.arrayBuffer();
-        const pcmRaw = Buffer.from(arrayBuf);
+      if (res.r.ok && res.body) {
+        const pcmRaw = res.body;
         if (pcmRaw.length > 200) {
           const wavBuffer = pcmToWav(pcmRaw, 24000, 1, 16);
           console.log(`[OpenRouter Audio/Speech] Generated successfully with model: ${model}, voice: ${voiceName}, wav size: ${wavBuffer.length} bytes`);
           return { buffer: wavBuffer, contentType: "audio/wav", engine: `openrouter-${model}` };
         }
       } else {
-        const errText = await res.text().catch(() => "");
-        console.warn(`[OpenRouter Audio/Speech] ${model} status ${res.status}:`, errText.slice(0, 150));
+        const errText = res.errText;
+        console.warn(`[OpenRouter Audio/Speech] ${model} status ${res.r.status}:`, errText.slice(0, 150));
+        if (res.r.status === 402) {
+          // Credit held by requests in flight: wait for them and retry the same model. Out of
+          // credit: the other models would be refused too.
+          if (/in-flight/i.test(errText) && inFlightRetries < 2) {
+            inFlightRetries++;
+            m--;
+            await new Promise((r) => setTimeout(r, 2000 * inFlightRetries));
+            continue;
+          }
+          break;
+        }
       }
     } catch (e: any) {
       if (e?.name === "AbortError" || e?.message?.includes("aborted")) {
@@ -903,16 +1530,322 @@ app.get("/api/tts/status", (req, res) => {
 // Priority 1: google/gemini-3.8-flash-lite-tts via OpenRouter
 // Priority 2: Direct Google Gemini 3.8 Flash-Lite TTS (Google GenAI)
 // Priority 3: Fish Audio S2.1 Pro
-app.post("/api/tts/speak", async (req, res) => {
+// Listening minutes: anyone may hear the public demo texts; everything else needs a signed-in
+// user with enough balance. Returns null when it already answered (401/402), otherwise a refund
+// function to call if generation fails.
+async function gateTts(
+  req: express.Request,
+  res: express.Response,
+  text: string,
+  chargeKey: string,
+  listen?: { title?: unknown; kind?: unknown }
+): Promise<(() => Promise<void>) | null> {
+  const noop = async () => {};
+  if (!creditsEnabled() || isPublicText(text)) return noop;
+  const uid = await uidFromRequest(req);
+  if (!uid) {
+    res.status(401).json({ code: "auth_required", error: "سجّل الدخول للاستماع إلى نصوصك وكتبك." });
+    return null;
+  }
+  if (alreadyCharged(uid, chargeKey)) return noop;
+  const seconds = secondsForText(text);
+  const result = await charge(uid, seconds);
+  if (!result.ok) {
+    res.status(402).json({ code: "insufficient_credits", remainingSeconds: result.remaining, error: "رصيد دقائقك لا يكفي." });
+    return null;
+  }
+  rememberCharge(uid, chargeKey);
+  // For the admin's listening log (what was heard, by whom)
+  const kind: ListenKind = listen?.kind === "book" || listen?.kind === "summary" ? listen.kind : "text";
+  recordListen(uid, listen?.title, kind, seconds);
+  res.setHeader("X-Credits-Remaining", String(result.remaining));
+  return async () => {
+    forgetCharge(uid, chargeKey);
+    await refund(uid, seconds);
+  };
+}
+
+// Signed-in check for the AI text tools (they spend the OpenRouter credit too)
+async function requireUser(req: express.Request, res: express.Response): Promise<boolean> {
+  if (!creditsEnabled()) return true;
+  if (await uidFromRequest(req)) return true;
+  res.status(401).json({ code: "auth_required", error: "سجّل الدخول لاستخدام أدوات الذكاء الاصطناعي." });
+  return false;
+}
+
+// ---- Library: signed-in users' books on the persistent disk (server/library.ts)
+async function libraryUser(req: express.Request, res: express.Response): Promise<string | null> {
+  if (!creditsEnabled() || !libraryEnabled()) {
+    res.status(503).json({ code: "library_unavailable" });
+    return null;
+  }
+  const uid = await uidFromRequest(req);
+  if (!uid) res.status(401).json({ code: "auth_required" });
+  return uid;
+}
+
+app.get("/api/library", async (req, res) => {
+  const uid = await libraryUser(req, res);
+  if (!uid) return;
   try {
-    const { text, voice, speed = 1.0 } = req.body;
+    res.json({ books: listBooks(uid) });
+  } catch (err: any) {
+    console.error("[library] list", err?.message || err);
+    res.status(500).json({ error: "تعذّر تحميل المكتبة." });
+  }
+});
+
+app.get("/api/library/:id", async (req, res) => {
+  const uid = await libraryUser(req, res);
+  if (!uid) return;
+  if (!isValidBookId(req.params.id)) return res.status(400).json({ error: "bad id" });
+  try {
+    const book = getBook(uid, req.params.id);
+    if (!book) return res.status(404).json({ error: "not found" });
+    res.json({ book });
+  } catch (err: any) {
+    console.error("[library] get", err?.message || err);
+    res.status(500).json({ error: "تعذّر تحميل الكتاب." });
+  }
+});
+
+app.put("/api/library/:id", async (req, res) => {
+  const uid = await libraryUser(req, res);
+  if (!uid) return;
+  const book = req.body?.book;
+  if (!book || book.id !== req.params.id) return res.status(400).json({ error: "bad book" });
+  try {
+    // Free accounts keep a few books on the server; subscribers keep as many as they like
+    const isNew = !listBooks(uid).some((b) => b.id === book.id);
+    if (isNew && listBooks(uid).length >= FREE_LIBRARY_BOOKS && !(await isSubscriber(uid))) {
+      return res.status(403).json({ code: "subscription_required", feature: "library", error: SUBSCRIBE_MESSAGES.library });
+    }
+    const result = saveBook(uid, book);
+    if (!result.ok) return res.status(result.status).json({ code: result.error });
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[library] save", err?.message || err);
+    res.status(500).json({ error: "تعذّر حفظ الكتاب." });
+  }
+});
+
+app.delete("/api/library/:id", async (req, res) => {
+  const uid = await libraryUser(req, res);
+  if (!uid) return;
+  if (!isValidBookId(req.params.id)) return res.status(400).json({ error: "bad id" });
+  try {
+    deleteBook(uid, req.params.id);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[library] delete", err?.message || err);
+    res.status(500).json({ error: "تعذّر حذف الكتاب." });
+  }
+});
+
+// Starts a hosted Dodo checkout for one of the plans and returns its URL
+app.post("/api/checkout", async (req, res) => {
+  const plan = String(req.body?.plan || "");
+  if (!paymentsEnabled() || !planAvailable(plan) || !creditsEnabled()) {
+    return res.status(503).json({ code: "payments_unavailable" });
+  }
+  const user = await userFromRequest(req);
+  if (!user) return res.status(401).json({ code: "auth_required" });
+  try {
+    res.json({ url: await createCheckout(plan, user.uid, user.email, SITE_URL) });
+  } catch (err: any) {
+    console.error("[payments] checkout failed:", err?.message || err);
+    res.status(502).json({ error: "تعذّر بدء الدفع الآن، حاول بعد قليل." });
+  }
+});
+
+// Link to Dodo's customer portal to manage or cancel the monthly plan
+app.post("/api/billing-portal", async (req, res) => {
+  if (!paymentsEnabled() || !creditsEnabled()) return res.status(503).json({ code: "payments_unavailable" });
+  const user = await userFromRequest(req);
+  if (!user) return res.status(401).json({ code: "auth_required" });
+  try {
+    const customerId = await customerIdFor(user.uid);
+    if (!customerId) return res.status(404).json({ code: "no_subscription" });
+    res.json({ url: await billingPortalUrl(customerId, SITE_URL) });
+  } catch (err: any) {
+    console.error("[payments] portal failed:", err?.message || err);
+    res.status(502).json({ error: "تعذّر فتح إدارة الاشتراك الآن." });
+  }
+});
+
+// ---- Subscriber features. Free accounts keep the summaries, the voice samples and their
+// minutes; the costly AI tools and the conveniences below are what a plan adds.
+const FREE_LIBRARY_BOOKS = 3;
+const FREE_DAILY = { chat: 5, transform: 2 } as const;
+
+const SUBSCRIBE_MESSAGES = {
+  book: "مؤلف الكتب بالذكاء الاصطناعي متاح للمشتركين.",
+  download: "تحميل الصوت كملف متاح للمشتركين. يمكنك الاستماع مجاناً من الموقع.",
+  library: `المكتبة المجانية تتسع لـ${FREE_LIBRARY_BOOKS} كتب. اشترك لتحفظ عدداً غير محدود.`,
+  chat: `استخدمت أسئلتك المجانية اليوم (${FREE_DAILY.chat}). اشترك لتسأل بلا حد، أو عد غداً.`,
+  transform: `استخدمت ملخصاتك المجانية اليوم (${FREE_DAILY.transform}). اشترك للملخصات بلا حد، أو عد غداً.`,
+};
+
+// true = go ahead; otherwise the response (401 or 403) has been sent
+async function requireSubscriber(req: express.Request, res: express.Response, feature: keyof typeof SUBSCRIBE_MESSAGES): Promise<boolean> {
+  if (!creditsEnabled()) return true;
+  const uid = await uidFromRequest(req);
+  if (!uid) {
+    res.status(401).json({ code: "auth_required" });
+    return false;
+  }
+  if (await isSubscriber(uid)) return true;
+  res.status(403).json({ code: "subscription_required", feature, error: SUBSCRIBE_MESSAGES[feature] });
+  return false;
+}
+
+// Subscribers: unlimited. Free accounts: a few uses a day (429 when used up)
+async function useFreeDaily(req: express.Request, res: express.Response, feature: keyof typeof FREE_DAILY): Promise<boolean> {
+  if (!creditsEnabled()) return true;
+  const uid = await uidFromRequest(req);
+  if (!uid) {
+    res.status(401).json({ code: "auth_required" });
+    return false;
+  }
+  if (await isSubscriber(uid)) return true;
+  try {
+    if ((await useDailyQuota(uid, feature, FREE_DAILY[feature])).ok) return true;
+  } catch (err: any) {
+    console.error("[quota]", err?.message || err);
+    return true; // never block on a quota storage hiccup
+  }
+  res.status(429).json({ code: "daily_limit", feature, error: SUBSCRIBE_MESSAGES[feature] });
+  return false;
+}
+
+// ---- Admin dashboard (server/admin.ts): verified admin emails only
+async function adminUser(req: express.Request, res: express.Response): Promise<{ uid: string; email?: string } | null> {
+  if (!creditsEnabled()) {
+    res.status(503).json({ error: "admin needs FIREBASE_SERVICE_ACCOUNT" });
+    return null;
+  }
+  const user = await userFromRequest(req);
+  if (!isAdminUser(user)) {
+    res.status(403).json({ error: "forbidden" });
+    return null;
+  }
+  return user;
+}
+
+app.get("/api/admin/overview", async (req, res) => {
+  if (!(await adminUser(req, res))) return;
+  try {
+    res.json(await adminOverview());
+  } catch (err: any) {
+    console.error("[admin] overview", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+app.get("/api/admin/users", async (req, res) => {
+  if (!(await adminUser(req, res))) return;
+  try {
+    res.json({ users: await adminUsersTable(String(req.query.q || "")) });
+  } catch (err: any) {
+    console.error("[admin] users", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+app.get("/api/admin/payments", async (req, res) => {
+  if (!(await adminUser(req, res))) return;
+  try {
+    res.json({ payments: await adminRecentPayments() });
+  } catch (err: any) {
+    console.error("[admin] payments", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+app.get("/api/admin/listening", async (req, res) => {
+  if (!(await adminUser(req, res))) return;
+  try {
+    const titles = Object.fromEntries(summariesFor("ar").map((s) => [s.slug, summaryName(s)]));
+    res.json(await adminListening(titles));
+  } catch (err: any) {
+    console.error("[admin] listening", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+app.get("/api/admin/users/:uid/listens", async (req, res) => {
+  if (!(await adminUser(req, res))) return;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(req.params.uid)) return res.status(400).json({ error: "bad request" });
+  try {
+    res.json({ listens: await adminUserListens(req.params.uid) });
+  } catch (err: any) {
+    console.error("[admin] user listens", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+app.post("/api/admin/users/:uid/gift", async (req, res) => {
+  const admin = await adminUser(req, res);
+  if (!admin) return;
+  const minutes = Number(req.body?.minutes);
+  if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 100_000 || !/^[A-Za-z0-9_-]{1,128}$/.test(req.params.uid)) {
+    return res.status(400).json({ error: "bad request" });
+  }
+  try {
+    await adminGiftMinutes(admin.email || "", req.params.uid, minutes, String(req.body?.note || ""));
+    console.log(`[admin] ${admin.email} gifted ${minutes} min to ${req.params.uid}`);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[admin] gift", err?.message || err);
+    res.status(500).json({ error: err?.message || "failed" });
+  }
+});
+
+// A summary's MP3 started playing (public; signed-in listeners are named in the admin log)
+app.post("/api/listens/summary", async (req, res) => {
+  const slug = String(req.body?.slug || "");
+  const lang = req.body?.lang === "en" ? "en" : "ar";
+  const preview = req.body?.preview === true;
+  const s = summariesFor(lang).find((x) => x.slug === slug);
+  if (!s) return res.status(400).json({ error: "unknown summary" });
+  const key = s.baseSlug || s.slug;
+  const uid = await uidFromRequest(req).catch(() => null);
+  if (firstPlayInWindow(`${uid || req.ip}|${key}|${preview ? "p" : "f"}`)) {
+    const arabic = summariesFor("ar").find((x) => x.slug === key);
+    recordSummaryPlay(key, summaryName(arabic || s), lang, uid, preview);
+  }
+  res.status(204).end();
+});
+
+app.get("/api/credits", async (req, res) => {
+  if (!creditsEnabled()) return res.json({ enabled: false });
+  const uid = await uidFromRequest(req);
+  if (!uid) return res.status(401).json({ code: "auth_required" });
+  try {
+    const until = await subscriberUntil(uid);
+    res.json({ enabled: true, secondsRemaining: await getBalance(uid), subscriber: until > Date.now(), subscriberUntil: until || null });
+  } catch (err: any) {
+    console.error("[credits] balance error", err?.message || err);
+    res.status(500).json({ error: "تعذّر قراءة الرصيد." });
+  }
+});
+
+app.post("/api/tts/speak", async (req, res) => {
+  let refundCharge: () => Promise<void> = async () => {};
+  try {
+    const { text, voice, speed = 1.0, listen } = req.body;
     if (!text || typeof text !== "string") {
       return res.status(400).json({ error: "النص مطلوب." });
     }
 
     const trimmedText = text.slice(0, 10000).trim();
-    const cacheKey = `${voice?.id || 'def'}_${speed}_${trimmedText}`;
+    const cacheKey = `${TTS_CACHE_VERSION}_${voice?.id || 'def'}_${speed}_${trimmedText}`;
     const diskPath = getAudioDiskCachePath(cacheKey);
+
+    // Charge the listener (cached clips cost us nothing but are still listening time)
+    const gate = await gateTts(req, res, trimmedText, `speak:${voice?.id || "def"}:${trimmedText}`, listen);
+    if (!gate) return;
+    refundCharge = gate;
 
     // 1. Level 1: In-memory Fast Cache
     if (serverTtsCache.has(cacheKey)) {
@@ -921,6 +1854,7 @@ app.post("/api/tts/speak", async (req, res) => {
       res.setHeader("Content-Length", cached.buffer.length);
       res.setHeader("X-Voice-Engine", cached.engine);
       res.setHeader("X-TTS-Cache", "MEMORY-HIT");
+      recordTtsUsage("cached", secondsForText(text));
       return res.send(cached.buffer);
     }
 
@@ -928,13 +1862,17 @@ app.post("/api/tts/speak", async (req, res) => {
     try {
       if (fs.existsSync(diskPath)) {
         const diskBuffer = fs.readFileSync(diskPath);
+        // Mark it as recently used for pruneAudioCache (reads don't reliably update atime)
+        const now = new Date();
+        fs.utimes(diskPath, now, now, () => {});
         if (diskBuffer && diskBuffer.length > 500) {
-          const contentType = "audio/mpeg";
+          const contentType = diskBuffer.subarray(0, 4).toString() === "RIFF" ? "audio/wav" : "audio/mpeg";
           serverTtsCache.set(cacheKey, { buffer: diskBuffer, contentType, engine: "disk-cached-gemini-tts" });
           res.setHeader("Content-Type", contentType);
           res.setHeader("Content-Length", diskBuffer.length);
           res.setHeader("X-Voice-Engine", "disk-cached-gemini-tts");
           res.setHeader("X-TTS-Cache", "DISK-HIT");
+          recordTtsUsage("cached", secondsForText(text));
           return res.send(diskBuffer);
         }
       }
@@ -967,6 +1905,7 @@ app.post("/api/tts/speak", async (req, res) => {
       res.setHeader("Content-Length", openRouterResult.buffer.length);
       res.setHeader("X-Voice-Engine", openRouterResult.engine);
       res.setHeader("X-TTS-Cache", "GENERATED-AND-SAVED");
+      recordTtsUsage("generated", secondsForText(text));
       return res.send(openRouterResult.buffer);
     }
 
@@ -1013,6 +1952,7 @@ app.post("/api/tts/speak", async (req, res) => {
           res.setHeader("Content-Length", audioBuffer.length);
           res.setHeader("X-Voice-Engine", geminiResult.engine);
           res.setHeader("X-TTS-Cache", "GENERATED-AND-SAVED");
+          recordTtsUsage("generated", secondsForText(text));
           return res.send(audioBuffer);
         }
       } catch (geminiErr: any) {
@@ -1039,77 +1979,21 @@ app.post("/api/tts/speak", async (req, res) => {
       }
     }
 
-    // 4. QUATERNARY RELIABLE FALLBACK: Free High-Quality Google Arabic Audio Synthesizer
-    try {
-      // Split into safe sub-chunks if text is long, concatenate audio buffers
-      const maxSubLength = 200;
-      const subTexts: string[] = [];
-      if (trimmedText.length <= maxSubLength) {
-        subTexts.push(trimmedText);
-      } else {
-        const sentences = trimmedText.split(/(?<=[.!?؟\n])\s+/);
-        let cur = "";
-        for (const s of sentences) {
-          if (!cur) cur = s;
-          else if ((cur + " " + s).length <= maxSubLength) cur += " " + s;
-          else {
-            subTexts.push(cur);
-            cur = s;
-          }
-        }
-        if (cur) subTexts.push(cur);
-      }
-
-      const audioParts: Buffer[] = [];
-      for (const part of subTexts.slice(0, 4)) {
-        const encodedText = encodeURIComponent(part.trim());
-        const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=ar&client=tw-ob&ttsspeed=${speed || 1.0}`;
-        const gRes = await fetch(googleTtsUrl, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://translate.google.com/",
-          },
-        });
-        if (gRes.ok) {
-          const ab = await gRes.arrayBuffer();
-          audioParts.push(Buffer.from(ab));
-        }
-      }
-
-      if (audioParts.length > 0) {
-        const buffer = Buffer.concat(audioParts);
-        if (buffer.length > 500) {
-          const engine = "google-arabic-neural-tts";
-          try {
-            fs.writeFileSync(diskPath, buffer);
-          } catch (e) {}
-
-          if (serverTtsCache.size > 250) {
-            const firstKey = serverTtsCache.keys().next().value;
-            if (firstKey) serverTtsCache.delete(firstKey);
-          }
-          serverTtsCache.set(cacheKey, { buffer, contentType: "audio/mpeg", engine });
-
-          res.setHeader("Content-Type", "audio/mpeg");
-          res.setHeader("Content-Length", buffer.length);
-          res.setHeader("X-Voice-Engine", engine);
-          res.setHeader("X-TTS-Cache", "GENERATED-AND-SAVED");
-          return res.send(buffer);
-        }
-      }
-    } catch (gErr) {
-      console.warn("Google TTS fallback note:", gErr);
-    }
-
+    // No robotic fallback (e.g. Google Translate TTS): if the AI voice fails, the client shows an error
+    await refundCharge();
     return res.status(503).json({ error: "لا يمكن توليد الصوت بالذكاء الاصطناعي حالياً." });
   } catch (error: any) {
     console.error("Speak Exception:", error);
-    res.status(500).json({ error: error.message || "فشل الاتصال بمحرك الصوت" });
+    await refundCharge();
+    if (!res.headersSent) res.status(500).json({ error: error.message || "فشل الاتصال بمحرك الصوت" });
   }
 });
 
 // Full audiobook chapter/text MP3 download synthesis endpoint
 app.post("/api/tts/generate-audio", async (req, res) => {
+  // Downloading the audio as a file is a subscriber feature; listening on the site is not
+  if (!(await requireSubscriber(req, res, "download"))) return;
+  let refundCharge: () => Promise<void> = async () => {};
   try {
     const { text, speed = 1.0, title, voice: rawVoice, voiceId } = req.body;
     if (!text || typeof text !== "string") {
@@ -1126,8 +2010,12 @@ app.post("/api/tts/generate-audio", async (req, res) => {
     }
 
     const trimmedText = text.slice(0, 15000).trim();
-    const cacheKey = `${targetVoice?.id || 'def'}_${speed}_${trimmedText}`;
+    const cacheKey = `${TTS_CACHE_VERSION}_${targetVoice?.id || 'def'}_${speed}_${trimmedText}`;
     const diskPath = getAudioDiskCachePath(cacheKey);
+
+    const gate = await gateTts(req, res, trimmedText, `download:${targetVoice?.id || "def"}:${trimmedText}`);
+    if (!gate) return;
+    refundCharge = gate;
 
     // Check disk/memory cache ONLY for very short single sentences (<200 chars)
     // Long chapters must ALWAYS run through the multi-chunk sequential assembler!
@@ -1253,36 +2141,12 @@ app.post("/api/tts/generate-audio", async (req, res) => {
       }
     }
 
-    // 4. Free Google Arabic Audio Synthesizer fallback for instant download
-    try {
-      const encodedText = encodeURIComponent(trimmedText.slice(0, 300));
-      const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=ar&client=tw-ob&ttsspeed=${speed || 1.0}`;
-      const gRes = await fetch(googleTtsUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Referer": "https://translate.google.com/",
-        },
-      });
-
-      if (gRes.ok) {
-        const arrayBuf = await gRes.arrayBuffer();
-        const buffer = Buffer.from(arrayBuf);
-        if (buffer.length > 500) {
-          const safeTitle = encodeURIComponent((title || "audiobook").replace(/[\/\\?%*:|"<>]/g, "_"));
-          res.setHeader("Content-Type", "audio/mpeg");
-          res.setHeader("Content-Length", buffer.length);
-          res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.mp3"`);
-          return res.send(buffer);
-        }
-      }
-    } catch (gErr) {
-      console.warn("Google TTS download fallback note:", gErr);
-    }
-
+    await refundCharge();
     return res.status(503).json({ error: "تعذر توليد ملف التحميل الصوتي." });
   } catch (error: any) {
     console.error("Generate audio error:", error);
-    res.status(500).json({ error: error.message || "خطأ في توليد الملف الصوتي" });
+    await refundCharge();
+    if (!res.headersSent) res.status(500).json({ error: error.message || "خطأ في توليد الملف الصوتي" });
   }
 });
 
@@ -1327,6 +2191,7 @@ app.post("/api/tts/fish-audio", async (req, res) => {
 
 // AI Professional Book Generator Engine from Scratch (Gemini 3.8 Flash)
 app.post("/api/ai/generate-book", async (req, res) => {
+  if (!(await requireSubscriber(req, res, "book"))) return;
   try {
     const { 
       topic, 
@@ -1467,6 +2332,7 @@ Task: Write and compose a complete, highly engaging, beautifully structured book
 
 // AI Realistic Book Cover Engine (Pollinations 8K Flux & OpenRouter Image Models)
 app.post("/api/ai/generate-cover", async (req, res) => {
+  if (!(await requireSubscriber(req, res, "book"))) return;
   try {
     const { 
       title, 
@@ -1542,8 +2408,8 @@ app.post("/api/ai/generate-cover", async (req, res) => {
               headers: {
                 "Authorization": `Bearer ${openRouterKey}`,
                 "Content-Type": "application/json",
-                "HTTP-Referer": process.env.APP_URL || "https://ais-applet.local",
-                "X-Title": "PDF to Audio Arabic Studio",
+                "HTTP-Referer": process.env.APP_URL || "https://hakawatiai.com",
+                "X-Title": "Hakawati AI",
               },
               body: JSON.stringify({
                 model: orModel,
@@ -1647,23 +2513,85 @@ app.post("/api/ai/generate-cover", async (req, res) => {
 });
 
 // Chat With Your PDF / Book (Gemini 3.8 Flash Contextual Q&A with Speech)
+// "Ask the book": what the answer is read from. The whole book when it is short; otherwise
+// the chapter being listened to plus the paragraphs that share the most words with the
+// question, in book order, each labelled with its chapter (about 60k characters in all)
+const CHAT_BUDGET = 60000;
+const CHAT_STOPWORDS = new Set("ما ماذا متى كيف لماذا لما هل من في على عن الى إلى الذي التي الذين هذا هذه ذلك تلك هو هي هم كان كانت يكون مع أو او ثم لكن قد لقد كل بعض أي اي أين اين عند بين حول الكتاب الكاتب المؤلف فصل الفصل أهم اهم فكرة لي لنا".split(" "));
+const chatStem = (w: string) => w.replace(/[\u064B-\u0652ـ]/g, "").replace(/^(?:و|ف|ب|ل|ك)?(?:ال)/, "").replace(/[ةه]$/, "");
+function passagesForQuestion(chapters: { title: string; text: string }[], question: string, current: number): string {
+  const label = (c: { title: string }) => (c.title ? `[${c.title}]\n` : "");
+  const all = chapters.map((c) => label(c) + c.text).join("\n\n");
+  if (all.length <= CHAT_BUDGET) return all;
+  const terms = [...new Set(question.split(/[^\u0621-\u064Aa-zA-Z0-9]+/).filter((w) => w.length >= 3 && !CHAT_STOPWORDS.has(w)).map(chatStem).filter((w) => w.length >= 2))];
+  const cur = chapters[current];
+  const curText = cur ? cur.text.slice(0, 20000) : "";
+  // Paragraphs of ~1200 characters across the book
+  const paras: { ch: number; i: number; text: string; score: number }[] = [];
+  chapters.forEach((c, ch) => {
+    if (ch === current) return;
+    const blocks = c.text.split(/\n{2,}/);
+    let buf = "";
+    let i = 0;
+    const push = () => {
+      if (!buf.trim()) return;
+      const words = buf.split(/\s+/).map(chatStem);
+      const score = terms.reduce((n, t) => n + words.filter((w) => w === t || (t.length >= 4 && w.includes(t))).length, 0);
+      paras.push({ ch, i: i++, text: buf.trim(), score });
+      buf = "";
+    };
+    for (const b of blocks) {
+      buf += (buf ? "\n" : "") + b;
+      if (buf.length >= 1200) push();
+    }
+    push();
+  });
+  let room = CHAT_BUDGET - curText.length;
+  const chosen = paras
+    .filter((p) => p.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .filter((p) => (room -= p.text.length + 60) > 0);
+  // Nothing matched (a general question like "what is the main idea"): the opening of every chapter
+  if (!chosen.length) {
+    const each = Math.floor((CHAT_BUDGET - curText.length) / Math.max(1, chapters.length));
+    chapters.forEach((c, ch) => ch !== current && paras.filter((p) => p.ch === ch && p.i === 0).forEach((p) => chosen.push({ ...p, text: p.text.slice(0, each) })));
+  }
+  const parts = chosen.map((p) => ({ ch: p.ch, i: p.i, text: p.text }));
+  if (cur) parts.push({ ch: current, i: -1, text: `(الفصل الذي يستمع إليه المستخدم الآن)\n${curText}` });
+  parts.sort((a, b) => a.ch - b.ch || a.i - b.i);
+  return parts.map((p) => label(chapters[p.ch]) + p.text).join("\n\n");
+}
+
 app.post("/api/ai/chat-pdf", async (req, res) => {
   try {
     const { question, bookText, bookTitle, history = [] } = req.body;
+    if (question && typeof question === "string" && question.trim() && !(await useFreeDaily(req, res, "chat"))) return;
     if (!question || typeof question !== "string" || !question.trim()) {
       return res.status(400).json({ error: "السؤال مطلوب." });
     }
 
-    const trimmedBook = (bookText || "").slice(0, 35000);
+    // The book as chapters (what has been read so far), the one being listened to, and the
+    // contents; older clients send one bookText
+    const chapters: { title: string; text: string }[] = Array.isArray(req.body.chapters)
+      ? req.body.chapters
+          .filter((c: any) => c && typeof c.text === "string")
+          .map((c: any) => ({ title: String(c.title || "").slice(0, 200), text: c.text }))
+      : [];
+    if (!chapters.length && typeof bookText === "string" && bookText.trim()) chapters.push({ title: "", text: bookText });
+    const currentIndex = Number.isInteger(req.body.currentChapter) ? req.body.currentChapter : -1;
+    const toc: string[] = Array.isArray(req.body.toc) ? req.body.toc.map((t: any) => String(t).slice(0, 200)).slice(0, 80) : [];
+    const incomplete = Boolean(req.body.incomplete);
+    const reference = passagesForQuestion(chapters, question, currentIndex);
+    const contents = toc.length ? toc : chapters.map((c) => c.title).filter(Boolean);
 
     const prompt = `أنت المساعد الذكي وخبير محتوى الكتاب الصوتي "${bookTitle || 'الكتاب المرفوع'}".
 المستخدم يطرح عليك سؤالاً حول محتوى هذا الكتاب.
-
-نص / مقتطفات الكتاب كمرجع أساسي:
+${contents.length ? `\nفصول الكتاب:\n${contents.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n` : ""}
+مقاطع من الكتاب مرتبة حسب ورودها فيه (كل مقطع مسبوق باسم فصله)، اخترناها لأنها الأقرب إلى السؤال، ومعها الفصل الذي يستمع إليه المستخدم الآن:
 ---
-${trimmedBook}
+${reference}
 ---
-
+${incomplete ? "\nتنبيه: الكتاب ما زال يُقرأ، وبعض فصوله الأخيرة لم تصل بعد. إذا كان السؤال عن جزء لم يصل، قل ذلك بوضوح.\n" : ""}
 سجل المحادثة السابق إن وجد:
 ${JSON.stringify(history.slice(-4))}
 
@@ -1671,10 +2599,11 @@ ${JSON.stringify(history.slice(-4))}
 "${question}"
 
 تعليمات الإجابة:
-1. أجب بدقة واستناداً إلى ما ورد في الكتاب بأسلوب واضح، ممتع، وملهم.
+1. أجب بدقة واستناداً إلى ما ورد في الكتاب بأسلوب واضح، ممتع، وملهم، واذكر الفصل الذي جاءت منه الفكرة حين تعرفه (مثل: "في فصل كذا...").
 2. إذا كان السؤال يطلب تلخيص فكرة، اقتباسات، أو خطوات عملية، رتبها في نقاط سهلة القراءة.
 3. استخدم لغة عربية فصيحة ومشكولة في الكلمات المفتاحية لتكون مريحة عند الاستماع الصوتي.
-4. إذا لم تكن المعلومة مذكورة إطلاقاً في الكتاب، أجب بلطف بناءً على المعرفة العامة مع توضيح ذلك.`;
+4. إذا لم تكن المعلومة مذكورة في هذه المقاطع، قل ذلك صراحة أولاً، ثم أجب بلطف من المعرفة العامة مع توضيح أن ذلك ليس من نص الكتاب.`;
+    console.log(`[chat] ${chapters.length} chapters, ${chapters.reduce((n, c) => n + c.text.length, 0)} chars -> ${reference.length} chars sent`);
 
     let answer = "";
     const ai = getGeminiClient();
@@ -1714,6 +2643,501 @@ ${JSON.stringify(history.slice(-4))}
   }
 });
 
+// ---- SEO landing pages: serve index.html with page-specific meta tags, JSON-LD
+// and pre-rendered content so crawlers see each page without running JavaScript.
+const SITE_URL = (process.env.APP_URL || "https://hakawatiai.com").replace(/\/+$/, "");
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+type PageLang = "ar" | "en";
+// Inline translation for the pre-rendered pages
+const L = (lang: PageLang, ar: string, en: string): string => (lang === "en" ? en : ar);
+
+// <link rel="alternate" hreflang> pairs: each page and its version in the other language
+function alternateLinks(alt: { ar: string; en?: string }): string {
+  if (!alt.en) return "";
+  return (
+    `<link rel="alternate" hreflang="ar" href="${SITE_URL}${alt.ar}" />` +
+    `<link rel="alternate" hreflang="en" href="${SITE_URL}${alt.en}" />` +
+    `<link rel="alternate" hreflang="x-default" href="${SITE_URL}${alt.ar}" />`
+  );
+}
+
+// Head tags shared by the pre-rendered pages; replacements use functions so "$" in text is safe
+function withHead(
+  template: string,
+  head: { title: string; description: string; keywords: string; url: string; ogType?: string; jsonLd: unknown; content: string; lang?: PageLang; alt?: { ar: string; en?: string } }
+): string {
+  const title = escapeHtml(head.title);
+  const description = escapeHtml(head.description);
+  const en = head.lang === "en";
+  return template
+    .replace(/<html lang="ar" dir="rtl">/, () => (en ? '<html lang="en" dir="ltr">' : '<html lang="ar" dir="rtl">'))
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${description}" />`)
+    .replace(/<meta name="keywords" content="[^"]*" \/>/, () => `<meta name="keywords" content="${escapeHtml(head.keywords)}" />`)
+    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${head.url}" />${head.alt ? alternateLinks(head.alt) : ""}`)
+    .replace(/<meta property="og:url" content="[^"]*" \/>/, () => `<meta property="og:url" content="${head.url}" />`)
+    .replace(/<meta property="og:locale" content="[^"]*" \/>/, () => `<meta property="og:locale" content="${en ? "en_US" : "ar_AR"}" />`)
+    .replace(/<meta property="og:type" content="[^"]*" \/>/, () => `<meta property="og:type" content="${head.ogType || "website"}" />`)
+    .replace(/<meta property="og:title" content="[^"]*" \/>/, () => `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta name="twitter:title" content="[^"]*" \/>/, () => `<meta name="twitter:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*" \/>/, () => `<meta property="og:description" content="${description}" />`)
+    .replace(/<meta name="twitter:description" content="[^"]*" \/>/, () => `<meta name="twitter:description" content="${description}" />`)
+    .replace(
+      /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
+      () => `<script type="application/ld+json">${JSON.stringify(head.jsonLd).replace(/</g, "\\u003c")}</script>`
+    )
+    .replace(/<div id="root"><\/div>/, () => `<div id="root">${head.content}</div>`);
+}
+
+const homePath = (lang: PageLang): string => (lang === "en" ? "/en" : "/");
+
+function renderLandingHtml(template: string, page: LandingPage): string {
+  const lang: PageLang = page.lang || "ar";
+  const url = `${SITE_URL}${landingPath(page)}`;
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        "@id": `${url}#webpage`,
+        url,
+        name: page.title,
+        description: page.description,
+        inLanguage: lang,
+        isPartOf: { "@type": "WebSite", name: "Hakawati AI", url: `${SITE_URL}/` },
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}${homePath(lang)}` },
+          { "@type": "ListItem", position: 2, name: page.linkLabel, item: url },
+        ],
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: page.faqs.map((f) => ({ "@type": "Question", name: f.question, acceptedAnswer: { "@type": "Answer", text: f.answer } })),
+      },
+    ],
+  };
+  const content = [
+    `<main dir="${lang === "en" ? "ltr" : "rtl"}">`,
+    `<h1>${escapeHtml(page.h1)}</h1>`,
+    `<p>${escapeHtml(page.subtitle)}</p>`,
+    ...page.sections.map((sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")),
+    `<h2>${escapeHtml(L(lang, `أسئلة حول ${page.linkLabel}`, `${page.linkLabel}: frequently asked questions`))}</h2>`,
+    ...page.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    `<nav><a href="${homePath(lang)}">${L(lang, "تحويل PDF إلى صوت", "Arabic PDF to audio")}</a> `,
+    ...landingPagesFor(lang).filter((p) => p.slug !== page.slug).map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `),
+    `</nav></main>`,
+  ].join("");
+  return withHead(template, { title: page.title, description: page.description, keywords: page.keywords, url, jsonLd, content, lang, alt: landingAlternates(page) });
+}
+
+function summaryHasAudio(distPath: string, s: BookSummary): { duration: number } | null {
+  try {
+    const dir = path.join(distPath, "summaries", ...(s.lang === "en" ? ["en"] : []));
+    const m = JSON.parse(fs.readFileSync(path.join(dir, `${s.slug}.json`), "utf8"));
+    return fs.existsSync(path.join(dir, `${s.slug}.mp3`)) ? { duration: Number(m.duration) || 0 } : null;
+  } catch {
+    return null;
+  }
+}
+
+function isoDuration(seconds: number): string {
+  return `PT${Math.floor(seconds / 60)}M${Math.round(seconds % 60)}S`;
+}
+
+function renderSummaryHtml(template: string, s: BookSummary, audio: { duration: number } | null): string {
+  const lang: PageLang = s.lang || "ar";
+  const hub = summariesHubFor(lang);
+  const url = `${SITE_URL}${summaryPath(s)}`;
+  const hubUrl = `${SITE_URL}${summariesHubPath(lang)}`;
+  const name = summaryName(s);
+  const text = summaryText(s);
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        "@id": `${url}#article`,
+        headline: name,
+        description: s.description,
+        inLanguage: lang,
+        datePublished: s.publishedAt,
+        url,
+        author: { "@type": "Organization", name: "Hakawati AI", url: `${SITE_URL}/` },
+        publisher: { "@type": "Organization", name: "Hakawati AI", logo: { "@type": "ImageObject", url: `${SITE_URL}/brand/logo.png` } },
+        about: {
+          "@type": "Book",
+          name: s.bookTitle,
+          author: { "@type": "Person", name: s.author },
+          ...(s.hasCover ? { image: `${SITE_URL}${summaryCoverUrl(s, "jpg")}` } : {}),
+        },
+        ...(s.hasCover ? { image: `${SITE_URL}${summaryCoverUrl(s, "jpg")}` } : {}),
+        ...(audio
+          ? {
+              audio: {
+                "@type": "AudioObject",
+                name,
+                contentUrl: `${SITE_URL}${summaryAudioUrl(s)}`,
+                encodingFormat: "audio/mpeg",
+                duration: isoDuration(audio.duration),
+                inLanguage: lang,
+              },
+            }
+          : {}),
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}${homePath(lang)}` },
+          { "@type": "ListItem", position: 2, name: hub.h1, item: hubUrl },
+          { "@type": "ListItem", position: 3, name, item: url },
+        ],
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: text.faqs.map((f) => ({ "@type": "Question", name: f.question, acceptedAnswer: { "@type": "Answer", text: f.answer } })),
+      },
+    ],
+  };
+  const content = [
+    `<main dir="${lang === "en" ? "ltr" : "rtl"}"><article>`,
+    `<nav><a href="${homePath(lang)}">${L(lang, "الرئيسية", "Home")}</a> › <a href="${summariesHubPath(lang)}">${escapeHtml(hub.h1)}</a></nav>`,
+    `<h1>${escapeHtml(name)}</h1>`,
+    `<p>${L(lang, "تأليف:", "By")} ${escapeHtml(s.author)}</p>`,
+    `<p>${escapeHtml(s.lead)}</p>`,
+    audio ? `<audio controls preload="none" src="${summaryAudioUrl(s)}"></audio>` : "",
+    ...text.sections.map((sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")),
+    `<h2>${escapeHtml(L(lang, `أسئلة شائعة عن كتاب ${s.bookTitle}`, `${s.bookTitle}: frequently asked questions`))}</h2>`,
+    ...text.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    `</article><nav>`,
+    ...summariesFor(lang).filter((o) => o.slug !== s.slug).map((o) => `<a href="${summaryPath(o)}">${escapeHtml(summaryName(o))}</a> `),
+    `<a href="${homePath(lang)}">${L(lang, "تحويل PDF إلى صوت", "Arabic PDF to audio")}</a></nav></main>`,
+  ].join("");
+  const html = withHead(template, { title: s.title, description: s.description, keywords: s.keywords, url, ogType: "article", jsonLd, content, lang, alt: summaryAlternates(s) });
+  if (!s.hasCover) return html;
+  // Link previews (WhatsApp, Facebook, X) show the book cover instead of the site banner
+  const cover = `${SITE_URL}${summaryCoverUrl(s, "jpg")}`;
+  return html
+    .replace(/<meta property="og:image" content="[^"]*" \/>/, () => `<meta property="og:image" content="${cover}" />`)
+    .replace(/<meta property="og:image:width" content="[^"]*" \/>/, () => '<meta property="og:image:width" content="768" />')
+    .replace(/<meta property="og:image:height" content="[^"]*" \/>/, () => '<meta property="og:image:height" content="1280" />')
+    .replace(/<meta property="og:image:alt" content="[^"]*" \/>/, () => `<meta property="og:image:alt" content="${escapeHtml(L(lang, `غلاف كتاب ${s.bookTitle}`, `${s.bookTitle} book cover`))}" />`)
+    .replace(/<meta name="twitter:image" content="[^"]*" \/>/, () => `<meta name="twitter:image" content="${cover}" />`);
+}
+
+function renderSummariesHubHtml(template: string, lang: PageLang): string {
+  const hub = summariesHubFor(lang);
+  const list = summariesFor(lang);
+  const upcoming = upcomingSummariesFor(lang);
+  const url = `${SITE_URL}${summariesHubPath(lang)}`;
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "CollectionPage", "@id": `${url}#webpage`, url, name: hub.title, description: hub.description, inLanguage: lang, isPartOf: { "@type": "WebSite", name: "Hakawati AI", url: `${SITE_URL}/` } },
+      { "@type": "ItemList", itemListElement: list.map((s, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE_URL}${summaryPath(s)}`, name: summaryName(s) })) },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}${homePath(lang)}` },
+          { "@type": "ListItem", position: 2, name: hub.h1, item: url },
+        ],
+      },
+    ],
+  };
+  const content = [
+    `<main dir="${lang === "en" ? "ltr" : "rtl"}"><h1>${escapeHtml(hub.h1)}</h1><p>${escapeHtml(hub.lead)}</p><ul>`,
+    ...list.map((s) => `<li><a href="${summaryPath(s)}">${escapeHtml(summaryName(s))}</a> – ${escapeHtml(s.author)}. ${escapeHtml(s.lead)}</li>`),
+    `</ul>`,
+    upcoming.length ? `<h2>قريباً</h2><p>${upcoming.map(escapeHtml).join("، ")}</p>` : "",
+    `<a href="${homePath(lang)}">${L(lang, "تحويل PDF إلى صوت", "Arabic PDF to audio")}</a></main>`,
+  ].join("");
+  const alt = { ar: summariesHubPath("ar"), ...(summariesFor("en").length ? { en: summariesHubPath("en") } : {}) };
+  return withHead(template, { title: hub.title, description: hub.description, keywords: hub.keywords, url, jsonLd, content, lang, alt });
+}
+
+// Article paragraph -> HTML, with its [text](/path) links
+const richHtml = (text: string): string =>
+  splitLinks(text)
+    .map((p) => ("href" in p ? `<a href="${escapeHtml(p.href)}">${escapeHtml(p.text)}</a>` : escapeHtml(p.text)))
+    .join("");
+
+function renderArticleHtml(template: string, a: Article): string {
+  const lang: PageLang = a.lang || "ar";
+  const hub = articlesHubFor(lang);
+  const url = `${SITE_URL}${articlePath(a)}`;
+  const hubUrl = `${SITE_URL}${articlesHubPath(lang)}`;
+  const text = articleText(a);
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        "@id": `${url}#article`,
+        headline: a.h1,
+        description: a.description,
+        inLanguage: lang,
+        datePublished: a.publishedAt,
+        dateModified: a.updatedAt,
+        url,
+        mainEntityOfPage: url,
+        image: `${SITE_URL}/brand/og.png`,
+        author: { "@type": "Organization", name: "Hakawati AI", url: `${SITE_URL}/` },
+        publisher: { "@type": "Organization", name: "Hakawati AI", logo: { "@type": "ImageObject", url: `${SITE_URL}/brand/logo.png` } },
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}${homePath(lang)}` },
+          { "@type": "ListItem", position: 2, name: hub.h1, item: hubUrl },
+          { "@type": "ListItem", position: 3, name: a.h1, item: url },
+        ],
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: text.faqs.map((f) => ({ "@type": "Question", name: f.question, acceptedAnswer: { "@type": "Answer", text: f.answer } })),
+      },
+    ],
+  };
+  const summariesLink = summariesFor(lang).length
+    ? `<a href="${summariesHubPath(lang)}">${escapeHtml(summariesHubFor(lang).h1)}</a> `
+    : "";
+  const content = [
+    `<main dir="${lang === "en" ? "ltr" : "rtl"}"><article>`,
+    `<nav><a href="${homePath(lang)}">${L(lang, "الرئيسية", "Home")}</a> › <a href="${articlesHubPath(lang)}">${escapeHtml(hub.h1)}</a></nav>`,
+    `<h1>${escapeHtml(a.h1)}</h1>`,
+    `<p>${escapeHtml(a.lead)}</p>`,
+    `<p>${L(lang, "فريق Hakawati AI", "Hakawati AI team")} · <time datetime="${a.updatedAt}">${a.updatedAt}</time></p>`,
+    ...text.sections.map(
+      (sec) =>
+        `<h2>${escapeHtml(sec.heading)}</h2>` +
+        sec.paragraphs.map((t) => `<p>${richHtml(t)}</p>`).join("") +
+        (sec.steps ? `<ol>${sec.steps.map((st) => `<li>${richHtml(st)}</li>`).join("")}</ol>` : "")
+    ),
+    `<h2>${L(lang, "أسئلة شائعة", "Frequently asked questions")}</h2>`,
+    ...text.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    `</article><nav>`,
+    ...articlesFor(lang).filter((o) => o.slug !== a.slug).map((o) => `<a href="${articlePath(o)}">${escapeHtml(o.h1)}</a> `),
+    `${summariesLink}<a href="${homePath(lang)}">${L(lang, "تحويل PDF إلى صوت", "Arabic PDF to audio")}</a></nav></main>`,
+  ].join("");
+  return withHead(template, { title: a.title, description: a.description, keywords: a.keywords, url, ogType: "article", jsonLd, content, lang, alt: articleAlternates(a) });
+}
+
+function renderArticlesHubHtml(template: string, lang: PageLang): string {
+  const hub = articlesHubFor(lang);
+  const list = articlesFor(lang);
+  const url = `${SITE_URL}${articlesHubPath(lang)}`;
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "CollectionPage", "@id": `${url}#webpage`, url, name: hub.title, description: hub.description, inLanguage: lang },
+      { "@type": "ItemList", itemListElement: list.map((a, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE_URL}${articlePath(a)}`, name: a.h1 })) },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Hakawati AI", item: `${SITE_URL}${homePath(lang)}` },
+          { "@type": "ListItem", position: 2, name: hub.h1, item: url },
+        ],
+      },
+    ],
+  };
+  const content = [
+    `<main dir="${lang === "en" ? "ltr" : "rtl"}"><h1>${escapeHtml(hub.h1)}</h1><p>${escapeHtml(hub.lead)}</p><ul>`,
+    ...list.map((a) => `<li><a href="${articlePath(a)}">${escapeHtml(a.h1)}</a>. ${escapeHtml(a.lead)}</li>`),
+    `</ul><a href="${homePath(lang)}">${L(lang, "تحويل PDF إلى صوت", "Arabic PDF to audio")}</a></main>`,
+  ].join("");
+  const keywords = L(lang, "مقالات الكتب الصوتية, تحويل النص الى صوت, تحويل pdf الى صوت", "arabic audiobooks, arabic text to speech, arabic pdf to audio, arabic voice over");
+  const alt = { ar: articlesHubPath("ar"), ...(articlesFor("en").length ? { en: articlesHubPath("en") } : {}) };
+  return withHead(template, { title: hub.title, description: hub.description, keywords, url, jsonLd, content, lang, alt });
+}
+
+// /sitemap.xml, built from the same data as the pages: every page in both languages, each
+// with its hreflang pair
+function renderSitemap(): string {
+  type Entry = { alt: { ar: string; en?: string }; lastmod?: string; changefreq: string; priority: string };
+  const entries: Entry[] = [
+    { alt: { ar: "/", en: "/en" }, changefreq: "weekly", priority: "1.0" },
+    ...landingPagesFor("ar").map((p) => ({ alt: landingAlternates(p), changefreq: "weekly", priority: "0.9" })),
+    { alt: { ar: summariesHubPath("ar"), ...(summariesFor("en").length ? { en: summariesHubPath("en") } : {}) }, changefreq: "weekly", priority: "0.8" },
+    ...summariesFor("ar").map((s) => ({ alt: summaryAlternates(s), lastmod: s.publishedAt, changefreq: "monthly", priority: "0.7" })),
+    { alt: { ar: articlesHubPath("ar"), ...(articlesFor("en").length ? { en: articlesHubPath("en") } : {}) }, changefreq: "weekly", priority: "0.7" },
+    ...articlesFor("ar").map((a) => ({ alt: articleAlternates(a), lastmod: a.updatedAt, changefreq: "monthly", priority: "0.7" })),
+  ];
+  const links = (alt: Entry["alt"]) =>
+    alt.en
+      ? `<xhtml:link rel="alternate" hreflang="ar" href="${SITE_URL}${alt.ar}" />` +
+        `<xhtml:link rel="alternate" hreflang="en" href="${SITE_URL}${alt.en}" />` +
+        `<xhtml:link rel="alternate" hreflang="x-default" href="${SITE_URL}${alt.ar}" />`
+      : "";
+  const url = (loc: string, e: Entry) =>
+    `<url><loc>${SITE_URL}${loc}</loc>${e.lastmod ? `<lastmod>${e.lastmod}</lastmod>` : ""}<changefreq>${e.changefreq}</changefreq><priority>${e.priority}</priority>${links(e.alt)}</url>`;
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n` +
+    entries.flatMap((e) => [url(e.alt.ar, e), ...(e.alt.en ? [url(e.alt.en, e)] : [])]).join("\n") +
+    `\n</urlset>\n`
+  );
+}
+
+// The home page is a client-rendered app, so put its text into #root for crawlers
+// that read raw HTML (React replaces it on load with the same content). The same
+// template serves Arabic at / and English at /en, with matching head tags and JSON-LD.
+function renderHomeHtml(template: string, lang: "ar" | "en"): string {
+  const c = HOME_CONTENT[lang];
+  const seo = HOME_SEO[lang];
+  const en = lang === "en";
+  const url = en ? `${SITE_URL}/en` : `${SITE_URL}/`;
+  const title = escapeHtml(seo.title);
+  const description = escapeHtml(seo.description);
+
+  const content = [
+    `<main dir="${en ? "ltr" : "rtl"}">`,
+    `<h1>${escapeHtml(c.h1)}</h1>`,
+    `<p>${escapeHtml(c.subtitle)}</p>`,
+    ...c.sections.map(
+      (sec) => `<h2>${escapeHtml(sec.heading)}</h2>` + sec.paragraphs.map((t) => `<p>${escapeHtml(t)}</p>`).join("")
+    ),
+    `<h2>${en ? "How it works" : "كيف يعمل"}</h2><ol>`,
+    ...c.steps.map((st) => `<li><strong>${escapeHtml(st.title)}</strong> ${escapeHtml(st.text)}</li>`),
+    `</ol><h2>${en ? "Who is it for?" : "لمن هذا الموقع؟"}</h2>`,
+    ...c.useCases.map((u) => `<h3>${escapeHtml(u.title)}</h3><p>${escapeHtml(u.text)}</p>`),
+    `<h2>${en ? "Frequently asked questions" : "الأسئلة الشائعة"}</h2>`,
+    ...c.faqs.map((f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`),
+    `<nav>`,
+    `<a href="${en ? "/" : "/en"}">${en ? "العربية" : "English"}</a> `,
+    ...landingPagesFor(lang).map((p) => `<a href="${landingPath(p)}">${escapeHtml(p.linkLabel)}</a> `),
+    ...(summariesFor(lang).length ? [`<a href="${summariesHubPath(lang)}">${escapeHtml(summariesHubFor(lang).h1)}</a> `] : []),
+    `<a href="${articlesHubPath(lang)}">${escapeHtml(articlesHubFor(lang).h1)}</a> `,
+    `</nav></main>`,
+  ].join("");
+
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebApplication",
+        "@id": `${url}#webapp`,
+        name: "Hakawati AI",
+        alternateName: "حكواتي",
+        url,
+        description: seo.description,
+        inLanguage: lang,
+        applicationCategory: "MultimediaApplication",
+        operatingSystem: "All",
+        browserRequirements: "Requires JavaScript. Requires HTML5.",
+        offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      },
+      {
+        "@type": "HowTo",
+        "@id": `${url}#howto`,
+        name: en ? "How to turn an Arabic PDF or text into audio" : "كيفية تحويل كتاب PDF أو نص إلى صوت",
+        step: c.steps.map((st, i) => ({ "@type": "HowToStep", position: i + 1, name: st.title, text: st.text })),
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${url}#faq`,
+        mainEntity: c.faqs.map((f) => ({
+          "@type": "Question",
+          name: f.question,
+          acceptedAnswer: { "@type": "Answer", text: f.answer },
+        })),
+      },
+    ],
+  };
+
+  const alternates =
+    `<link rel="alternate" hreflang="ar" href="${SITE_URL}/" />` +
+    `<link rel="alternate" hreflang="en" href="${SITE_URL}/en" />` +
+    `<link rel="alternate" hreflang="x-default" href="${SITE_URL}/" />`;
+
+  return template
+    .replace(/<html lang="ar" dir="rtl">/, () => (en ? '<html lang="en" dir="ltr">' : '<html lang="ar" dir="rtl">'))
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${description}" />`)
+    .replace(/<meta name="keywords" content="[^"]*" \/>/, () => `<meta name="keywords" content="${escapeHtml(seo.keywords)}" />`)
+    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${url}" />${alternates}`)
+    .replace(/<meta property="og:url" content="[^"]*" \/>/, () => `<meta property="og:url" content="${url}" />`)
+    .replace(/<meta property="og:locale" content="[^"]*" \/>/, () => `<meta property="og:locale" content="${seo.ogLocale}" />`)
+    .replace(/<meta property="og:title" content="[^"]*" \/>/, () => `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta name="twitter:title" content="[^"]*" \/>/, () => `<meta name="twitter:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*" \/>/, () => `<meta property="og:description" content="${description}" />`)
+    .replace(/<meta name="twitter:description" content="[^"]*" \/>/, () => `<meta name="twitter:description" content="${description}" />`)
+    .replace(
+      /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
+      () => `<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>`
+    )
+    .replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
+}
+
+// Shared clips (/s/<id>) live in Firestore with public read; fetch them over REST
+// so the page carries real Open Graph tags for WhatsApp / Facebook previews.
+const SHARE_ID_RE = /^[A-Za-z0-9_-]{10,40}$/;
+const shareCache = new Map<string, { at: number; clip: { text: string; bookTitle: string; chapterTitle: string } | null }>();
+
+async function fetchSharedClip(id: string) {
+  const hit = shareCache.get(id);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.clip;
+  const url =
+    `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}` +
+    `/databases/${encodeURIComponent(firebaseConfig.firestoreDatabaseId || "(default)")}` +
+    `/documents/shares/${id}?key=${firebaseConfig.apiKey}`;
+  let clip: { text: string; bookTitle: string; chapterTitle: string } | null = null;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (res.ok) {
+      const f = (await res.json()).fields || {};
+      clip = {
+        text: f.text?.stringValue || "",
+        bookTitle: f.bookTitle?.stringValue || "",
+        chapterTitle: f.chapterTitle?.stringValue || "",
+      };
+    } else if (res.status !== 404) {
+      return null; // transient error: don't cache
+    }
+  } catch {
+    return null;
+  }
+  if (shareCache.size > 500) shareCache.clear();
+  shareCache.set(id, { at: Date.now(), clip });
+  return clip;
+}
+
+function renderShareHtml(template: string, id: string, clip: { text: string; bookTitle: string; chapterTitle: string }): string {
+  const url = `${SITE_URL}/s/${id}`;
+  const book = clip.bookTitle || "كتاب صوتي";
+  const title = escapeHtml(`مقطع مسموع من «${book}» | Hakawati AI`);
+  const snippet = clip.text.length > 180 ? clip.text.slice(0, 177) + "..." : clip.text;
+  const description = escapeHtml(snippet);
+  const content =
+    `<main dir="rtl"><h1>${escapeHtml(book)}</h1>` +
+    (clip.chapterTitle ? `<p>${escapeHtml(clip.chapterTitle)}</p>` : "") +
+    `<blockquote>${escapeHtml(clip.text)}</blockquote><a href="/">جرّب Hakawati AI</a></main>`;
+  return template
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${description}" />`)
+    // User-generated pages: shareable, but kept out of the search index
+    .replace(/<meta name="robots" content="[^"]*" \/>/, () => '<meta name="robots" content="noindex, follow" />')
+    .replace(/<link rel="canonical" href="[^"]*" \/>/, () => `<link rel="canonical" href="${url}" />`)
+    .replace(/<meta property="og:url" content="[^"]*" \/>/, () => `<meta property="og:url" content="${url}" />`)
+    .replace(/<meta property="og:title" content="[^"]*" \/>/, () => `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta name="twitter:title" content="[^"]*" \/>/, () => `<meta name="twitter:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*" \/>/, () => `<meta property="og:description" content="${description}" />`)
+    .replace(/<meta name="twitter:description" content="[^"]*" \/>/, () => `<meta name="twitter:description" content="${description}" />`)
+    .replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/, "")
+    .replace(/<div id="root"><\/div>/, () => `<div id="root">${content}</div>`);
+}
+
 // Start Express + Vite server
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -1724,14 +3148,74 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    const indexTemplate = fs.readFileSync(path.join(distPath, "index.html"), "utf8");
+    // Every pre-rendered page in both languages, keyed by its decoded path
+    const pageKey = (p: string): string => {
+      try {
+        return decodeURIComponent(p).replace(/^\/+|\/+$/g, "");
+      } catch {
+        return p.replace(/^\/+|\/+$/g, "");
+      }
+    };
+    const pages = new Map<string, string>();
+    pages.set("", renderHomeHtml(indexTemplate, "ar"));
+    pages.set("index.html", pages.get("")!);
+    pages.set("en", renderHomeHtml(indexTemplate, "en"));
+    for (const lang of ["ar", "en"] as const) {
+      for (const p of landingPagesFor(lang)) pages.set(pageKey(landingPath(p)), renderLandingHtml(indexTemplate, p));
+      for (const a of articlesFor(lang)) pages.set(pageKey(articlePath(a)), renderArticleHtml(indexTemplate, a));
+      for (const s of summariesFor(lang)) pages.set(pageKey(summaryPath(s)), renderSummaryHtml(indexTemplate, s, summaryHasAudio(distPath, s)));
+      if (articlesFor(lang).length) pages.set(pageKey(articlesHubPath(lang)), renderArticlesHubHtml(indexTemplate, lang));
+      if (summariesFor(lang).length) pages.set(pageKey(summariesHubPath(lang)), renderSummariesHubHtml(indexTemplate, lang));
+    }
+    const sitemap = renderSitemap();
+    app.get("/sitemap.xml", (_req, res) => res.type("application/xml").send(sitemap));
+
+    app.use((req, res, next) => {
+      if (req.method !== "GET") return next();
+      const html = pages.get(pageKey(req.path));
+      if (html) return res.type("html").send(html);
+      // Until English summaries exist, their hub points to the Arabic one
+      if (pageKey(req.path) === pageKey(summariesHubPath("en"))) return res.redirect(302, summariesHubPath("ar"));
+      next();
+    });
+
+    // Unknown paths get a real 404 (not a soft 404) so search engines drop them
+    const notFoundHtml = indexTemplate
+      .replace(/<title>[^<]*<\/title>/, () => "<title>الصفحة غير موجودة – Hakawati AI</title>")
+      .replace(/<meta name="robots" content="[^"]*" \/>/, () => '<meta name="robots" content="noindex" />');
+    // Under /en the 404 page is English
+    const notFoundHtmlEn = notFoundHtml
+      .replace(/<html lang="ar" dir="rtl">/, () => '<html lang="en" dir="ltr">')
+      .replace(/<title>[^<]*<\/title>/, () => "<title>Page not found – Hakawati AI</title>");
+    const notFound = (p: string) => (/^\/en(\/|$)/.test(p) ? notFoundHtmlEn : notFoundHtml);
+
+    // Browsers and some crawlers ask for /favicon.ico whatever the page declares
+    app.get("/favicon.ico", (_req, res) => res.sendFile(path.join(distPath, "brand", "icon-32.png")));
+
+    app.get("/s/:id", async (req, res, next) => {
+      const id = req.params.id.replace(/\/$/, "");
+      if (!SHARE_ID_RE.test(id)) return res.status(404).type("html").send(notFoundHtml);
+      const clip = await fetchSharedClip(id);
+      if (clip === null && !shareCache.has(id)) {
+        // Firestore unreachable: serve the app shell, which loads the clip client-side
+        return res.type("html").send(indexTemplate);
+      }
+      if (!clip) return res.status(404).type("html").send(notFoundHtml);
+      res.type("html").send(renderShareHtml(indexTemplate, id, clip));
+    });
+
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      res.status(404).type("html").send(notFound(req.path));
     });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+    // Report at startup whether listening minutes and payments work (logs the reason if not)
+    creditsEnabled();
+    paymentsEnabled();
   });
 }
 

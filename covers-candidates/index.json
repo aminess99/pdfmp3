@@ -1,0 +1,70 @@
+{
+  "dont-be-sad": [],
+  "the-alchemist": [],
+  "think-and-grow-rich": [
+    {
+      "file": "01.jpg",
+      "label": "openlibrary-Think and Grow Rich",
+      "url": "https://covers.openlibrary.org/b/id/14542536-L.jpg"
+    },
+    {
+      "file": "02.jpg",
+      "label": "openlibrary-The think and grow rich action pack",
+      "url": "https://covers.openlibrary.org/b/id/6792792-L.jpg"
+    },
+    {
+      "file": "03.jpg",
+      "label": "openlibrary-Think and grow rich",
+      "url": "https://covers.openlibrary.org/b/id/290571-L.jpg"
+    },
+    {
+      "file": "04.jpg",
+      "label": "openlibrary-Think and Grow Rich:A Black Choice",
+      "url": "https://covers.openlibrary.org/b/id/788354-L.jpg"
+    }
+  ],
+  "power-of-now": [
+    {
+      "file": "01.jpg",
+      "label": "openlibrary-The Power of Now",
+      "url": "https://covers.openlibrary.org/b/id/551262-L.jpg"
+    },
+    {
+      "file": "02.jpg",
+      "label": "openlibrary-Practising the Power of Now",
+      "url": "https://covers.openlibrary.org/b/id/2401616-L.jpg"
+    },
+    {
+      "file": "03.jpg",
+      "label": "openlibrary-Entering the Now (Power of Now)",
+      "url": "https://covers.openlibrary.org/b/id/864944-L.jpg"
+    },
+    {
+      "file": "04.jpg",
+      "label": "openlibrary-Realizing the Power of Now",
+      "url": "https://covers.openlibrary.org/b/id/1976996-L.jpg"
+    }
+  ],
+  "art-of-war": [
+    {
+      "file": "01.jpg",
+      "label": "openlibrary-The Art of War",
+      "url": "https://covers.openlibrary.org/b/id/4849549-L.jpg"
+    },
+    {
+      "file": "02.jpg",
+      "label": "openlibrary-The Art of War",
+      "url": "https://covers.openlibrary.org/b/id/15216744-L.jpg"
+    },
+    {
+      "file": "03.jpg",
+      "label": "openlibrary-The Art of War",
+      "url": "https://covers.openlibrary.org/b/id/13464891-L.jpg"
+    },
+    {
+      "file": "04.jpg",
+      "label": "openlibrary-The Lost Art of War",
+      "url": "https://covers.openlibrary.org/b/id/48687-L.jpg"
+    }
+  ]
+}

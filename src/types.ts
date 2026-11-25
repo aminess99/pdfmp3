@@ -21,7 +21,10 @@ export interface Dialect {
   country: string;
   flag: string;
   code: string; // e.g. ar-MA, ar-SA, ar-EG
+  region?: DialectRegion; // optional: dialects stored with older saved books lack it
 }
+
+export type DialectRegion = 'msa' | 'gulf' | 'levant' | 'iraq_yemen' | 'nile' | 'maghreb';
 
 export interface AudioStyle {
   id: string;
@@ -77,6 +80,20 @@ export interface ConversionJob {
   backgroundStatus?: string;
   totalExpectedChapters?: number;
   createdAt: string;
+  // Open the studio straight on this panel (from the dashboard's tools page)
+  initialPanel?: 'summary' | 'key_points';
+  // Long PDFs are read in the background (lib/bookStream.ts): the next page to read
+  // (1-based; past totalPages when done) and the front-matter pages skipped at the start
+  nextPageToRead?: number;
+  skippedFrontPages?: number;
+  // Scanned book read by OCR as the listener goes (lib/bookStream.ts lazy mode)
+  scannedBook?: boolean;
+  // Chapter names from the book's contents page (shown as the chapters still to come)
+  tocTitles?: string[];
+  // Small JPEG of the book's cover page (data URL), shown in the library and the studio
+  coverImage?: string;
+  // The book's author, read from its opening pages (announced at the start of the book)
+  bookAuthor?: string;
 }
 
 export interface Testimonial {

@@ -1,0 +1,59 @@
+name: Book check
+
+# Runs real books through the site (OCR, AI editor, contents, chapters) and prints a report.
+# Put one book URL per line in .github/book-check.txt (a direct PDF link, a download page,
+# or a shared Google Drive link) and push. Needs the OPENROUTER_API_KEY secret.
+on:
+  push:
+    paths:
+      - .github/book-check.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - run: npm i --no-save playwright@1.63.0 && npx playwright install --with-deps chromium > /dev/null
+      - name: Download the books
+        run: |
+          mkdir -p books
+          UA="Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36"
+          n=0
+          grep -v '^\s*#' .github/book-check.txt | grep -E '^https?://' | while read -r URL rest; do
+            n=$((n+1)); out="books/book$n.pdf"
+            # Google Drive share link -> direct download
+            ID=$(echo "$URL" | sed -nE 's#.*/d/([A-Za-z0-9_-]+).*#\1#p; s#.*[?&]id=([A-Za-z0-9_-]+).*#\1#p' | head -1)
+            if echo "$URL" | grep -q 'drive.google.com' && [ -n "$ID" ]; then
+              URL="https://drive.usercontent.google.com/download?id=$ID&export=download&confirm=t"
+            fi
+            curl -sSL -A "$UA" -c jar -b jar -o "$out" "$URL" || true
+            if ! file "$out" | grep -q PDF; then
+              LINK=$(grep -oE "https?://[^\"' <>]+\.pdf[^\"' <>]*" "$out" | head -1)
+              [ -z "$LINK" ] && LINK=$(grep -oE "https?://[^\"' <>]*(download|get)[^\"' <>]*" "$out" | grep -v "$URL" | head -1)
+              [ -n "$LINK" ] && curl -sSL -A "$UA" -c jar -b jar -e "$URL" -o "$out" "$LINK" || true
+            fi
+            echo "$out: $(file -b "$out" | cut -c1-60) $(du -h "$out" | cut -f1)"
+          done
+      - name: Check the books
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          NODE_ENV: production
+          PORT: "4789"
+        run: |
+          node dist/server.cjs > server.log 2>&1 &
+          sleep 5
+          PDFS=$(for f in books/*.pdf; do file "$f" | grep -q PDF && echo "$f"; done)
+          [ -z "$PDFS" ] && { echo "no PDF downloaded"; exit 1; }
+          node scripts/book-check.cjs $PDFS
+          echo; echo "==================== server: OCR / editor / contents"
+          grep -E '^\[(OCR|filter|toc|book-title)\]' server.log | tail -80

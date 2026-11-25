@@ -1,4 +1,5 @@
 import { BookChapter } from '../types';
+import { apiFetch } from './apiFetch';
 
 // Arabic number words mapping for readable chapters
 const ARABIC_ORDINAL_MAP: Record<string, number> = {
@@ -29,19 +30,16 @@ export function estimateDurationMinutes(wordCount: number): number {
  * Recognizes Arabic chapter markers (الفصل، الباب، المقدمة، الخاتمة، المبحث)
  * or creates balanced logical chapters for long unstructured texts.
  */
-export function detectArabicChapters(fullText: string, defaultTitle?: string): BookChapter[] {
-  if (!fullText || !fullText.trim()) return [];
-
-  const cleanText = fullText.trim();
-  const words = cleanText.split(/\s+/).filter(Boolean);
-
-  // Regex pattern matching common Arabic chapter headers at line starts (excluding dot leaders)
+// Chapter headings ("الفصل الأول", "الباب الثاني", "المقدمة", ...) at line starts, skipping
+// table-of-contents lines with dot leaders. Shared by detectArabicChapters and the
+// background book reader (lib/bookStream.ts).
+export function findChapterHeadings(text: string): { index: number; fullMatch: string; title: string }[] {
   const chapterPattern = /(?:^|\n)\s*(?:[-–—*#\s]*)?(?:(الفصل\s+(?:الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|الحادي عشر|الثاني عشر|\d+)[^\n.]*)|(الباب\s+(?:الأول|الثاني|الثالث|الرابع|الخامس|\d+)[^\n.]*)|(النقطة\s+(?:الأولى|الثانية|الثالثة|الرابعة|الخامسة|السادسة|السابعة|\d+)[^\n.]*)|(المحور\s+(?:الأول|الثاني|الثالث|الرابع|الخامس|\d+)[^\n.]*)|(الدرس\s+(?:الأول|الثاني|الثالث|الرابع|الخامس|\d+)[^\n.]*)|(المقدمة|مقدمة الكتاب|مقدمة المؤلف|التمهيد)|(الخاتمة|خاتمة الكتاب|الخلاصة)|(المبحث\s+(?:الأول|الثاني|الثالث|\d+)[^\n.]*)|(الجزء\s+(?:الأول|الثاني|الثالث|\d+)[^\n.]*)|(Chapter\s+\d+[^\n.]*))\s*(?:[-–—*#\s]*)?(?:\n|$)/gi;
 
   const matches: { index: number; fullMatch: string; title: string }[] = [];
   let match: RegExpExecArray | null;
 
-  while ((match = chapterPattern.exec(cleanText)) !== null) {
+  while ((match = chapterPattern.exec(text)) !== null) {
     const rawTitle = (match[1] || match[2] || match[3] || match[4] || match[5] || match[6] || match[7] || match[8] || match[9] || match[10] || match[0])
       .trim()
       .replace(/^[#*\-–—\s]+|[#*\-–—\s]+$/g, '');
@@ -51,12 +49,39 @@ export function detectArabicChapters(fullText: string, defaultTitle?: string): B
       continue;
     }
 
+    let fullMatch = match[0];
+    let title = rawTitle;
+    // "الفصل الثاني" alone on its line, with the chapter's name on the next line: use both
+    if (/^(?:الفصل|الباب|الجزء|المبحث|Chapter)\s+\S+(?:\s+عشر)?$/i.test(rawTitle)) {
+      const after = text.slice(match.index + match[0].length);
+      const next = after.match(/^[ \t]*\n?[ \t]*([^\n]+)(\n|$)/);
+      const line = next?.[1]?.trim() || '';
+      const n = line.split(/\s+/).filter(Boolean).length;
+      // A name has real words: not a page number ("١٦"), not punctuation
+      const hasWords = (line.match(/[\u0621-\u064A]{2,}/g) || []).length >= 1;
+      if (line && hasWords && n >= 1 && n <= 12 && !/[.!؛:]$/.test(line) && !/^(?:الفصل|الباب|الجزء)\s/.test(line)) {
+        title = `${rawTitle}: ${line.replace(/[.،]+$/, '')}`;
+        fullMatch += next![0];
+      }
+    }
+
     matches.push({
       index: match.index,
-      fullMatch: match[0],
-      title: rawTitle,
+      fullMatch,
+      title,
     });
   }
+
+  return matches;
+}
+
+export function detectArabicChapters(fullText: string, defaultTitle?: string): BookChapter[] {
+  if (!fullText || !fullText.trim()) return [];
+
+  const cleanText = fullText.trim();
+  const words = cleanText.split(/\s+/).filter(Boolean);
+
+  const matches = findChapterHeadings(cleanText);
 
   // Case 1: Explicit Arabic chapter headings detected (at least 2 chapters)
   if (matches.length >= 2) {
@@ -192,7 +217,7 @@ export async function detectArabicChaptersWithAI(
 
   // Fast check: Try AI-powered TOC & chapter parser
   try {
-    const res = await fetch('/api/ai/extract-chapters', {
+    const res = await apiFetch('/api/ai/extract-chapters', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -200,7 +225,7 @@ export async function detectArabicChaptersWithAI(
         defaultTitle: defaultTitle || 'الفصل الأول',
         voiceName: voiceName || 'القارئ الصوتي'
       }),
-    });
+    }, { silent: true }); // background step with a local fallback: never prompt from here
 
     if (res.ok) {
       const data = await res.json();
@@ -237,4 +262,45 @@ export async function detectArabicChaptersWithAI(
     chapters: localChapters,
     isOriginalTOC: false,
   };
+}
+
+// ---- Chapter names (lib/bookStream.ts ChapterAssembler, the studio's chapter list)
+
+// A title reduced to its letters and digits, so "الفصلُ الأول: كنزٌ في داخلك" matches "الفصل الأول - كنز في داخلك"
+export const normTitle = (s: string): string =>
+  String(s || '')
+    .replace(/[ً-ٰٟـ]/g, '')
+    .replace(/[إأآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+const AR_ORDINALS = ['الأول', 'الثاني', 'الثالث', 'الرابع', 'الخامس', 'السادس', 'السابع', 'الثامن', 'التاسع', 'العاشر', 'الحادي عشر', 'الثاني عشر', 'الثالث عشر', 'الرابع عشر', 'الخامس عشر', 'السادس عشر', 'السابع عشر', 'الثامن عشر', 'التاسع عشر', 'العشرون'];
+// "الجزء الثاني" for parts of a book without headings
+export const partTitle = (n: number, ar = true): string => (ar ? `الجزء ${AR_ORDINALS[n - 1] || n}` : `Part ${n}`);
+
+// The next part of a chapter that was cut for length: "كنز في داخلك" -> "كنز في داخلك (2)" -> "(3)"
+export function nextPartTitle(title: string): string {
+  const m = title.match(/^(.*?)\s*\((\d+)\)\s*$/);
+  if (m) return `${m[1]} (${Number(m[2]) + 1})`;
+  return `${title.replace(/\s*\((?:تابع|continued)\)\s*$/, '')} (2)`;
+}
+
+// Chapter names from contents-page text when the AI reader is unavailable: lines that end in
+// a page number, without the dot leaders
+export function parseTocLines(text: string): string[] {
+  const out: string[] = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    const m = line.match(/^(.*?)[\s.…·_\-–]*([0-9٠-٩]{1,4})\s*$/);
+    if (!m) continue;
+    const title = m[1].replace(/[.…·_]{2,}/g, ' ').replace(/\s+/g, ' ').trim();
+    const words = title.split(' ').length;
+    if (words < 1 || words > 14 || /^(المحتويات|الفهرس|فهرس المحتويات)$/.test(title)) continue;
+    out.push(title);
+  }
+  return out.slice(0, 80);
 }
